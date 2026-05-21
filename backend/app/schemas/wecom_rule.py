@@ -1,0 +1,45 @@
+from datetime import datetime
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
+
+from app.schemas.common import ORMBase
+
+WecomRuleKind = Literal["create", "transition"]
+
+
+class WecomNotifyRuleOut(ORMBase):
+    id: str
+    project_id: str
+    kind: WecomRuleKind
+    from_status_key: Optional[str] = None
+    to_status_key: Optional[str] = None
+    message_template: str
+    notify_roles: list[str]
+    enabled: bool
+    created_at: datetime
+    from_status_label: Optional[str] = None
+    to_status_label: Optional[str] = None
+
+
+class WecomNotifyRuleCreate(BaseModel):
+    kind: WecomRuleKind = "transition"
+    from_status_key: Optional[str] = Field(default=None, max_length=64)
+    to_status_key: Optional[str] = Field(default=None, max_length=64)
+    message_template: str = Field(min_length=1)
+    notify_roles: list[str] = Field(default_factory=lambda: ["reporter", "followers"])
+    enabled: bool = True
+
+
+class WecomNotifyRuleUpdate(BaseModel):
+    from_status_key: Optional[str] = Field(default=None, max_length=64)
+    to_status_key: Optional[str] = Field(default=None, max_length=64)
+    message_template: Optional[str] = None
+    notify_roles: Optional[list[str]] = None
+    enabled: Optional[bool] = None
+
+
+class WecomCreateRuleUpsert(BaseModel):
+    message_template: Optional[str] = None
+    notify_roles: Optional[list[str]] = None
+    enabled: Optional[bool] = None

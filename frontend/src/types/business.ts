@@ -1,0 +1,297 @@
+export interface TemplateField {
+  id: string;
+  name: string;
+  type: string;
+  required: boolean;
+  options: string[];
+  sort: number;
+}
+
+export interface FieldTemplate {
+  project_id: string;
+  scene: string;
+  fields: TemplateField[];
+}
+
+export interface BugStatusDef {
+  id: string;
+  project_id: string;
+  key: string;
+  label: string;
+  sort: number;
+  is_terminal: boolean;
+  notify_wecom: boolean;
+  notify_roles: string[];
+}
+
+export interface WecomIntegration {
+  project_id: string;
+  wecom_webhook_url: string | null;
+  wecom_enabled: boolean;
+  status_notify_template: string | null;
+  create_notify_template: string | null;
+  notify_on_create: boolean;
+}
+
+export interface WecomNotifyRule {
+  id: string;
+  project_id: string;
+  kind: 'create' | 'transition';
+  from_status_key: string | null;
+  to_status_key: string | null;
+  message_template: string;
+  notify_roles: string[];
+  enabled: boolean;
+  created_at: string;
+  from_status_label?: string | null;
+  to_status_label?: string | null;
+}
+
+export interface CaseModule {
+  id: string;
+  project_id: string;
+  parent_id: string | null;
+  name: string;
+  sort: number;
+  created_at: string;
+}
+
+export interface CaseStep {
+  desc: string;
+  expected: string;
+}
+
+export interface VersionBrief {
+  id: string;
+  num: number;
+  name: string;
+}
+
+export interface ProjectVersion {
+  id: string;
+  project_id: string;
+  num: number;
+  name: string;
+  /** 上线日期 YYYY-MM-DD */
+  released_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type RequirementStatus = 'not_tested' | 'testing' | 'accepted';
+
+export interface Requirement {
+  id: string;
+  project_id: string;
+  num: number;
+  title: string;
+  external_url: string | null;
+  version_id: string | null;
+  version?: VersionBrief | null;
+  status: RequirementStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestCase {
+  id: string;
+  project_id: string;
+  module_id: string;
+  module_path?: string | null;
+  title: string;
+  priority: string;
+  precondition: string | null;
+  step_text: string | null;
+  expected_result: string | null;
+  steps: CaseStep[];
+  tags: string[];
+  custom_fields: Record<string, unknown>;
+  requirement_ids: string[];
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestPlan {
+  id: string;
+  project_id: string;
+  name: string;
+  status: string;
+  version_id: string | null;
+  version?: VersionBrief | null;
+  owner_id: string | null;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  /** 列表接口汇总字段 */
+  case_total?: number;
+  pass_count?: number;
+  fail_count?: number;
+  block_count?: number;
+  skip_count?: number;
+  not_run_count?: number;
+  pass_rate?: number;
+}
+
+export interface PlanCaseResult {
+  id: string;
+  plan_case_id: string;
+  executor_id: string | null;
+  result: string;
+  comment: string | null;
+  executed_at: string | null;
+}
+
+export interface PlanCase {
+  id: string;
+  plan_id: string;
+  case_id: string;
+  sort: number;
+  case?: TestCase;
+  result?: PlanCaseResult;
+}
+
+export interface PlanStats {
+  total: number;
+  not_run: number;
+  pass_count: number;
+  fail_count: number;
+  block_count: number;
+  skip_count: number;
+  pass_rate: number;
+}
+
+export interface BugItem {
+  id: string;
+  project_id: string;
+  num: number;
+  title: string;
+  status_key: string;
+  assignee_id: string | null;
+  reporter_id: string;
+  description: string | null;
+  custom_fields: Record<string, unknown>;
+  requirement_ids: string[];
+  plan_ids: string[];
+  plan_version_id: string | null;
+  found_version_id: string | null;
+  plan_version?: VersionBrief | null;
+  found_version?: VersionBrief | null;
+  follower_ids: string[];
+  created_at: string;
+  updated_at: string;
+  assignee?: { id: string; name: string; email: string };
+  reporter?: { id: string; name: string; email: string };
+  followers?: { id: string; name: string; email: string }[];
+}
+
+export interface BugComment {
+  id: string;
+  bug_id: string;
+  user_id: string;
+  body: string;
+  created_at: string;
+  user?: { id: string; name: string; email: string };
+}
+
+export interface BugActivity {
+  id: string;
+  source: string;
+  action_type: string;
+  summary: string;
+  detail: Record<string, unknown>;
+  actor?: { id: string; name: string; email: string };
+  created_at: string;
+}
+
+export interface DashboardSummary {
+  version_count: number;
+  requirement_count: number;
+  case_count: number;
+  bug_count: number;
+}
+
+export interface ActivePlanBrief {
+  id: string;
+  name: string;
+  status: string;
+  case_total: number;
+  not_run: number;
+  pass_rate: number | null;
+}
+
+export interface StatusCountItem {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface StatusBreakdown {
+  total: number;
+  by_status: StatusCountItem[];
+}
+
+export interface BugOverviewCell {
+  status_key: string;
+  version_id: string | null;
+  count: number;
+}
+
+export interface BugOverviewChart {
+  total: number;
+  by_status: StatusCountItem[];
+  versions: VersionBrief[];
+  cells: BugOverviewCell[];
+}
+
+export interface VersionFocus {
+  version: VersionBrief | null;
+  versions: VersionBrief[];
+  requirements: StatusBreakdown;
+  bugs: StatusBreakdown;
+  plans: StatusBreakdown;
+}
+
+export interface PlanChartPoint {
+  plan_id: string;
+  plan_name: string;
+  status: string;
+  by_result: StatusCountItem[];
+  pass_rate: number | null;
+}
+
+export interface PlanExecutionChart {
+  points: PlanChartPoint[];
+}
+
+export interface DashboardOverview {
+  version_focus: VersionFocus;
+  bug_overview_chart: BugOverviewChart;
+  plan_execution_chart: PlanExecutionChart;
+}
+
+export interface RequirementTodoBrief {
+  id: string;
+  num: number;
+  title: string;
+  status: RequirementStatus;
+  version?: VersionBrief | null;
+}
+
+export interface DashboardTodo {
+  draft_plans: ActivePlanBrief[];
+  active_plans_todo: ActivePlanBrief[];
+  fixed_bugs: BugItem[];
+  not_tested_requirements: RequirementTodoBrief[];
+  testing_requirements: RequirementTodoBrief[];
+  follower_todo_bugs: BugItem[];
+}
+
+export interface DashboardWorkbench {
+  summary: DashboardSummary;
+  overview: DashboardOverview;
+  todo: DashboardTodo;
+  project_role: string;
+}

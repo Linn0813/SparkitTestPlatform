@@ -1,0 +1,582 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.deps import (
+    ProjectContext,
+    require_project_context,
+    require_project_context_tester,
+    user_can_full_edit_project,
+)
+from app.models.bug import (
+    Bug,
+    BugAttachment,
+    BugCaseLink,
+    BugComment,
+    BugFollowerLink,
+    BugStatusHistory,
+)
+from app.models.requirement import BugPlanLink, BugRequirementLink
+from app.models.template import BugStatus, ProjectFieldTemplate, TemplateScene
+from app.models.user import User
+from app.schemas.bug import (
+    BugActivityOut,
+    BugAttachmentOut,
+    BugCaseLinkOut,
+    BugCommentCreate,
+    BugCommentOut,
+    BugCreate,
+    BugOut,
+    BugUpdate,
+)
+from app.services.bug_activity import list_bug_activities_merged, log_bug_activity
+from app.services.bug_filters import apply_bug_list_filters, parse_custom_filters
+from app.services.field_validator import load_project_member_user_ids, validate_custom_fields
+from app.services.file_cleanup import cleanup_after_bug_content_change, cleanup_after_bug_deleted
+from app.services.file_refs import file_keys_from_bug
+from app.services.links import (
+    set_bug_followers,
+    set_bug_plans,
+    set_bug_requirements,
+    validate_plan_ids,
+    validate_project_member_ids,
+    validate_requirement_ids,
+)
+from app.services.file_storage import upload_bytes
+from app.services.project_setup import ensure_project_defaults
+from app.services.versions import validate_version_id
+from app.services.serializers import bug_out, bug_out_list_batch
+from app.services.wecom_notify import notify_bug_created, notify_bug_status_change
+
+router = APIRouter(prefix="/bugs", tags=["bugs"])
+
+
+async def _next_bug_num(project_id: str, db: AsyncSession) -> int:
+    result = await db.execute(select(func.max(Bug.num)).where(Bug.project_id == project_id))
+    current = result.scalar() or 0
+    return current + 1
+
+
+async def _record_status_history(
+    bug: Bug,
+    from_key: str | None,
+    to_key: str,
+    user_id: str,
+    db: AsyncSession,
+    *,
+    notified: bool,
+) -> None:
+    history = BugStatusHistory(
+        bug_id=bug.id,
+        from_status=from_key,
+        to_status=to_key,
+        changed_by=user_id,
+        notified_at=datetime.now(timezone.utc).replace(tzinfo=None) if notified else None,
+    )
+    db.add(history)
+
+
+@router.get("", response_model=list[BugOut])
+async def list_bugs(
+    status_key: Optional[str] = None,
+    assignee_id: Optional[str] = None,
+    reporter_id: Optional[str] = None,
+    follower_id: Optional[str] = None,
+    plan_version_id: Optional[str] = None,
+    found_version_id: Optional[str] = None,
+    requirement_id: Optional[str] = None,
+    plan_id: Optional[str] = None,
+    q: Optional[str] = None,
+    custom_filters: Optional[str] = Query(
+        None, description="JSON: { fieldId: value | __empty__ }"
+    ),
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    await ensure_project_defaults(ctx.project_id, db)
+    tpl = await db.execute(
+        select(ProjectFieldTemplate).where(
+            ProjectFieldTemplate.project_id == ctx.project_id,
+            ProjectFieldTemplate.scene == TemplateScene.bug,
+        )
+    )
+    template_row = tpl.scalar_one_or_none()
+    template_fields: list = template_row.fields if template_row else []
+
+    parsed_custom: dict[str, str] = {}
+    if custom_filters:
+        try:
+            parsed_custom = parse_custom_filters(custom_filters)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    stmt = select(Bug).where(Bug.project_id == ctx.project_id)
+    stmt = apply_bug_list_filters(
+        stmt,
+        status_key=status_key,
+        assignee_id=assignee_id,
+        reporter_id=reporter_id,
+        follower_id=follower_id,
+        plan_version_id=plan_version_id,
+        found_version_id=found_version_id,
+        requirement_id=requirement_id,
+        plan_id=plan_id,
+        q=q,
+        template_fields=template_fields,
+        custom_filters=parsed_custom or None,
+    )
+    result = await db.execute(stmt.order_by(Bug.num.desc()))
+    bugs = list(result.scalars().all())
+    return await bug_out_list_batch(bugs, db)
+
+
+@router.post("", response_model=BugOut, status_code=status.HTTP_201_CREATED)
+async def create_bug(
+    body: BugCreate,
+    ctx: ProjectContext = Depends(require_project_context_tester),
+    db: AsyncSession = Depends(get_db),
+):
+    await ensure_project_defaults(ctx.project_id, db)
+    status_key = body.status_key
+    if not status_key:
+        first = await db.execute(
+            select(BugStatus).where(BugStatus.project_id == ctx.project_id).order_by(BugStatus.sort)
+        )
+        s = first.scalars().first()
+        if not s:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No bug statuses configured")
+        status_key = s.key
+    reporter_id = body.reporter_id or ctx.user.id
+    try:
+        await validate_requirement_ids(db, ctx.project_id, body.requirement_ids)
+        await validate_plan_ids(db, ctx.project_id, body.plan_ids)
+        await validate_version_id(db, ctx.project_id, body.plan_version_id)
+        await validate_version_id(db, ctx.project_id, body.found_version_id)
+        await validate_project_member_ids(db, ctx.project_id, [reporter_id])
+        await validate_project_member_ids(db, ctx.project_id, body.follower_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    tpl = await db.execute(
+        select(ProjectFieldTemplate).where(
+            ProjectFieldTemplate.project_id == ctx.project_id,
+            ProjectFieldTemplate.scene == TemplateScene.bug,
+        )
+    )
+    member_ids = await load_project_member_user_ids(db, ctx.project_id)
+    custom = validate_custom_fields(
+        tpl.scalar_one().fields,
+        body.custom_fields,
+        project_id=ctx.project_id,
+        project_member_ids=member_ids,
+    )
+    bug = Bug(
+        project_id=ctx.project_id,
+        num=await _next_bug_num(ctx.project_id, db),
+        title=body.title,
+        status_key=status_key,
+        assignee_id=body.assignee_id,
+        reporter_id=reporter_id,
+        description=body.description,
+        plan_version_id=body.plan_version_id,
+        found_version_id=body.found_version_id,
+        custom_fields=custom,
+    )
+    db.add(bug)
+    await db.flush()
+    await set_bug_requirements(db, bug.id, body.requirement_ids)
+    await set_bug_plans(db, bug.id, body.plan_ids)
+    await set_bug_followers(db, bug.id, body.follower_ids)
+    for cid in body.case_ids:
+        db.add(BugCaseLink(bug_id=bug.id, case_id=cid))
+    await db.flush()
+    await _record_status_history(bug, None, status_key, ctx.user.id, db, notified=False)
+    mention_count = await notify_bug_created(db, bug)
+    await log_bug_activity(
+        db,
+        bug_id=bug.id,
+        actor_id=ctx.user.id,
+        action_type="create",
+        summary="创建了缺陷",
+    )
+    if mention_count > 0:
+        await log_bug_activity(
+            db,
+            bug_id=bug.id,
+            actor_id=ctx.user.id,
+            action_type="wecom_notify",
+            summary=f"已发送企微通知（@{mention_count} 人）",
+        )
+    await db.refresh(bug)
+    return await bug_out(bug, db)
+
+
+@router.get("/{bug_id}", response_model=BugOut)
+async def get_bug(
+    bug_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    return await bug_out(bug, db)
+
+
+@router.patch("/{bug_id}", response_model=BugOut)
+async def update_bug(
+    bug_id: str,
+    body: BugUpdate,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+    can_full_edit = await user_can_full_edit_project(ctx.user, ctx.project_id, db)
+    if not can_full_edit:
+        disallowed = set(data.keys()) - {"status_key"}
+        if disallowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only testers may edit bug details; members may change status only",
+            )
+    old_status = bug.status_key
+    old_file_keys = file_keys_from_bug(bug)
+    old_title = bug.title
+    old_plan_version_id = bug.plan_version_id
+    old_found_version_id = bug.found_version_id
+    req_ids = data.pop("requirement_ids", None)
+    plan_ids = data.pop("plan_ids", None)
+    follower_ids = data.pop("follower_ids", None)
+    if "reporter_id" in data or follower_ids is not None:
+        try:
+            if "reporter_id" in data and data["reporter_id"]:
+                await validate_project_member_ids(db, ctx.project_id, [data["reporter_id"]])
+            if follower_ids is not None:
+                await validate_project_member_ids(db, ctx.project_id, follower_ids)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    if "plan_version_id" in data or "found_version_id" in data:
+        try:
+            if "plan_version_id" in data:
+                await validate_version_id(db, ctx.project_id, data.get("plan_version_id"))
+            if "found_version_id" in data:
+                await validate_version_id(db, ctx.project_id, data.get("found_version_id"))
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    if req_ids is not None:
+        try:
+            await validate_requirement_ids(db, ctx.project_id, req_ids)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    if plan_ids is not None:
+        try:
+            await validate_plan_ids(db, ctx.project_id, plan_ids)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    if "custom_fields" in data:
+        tpl = await db.execute(
+            select(ProjectFieldTemplate).where(
+                ProjectFieldTemplate.project_id == ctx.project_id,
+                ProjectFieldTemplate.scene == TemplateScene.bug,
+            )
+        )
+        member_ids = await load_project_member_user_ids(db, ctx.project_id)
+        data["custom_fields"] = validate_custom_fields(
+            tpl.scalar_one().fields,
+            data["custom_fields"],
+            project_id=ctx.project_id,
+            project_member_ids=member_ids,
+        )
+    for k, v in data.items():
+        setattr(bug, k, v)
+    await db.flush()
+    if req_ids is not None:
+        await set_bug_requirements(db, bug.id, req_ids)
+        await log_bug_activity(
+            db,
+            bug_id=bug.id,
+            actor_id=ctx.user.id,
+            action_type="link_change",
+            summary="更新了关联需求",
+        )
+    if plan_ids is not None:
+        await set_bug_plans(db, bug.id, plan_ids)
+        await log_bug_activity(
+            db,
+            bug_id=bug.id,
+            actor_id=ctx.user.id,
+            action_type="link_change",
+            summary="更新了关联测试计划",
+        )
+    if follower_ids is not None:
+        await set_bug_followers(db, bug.id, follower_ids)
+        await log_bug_activity(
+            db,
+            bug_id=bug.id,
+            actor_id=ctx.user.id,
+            action_type="field_update",
+            summary="更新了跟进人",
+            detail={"field": "followers"},
+        )
+    if "reporter_id" in data:
+        await log_bug_activity(
+            db,
+            bug_id=bug.id,
+            actor_id=ctx.user.id,
+            action_type="field_update",
+            summary="修改了提出人",
+            detail={"field": "reporter_id"},
+        )
+    if "title" in data and data["title"] != old_title:
+        await log_bug_activity(
+            db,
+            bug_id=bug.id,
+            actor_id=ctx.user.id,
+            action_type="field_update",
+            summary="修改了标题",
+            detail={"field": "title"},
+        )
+    if "description" in data:
+        await log_bug_activity(
+            db,
+            bug_id=bug.id,
+            actor_id=ctx.user.id,
+            action_type="field_update",
+            summary="修改了描述",
+            detail={"field": "description"},
+        )
+    if "plan_version_id" in data and data["plan_version_id"] != old_plan_version_id:
+        await log_bug_activity(
+            db,
+            bug_id=bug.id,
+            actor_id=ctx.user.id,
+            action_type="field_update",
+            summary="修改了规划迭代",
+            detail={"field": "plan_version_id"},
+        )
+    if "found_version_id" in data and data["found_version_id"] != old_found_version_id:
+        await log_bug_activity(
+            db,
+            bug_id=bug.id,
+            actor_id=ctx.user.id,
+            action_type="field_update",
+            summary="修改了发现版本",
+            detail={"field": "found_version_id"},
+        )
+    if "description" in data or "custom_fields" in data:
+        await cleanup_after_bug_content_change(
+            db, ctx.project_id, bug, old_file_keys, file_keys_from_bug(bug)
+        )
+    if "status_key" in data and data["status_key"] != old_status:
+        mention_count = await notify_bug_status_change(db, bug, old_status, data["status_key"])
+        await _record_status_history(
+            bug, old_status, data["status_key"], ctx.user.id, db, notified=mention_count > 0
+        )
+        if mention_count > 0:
+            await log_bug_activity(
+                db,
+                bug_id=bug.id,
+                actor_id=ctx.user.id,
+                action_type="wecom_notify",
+                summary=f"已发送企微通知（@{mention_count} 人）",
+            )
+    await db.refresh(bug)
+    return await bug_out(bug, db)
+
+
+@router.delete("/{bug_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_bug(
+    bug_id: str,
+    ctx: ProjectContext = Depends(require_project_context_tester),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    await cleanup_after_bug_deleted(db, ctx.project_id, bug)
+    links = await db.execute(select(BugCaseLink).where(BugCaseLink.bug_id == bug_id))
+    for link in links.scalars().all():
+        await db.delete(link)
+    flinks = await db.execute(select(BugFollowerLink).where(BugFollowerLink.bug_id == bug_id))
+    for link in flinks.scalars().all():
+        await db.delete(link)
+    atts = await db.execute(select(BugAttachment).where(BugAttachment.bug_id == bug_id))
+    for a in atts.scalars().all():
+        await db.delete(a)
+    await db.delete(bug)
+
+
+@router.get("/{bug_id}/comments", response_model=list[BugCommentOut])
+async def list_comments(
+    bug_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    result = await db.execute(
+        select(BugComment).where(BugComment.bug_id == bug_id).order_by(BugComment.created_at.asc())
+    )
+    out: list[BugCommentOut] = []
+    for c in result.scalars().all():
+        user = await db.get(User, c.user_id)
+        out.append(
+            BugCommentOut(
+                id=c.id,
+                bug_id=c.bug_id,
+                user_id=c.user_id,
+                body=c.body,
+                created_at=c.created_at,
+                user=UserOut.model_validate(user) if user else None,
+            )
+        )
+    return out
+
+
+@router.post("/{bug_id}/comments", response_model=BugCommentOut, status_code=status.HTTP_201_CREATED)
+async def create_comment(
+    bug_id: str,
+    body: BugCommentCreate,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    comment = BugComment(bug_id=bug_id, user_id=ctx.user.id, body=body.body.strip())
+    db.add(comment)
+    await db.flush()
+    await log_bug_activity(
+        db,
+        bug_id=bug_id,
+        actor_id=ctx.user.id,
+        action_type="comment",
+        summary="发表了评论",
+        detail={"comment_id": comment.id},
+    )
+    await db.refresh(comment)
+    user = await db.get(User, ctx.user.id)
+    return BugCommentOut(
+        id=comment.id,
+        bug_id=comment.bug_id,
+        user_id=comment.user_id,
+        body=comment.body,
+        created_at=comment.created_at,
+        user=UserOut.model_validate(user) if user else None,
+    )
+
+
+@router.get("/{bug_id}/activities", response_model=list[BugActivityOut])
+async def list_activities(
+    bug_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    items = await list_bug_activities_merged(db, bug_id, project_id=bug.project_id)
+    return [BugActivityOut.model_validate(i) for i in items]
+
+
+@router.get("/{bug_id}/cases", response_model=list[BugCaseLinkOut])
+async def list_bug_cases(
+    bug_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    result = await db.execute(select(BugCaseLink).where(BugCaseLink.bug_id == bug_id))
+    return [BugCaseLinkOut.model_validate(l) for l in result.scalars().all()]
+
+
+@router.post("/{bug_id}/cases/{case_id}", response_model=BugCaseLinkOut, status_code=status.HTTP_201_CREATED)
+async def link_case(
+    bug_id: str,
+    case_id: str,
+    ctx: ProjectContext = Depends(require_project_context_tester),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    existing = await db.execute(
+        select(BugCaseLink).where(BugCaseLink.bug_id == bug_id, BugCaseLink.case_id == case_id)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Already linked")
+    link = BugCaseLink(bug_id=bug_id, case_id=case_id)
+    db.add(link)
+    await db.flush()
+    return BugCaseLinkOut.model_validate(link)
+
+
+@router.delete("/{bug_id}/cases/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def unlink_case(
+    bug_id: str,
+    case_id: str,
+    ctx: ProjectContext = Depends(require_project_context_tester),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(BugCaseLink).where(BugCaseLink.bug_id == bug_id, BugCaseLink.case_id == case_id)
+    )
+    link = result.scalar_one_or_none()
+    if not link:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
+    await db.delete(link)
+
+
+@router.get("/{bug_id}/attachments", response_model=list[BugAttachmentOut])
+async def list_attachments(
+    bug_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    result = await db.execute(select(BugAttachment).where(BugAttachment.bug_id == bug_id))
+    return [BugAttachmentOut.model_validate(a) for a in result.scalars().all()]
+
+
+@router.post("/{bug_id}/attachments", response_model=BugAttachmentOut, status_code=status.HTTP_201_CREATED)
+async def upload_attachment(
+    bug_id: str,
+    file: UploadFile = File(...),
+    ctx: ProjectContext = Depends(require_project_context_tester),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    data = await file.read()
+    object_key, size = await upload_bytes(
+        db, data, file.filename or "file.bin", file.content_type or "application/octet-stream"
+    )
+    att = BugAttachment(bug_id=bug_id, object_key=object_key, filename=file.filename or "file", size=size)
+    db.add(att)
+    await db.flush()
+    await log_bug_activity(
+        db,
+        bug_id=bug_id,
+        actor_id=ctx.user.id,
+        action_type="attachment",
+        summary=f"上传了附件：{att.filename}",
+        detail={"attachment_id": att.id},
+    )
+    await db.refresh(att)
+    return BugAttachmentOut.model_validate(att)

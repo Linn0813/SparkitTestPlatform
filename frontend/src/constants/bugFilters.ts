@@ -1,0 +1,21 @@
+/** 兼容旧引用，实现已迁至 @/schemas/entityFieldSchema */
+export {
+  FILTER_EMPTY_VALUE,
+  FILTER_EMPTY_OPTION,
+  DEFAULT_BUG_FILTER_VISIBLE_KEYS,
+  templateFilterKey,
+  parseTemplateFilterKey,
+  withEmptyFilterOption,
+  buildFieldCatalog as buildBugFilterFieldCatalog,
+  catalogKeys,
+  sanitizeVisibleFilterKeys,
+  clearBugFilterValue,
+  isEmptyCustomFieldValue,
+  formatTemplateFieldValue as formatCustomFieldCell,
+  templateFieldFilterOptions,
+  templateFieldFilterPlaceholder,
+  filterableTemplateFields as bugListFilterableTemplateFields,
+  listTableTemplateFields as bugListTableTemplateFields,
+  type FieldCatalogItem as BugFilterFieldDef,
+  type FieldCatalogKind as BugFilterFieldKind,
+} from '@/schemas/entityFieldSchema';
