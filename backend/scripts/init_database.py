@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import sys
 from pathlib import Path
@@ -33,9 +34,36 @@ def _parse_mysql_url(url: str) -> tuple[str, str]:
     return server, db_name
 
 
+def _admin_mysql_url(server_url: str) -> str:
+    """建库用管理员连接（Docker 默认 root/root）。可用环境变量 DATABASE_ADMIN_URL 覆盖。"""
+    override = os.environ.get("DATABASE_ADMIN_URL", "").strip()
+    if override:
+        return override
+    if "://" not in server_url:
+        raise SystemExit(f"Invalid server URL: {server_url}")
+    prefix, rest = server_url.split("://", 1)
+    if "@" not in rest:
+        raise SystemExit(f"Invalid server URL (missing @): {server_url}")
+    _, hostpart = rest.split("@", 1)
+    return f"{prefix}://root:root@{hostpart}/mysql"
+
+
 async def ensure_database() -> None:
     server_url, db_name = _parse_mysql_url(settings.database_url)
-    admin_engine = create_async_engine(f"{server_url}/mysql", pool_pre_ping=True)
+
+    probe = create_async_engine(settings.database_url, pool_pre_ping=True)
+    try:
+        async with probe.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        print(f"Database `{db_name}` already reachable.")
+        return
+    except Exception:
+        pass
+    finally:
+        await probe.dispose()
+
+    admin_url = _admin_mysql_url(server_url)
+    admin_engine = create_async_engine(admin_url, pool_pre_ping=True)
     try:
         async with admin_engine.connect() as conn:
             await conn.execute(

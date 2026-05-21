@@ -37,7 +37,9 @@ chmod +x use-local-db.sh   # 首次
 ./dev/init_database.sh
 ```
 
-脚本会：建库（若不存在）→ 建表 → `seed.py`（演示管理员，已存在则跳过）。
+脚本会：探测业务库 → 若不存在则用 **root** 建库（`sparkit` 用户无权访问 `mysql` 系统库）→ 建表 → `seed.py`。
+
+若 `init_database` 报 `Access denied ... to database 'mysql'`，先 `git pull` 最新代码；或在该机执行：`cd backend && source .venv/bin/activate && python scripts/init_database.py`（已修复为先连 `sparkit` 库、建库用 root）。
 
 从云服务器迁数据见 [migrate-remote-to-local.md](migrate-remote-to-local.md)。
 

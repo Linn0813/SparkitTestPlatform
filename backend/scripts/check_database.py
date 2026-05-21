@@ -13,23 +13,26 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import settings
-from scripts.init_database import _parse_mysql_url
+from scripts.init_database import _admin_mysql_url, _parse_mysql_url
 
 
 async def main() -> None:
     server_url, db_name = _parse_mysql_url(settings.database_url)
     print(f"DATABASE_URL 库名: {db_name}")
 
-    admin = create_async_engine(f"{server_url}/mysql", pool_pre_ping=True)
-    async with admin.connect() as conn:
-        rows = await conn.execute(text("SHOW DATABASES"))
-        dbs = [r[0] for r in rows.fetchall()]
-    await admin.dispose()
-    print("服务器上的数据库:", ", ".join(dbs))
-    if db_name in dbs:
-        print(f"✓ 库 `{db_name}` 已存在")
-    else:
-        print(f"✗ 库 `{db_name}` 不存在，请运行: python scripts/init_database.py")
+    try:
+        admin = create_async_engine(_admin_mysql_url(server_url), pool_pre_ping=True)
+        async with admin.connect() as conn:
+            rows = await conn.execute(text("SHOW DATABASES"))
+            dbs = [r[0] for r in rows.fetchall()]
+        await admin.dispose()
+        print("服务器上的数据库:", ", ".join(dbs))
+        if db_name in dbs:
+            print(f"✓ 库 `{db_name}` 已存在")
+        else:
+            print(f"✗ 库 `{db_name}` 不存在，请运行: python scripts/init_database.py")
+    except Exception as exc:
+        print(f"无法以管理员列出库（可忽略，若下方能连上业务库即可）: {exc}")
 
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     async with engine.connect() as conn:
