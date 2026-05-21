@@ -7,11 +7,9 @@ cd "$ROOT/backend"
 if [[ ! -d .venv ]]; then
   echo "Creating venv..."
   python3 -m venv .venv
-  source .venv/bin/activate
-  pip install -r requirements.txt
-else
-  source .venv/bin/activate
 fi
+source .venv/bin/activate
+pip install -q -r requirements.txt
 
 if [[ ! -f .env ]]; then
   cp "$ROOT/.env.example" .env
