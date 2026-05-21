@@ -50,13 +50,12 @@ for i in $(seq 1 30); do
 done
 
 echo "==> 初始化 MinIO bucket: ${BUCKET}"
+# minio/mc 镜像入口为 mc，需用 /bin/sh 执行多条命令
 docker run --rm \
   --add-host=host.docker.internal:host-gateway \
+  --entrypoint /bin/sh \
   minio/mc:latest \
-  sh -ec "
-    mc alias set sparkit http://host.docker.internal:9000 '${MINIO_USER}' '${MINIO_PASS}' &&
-    mc mb --ignore-existing sparkit/${BUCKET}
-  "
+  -c "mc alias set sparkit http://host.docker.internal:9000 '${MINIO_USER}' '${MINIO_PASS}' && mc mb --ignore-existing sparkit/${BUCKET}"
 
 LAN_IP=""
 if [[ "$(uname)" == "Darwin" ]]; then
