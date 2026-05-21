@@ -9,7 +9,11 @@
         <n-button quaternary size="small" :disabled="!hasNext" @click="emit('next')">下一条</n-button>
       </n-space>
       <n-space :size="4" align="center">
-        <n-dropdown v-if="canEdit" trigger="click" :options="moreMenuOptions" @select="onMoreMenu">
+        <template v-if="editMode">
+          <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
+          <n-button size="small" type="primary" :loading="saving" @click="saveCase">保存</n-button>
+        </template>
+        <n-dropdown v-else-if="canEdit" trigger="click" :options="moreMenuOptions" @select="onMoreMenu">
           <n-button quaternary size="small">更多</n-button>
         </n-dropdown>
         <n-button quaternary size="small" @click="emit('close')">关闭</n-button>
@@ -129,10 +133,6 @@
           :fields="templateUiFields"
           :project-id="caseItem.project_id"
         />
-        <n-space>
-          <n-button @click="cancelEdit">取消</n-button>
-          <n-button type="primary" :loading="saving" @click="saveCase">保存</n-button>
-        </n-space>
       </n-form>
     </div>
   </div>

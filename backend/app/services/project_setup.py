@@ -20,8 +20,12 @@ async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
                 ProjectFieldTemplate.scene == scene,
             )
         )
-        if not existing.scalar_one_or_none():
+        tpl = existing.scalar_one_or_none()
+        if not tpl:
             db.add(ProjectFieldTemplate(project_id=project_id, scene=scene, fields=fields))
+        elif scene == TemplateScene.bug and fields and not tpl.fields:
+            tpl.fields = fields
+            await db.flush()
 
     status_result = await db.execute(select(BugStatus).where(BugStatus.project_id == project_id))
     if not status_result.scalars().first():

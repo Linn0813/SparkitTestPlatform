@@ -9,7 +9,11 @@
         <n-button quaternary size="small" :disabled="!hasNext" @click="emit('next')">下一条</n-button>
       </n-space>
       <n-space :size="4" align="center">
-        <template v-if="canEdit && !editMode">
+        <template v-if="editMode">
+          <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
+          <n-button size="small" type="primary" :loading="saving" @click="saveBug">保存</n-button>
+        </template>
+        <template v-else-if="canEdit">
           <n-button quaternary size="small" @click="enterEdit">编辑</n-button>
           <n-button quaternary size="small" type="error" @click="onDelete">删除</n-button>
         </template>
@@ -46,12 +50,6 @@
     <div class="panel-body">
     <template v-if="!editMode">
       <n-descriptions :column="2" label-placement="left" class="field-block">
-        <n-descriptions-item label="提出人">{{ reporterLabel }}</n-descriptions-item>
-        <n-descriptions-item label="跟进人">{{ followersLabel }}</n-descriptions-item>
-        <n-descriptions-item label="规划迭代">{{ planVersionLabel }}</n-descriptions-item>
-        <n-descriptions-item label="发现版本">{{ foundVersionLabel }}</n-descriptions-item>
-        <n-descriptions-item label="关联需求" :span="2">{{ requirementsLabel }}</n-descriptions-item>
-        <n-descriptions-item label="关联测试计划" :span="2">{{ plansLabel }}</n-descriptions-item>
         <n-descriptions-item
           v-for="field in templateUiFields"
           :key="field.id"
@@ -65,6 +63,12 @@
           />
           <template v-else>{{ formatTemplateFieldValue(field, customFields[field.id], templateFieldCtx) }}</template>
         </n-descriptions-item>
+        <n-descriptions-item label="提出人">{{ reporterLabel }}</n-descriptions-item>
+        <n-descriptions-item label="跟进人">{{ followersLabel }}</n-descriptions-item>
+        <n-descriptions-item label="规划迭代">{{ planVersionLabel }}</n-descriptions-item>
+        <n-descriptions-item label="发现版本">{{ foundVersionLabel }}</n-descriptions-item>
+        <n-descriptions-item label="关联需求" :span="2">{{ requirementsLabel }}</n-descriptions-item>
+        <n-descriptions-item label="关联测试计划" :span="2">{{ plansLabel }}</n-descriptions-item>
       </n-descriptions>
       <n-text depth="3" class="section-label">描述</n-text>
       <InlineMarkdownContent
@@ -113,8 +117,6 @@
         v-model="customFields"
         :fields="templateUiFields"
         :project-id="bug.project_id"
-        :show-divider="templateUiFields.length > 0"
-        title="自定义字段"
       />
       <n-form-item label="描述">
         <PasteImageTextarea v-model="editForm.description" :project-id="bug.project_id" />
@@ -144,10 +146,6 @@
           style="width: 100%"
         />
       </n-form-item>
-      <n-space>
-        <n-button @click="cancelEdit">取消</n-button>
-        <n-button type="primary" :loading="saving" @click="saveBug">保存</n-button>
-      </n-space>
     </n-form>
 
     <n-tabs v-if="!editMode" type="line" class="tabs-block">
@@ -236,6 +234,7 @@ import { ensureContextForProject } from '@/composables/useProjectTemplate';
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { usePermissions } from '@/composables/usePermissions';
+import { useContextStore } from '@/stores/context';
 import { mergeCustomFields, validateCustomFields } from '@/constants/fieldTypes';
 import type { BugActivity, BugComment, BugItem, BugStatusDef, Requirement, TestPlan } from '@/types/business';
 import { displayUserLabel } from '@/utils/displayUser';
@@ -274,6 +273,8 @@ const comments = ref<BugComment[]>([]);
 const activities = ref<BugActivity[]>([]);
 const newComment = ref('');
 
+const ctx = useContextStore();
+
 const editForm = ref({
   title: '',
   status_key: '',
@@ -286,9 +287,10 @@ const editForm = ref({
   found_version_id: null as string | null,
 });
 
-const projectIdRef = computed(() => bug.value?.project_id ?? null);
+const schemaProjectId = computed(() => bug.value?.project_id ?? ctx.projectId);
+const projectIdRef = computed(() => bug.value?.project_id ?? ctx.projectId);
 const { options: memberOptions } = useProjectMemberOptions(projectIdRef);
-const fieldSchema = useProjectFieldSchema('bug', projectIdRef);
+const fieldSchema = useProjectFieldSchema('bug', schemaProjectId);
 const templateUiFields = computed(() => fieldSchema.templateFieldsForUi.value);
 
 const canEdit = computed(() => canManageBugs(bug.value?.project_id));

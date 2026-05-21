@@ -175,9 +175,17 @@ export function listTableTemplateFields(scene: EntityScene, fields: TemplateFiel
   return list;
 }
 
-/** 详情/编辑：展示全部可配置模板字段（去重后） */
+/** 详情/编辑：展示全部可配置模板字段（去重后）；缺陷场景将「严重程度」类字段置顶 */
 export function detailTemplateFields(scene: EntityScene, fields: TemplateField[]): TemplateField[] {
-  return dedupeTemplateFields(scene, fields);
+  const list = dedupeTemplateFields(scene, fields);
+  if (scene === 'bug') {
+    const severityIdx = list.findIndex((f) => f.name.includes('严重'));
+    if (severityIdx > 0) {
+      const [severity] = list.splice(severityIdx, 1);
+      return [severity, ...list];
+    }
+  }
+  return list;
 }
 
 export function buildFieldCatalog(scene: EntityScene, templateFields: TemplateField[]): FieldCatalogItem[] {

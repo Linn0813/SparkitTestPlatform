@@ -2,7 +2,16 @@ from __future__ import annotations
 
 DEFAULT_CASE_FIELDS: list = []
 
-DEFAULT_BUG_FIELDS: list = []
+DEFAULT_BUG_FIELDS: list = [
+    {
+        "id": "field_severity",
+        "name": "严重程度",
+        "type": "select",
+        "required": False,
+        "options": ["致命", "严重", "一般", "轻微"],
+        "sort": 0,
+    },
+]
 
 DEFAULT_NOTIFY_ROLES = ["reporter", "followers"]
 

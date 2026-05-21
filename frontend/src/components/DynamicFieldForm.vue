@@ -35,7 +35,7 @@ const props = withDefaults(
   }>(),
   {
     title: '自定义字段',
-    showDivider: true,
+    showDivider: false,
   }
 );
 
