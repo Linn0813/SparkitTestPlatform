@@ -7,7 +7,7 @@
       </n-space>
     </template>
 
-    <BugImportModal v-model:show="showImportModal" @imported="loadBugs" />
+    <BugImportModal v-model:show="showImportModal" @imported="load" />
 
     <SchemaFieldFilters
       :model="filters"

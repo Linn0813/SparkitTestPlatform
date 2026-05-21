@@ -51,12 +51,19 @@
         <n-descriptions-item label="发现版本">{{ foundVersionLabel }}</n-descriptions-item>
         <n-descriptions-item label="关联需求" :span="2">{{ requirementsLabel }}</n-descriptions-item>
         <n-descriptions-item label="关联测试计划" :span="2">{{ plansLabel }}</n-descriptions-item>
-        <SchemaTemplateFieldsView
-          :fields="templateUiFields"
-          :values="customFields"
-          :project-id="bug.project_id"
-          :member-label="memberName"
-        />
+        <n-descriptions-item
+          v-for="field in templateUiFields"
+          :key="field.id"
+          :label="field.name"
+          :span="isRichtextType(field.type) ? 2 : 1"
+        >
+          <InlineMarkdownContent
+            v-if="isRichtextType(field.type) && richTextHasContent(customFields[field.id])"
+            :text="richTextPlain(customFields[field.id])"
+            :project-id="bug.project_id"
+          />
+          <template v-else>{{ formatTemplateFieldValue(field, customFields[field.id], templateFieldCtx) }}</template>
+        </n-descriptions-item>
       </n-descriptions>
       <n-text depth="3" class="section-label">描述</n-text>
       <InlineMarkdownContent
@@ -215,10 +222,15 @@ import { listPlans } from '@/api/plans';
 import { listRequirements } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
-import SchemaTemplateFieldsView from '@/components/SchemaTemplateFieldsView.vue';
 import InlineMarkdownContent from '@/components/InlineMarkdownContent.vue';
 import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
 import VersionSelect from '@/components/VersionSelect.vue';
+import {
+  formatTemplateFieldValue,
+  isRichtextType,
+  richTextHasContent,
+  richTextPlain,
+} from '@/schemas/entityFieldSchema';
 import { ensureContextForProject } from '@/composables/useProjectTemplate';
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
@@ -346,6 +358,8 @@ function memberName(userId: string | null | undefined): string {
   if (!userId) return '—';
   return memberOptions.value.find((o) => o.value === userId)?.label ?? userId;
 }
+
+const templateFieldCtx = computed(() => ({ memberLabel: memberName }));
 
 function commentAuthorLabel(c: BugComment): string {
   return displayUserLabel(c.user, c.user_id, memberName(c.user_id));

@@ -27,11 +27,19 @@
           <n-descriptions-item label="模块">{{ moduleLabel }}</n-descriptions-item>
           <n-descriptions-item label="优先级">{{ caseItem.priority }}</n-descriptions-item>
           <n-descriptions-item label="关联需求" :span="2">{{ requirementsLabel }}</n-descriptions-item>
-          <SchemaTemplateFieldsView
-            :fields="templateUiFields"
-            :values="customFields"
-            :project-id="caseItem.project_id"
-          />
+          <n-descriptions-item
+            v-for="field in templateUiFields"
+            :key="field.id"
+            :label="field.name"
+            :span="isRichtextType(field.type) ? 2 : 1"
+          >
+            <InlineMarkdownContent
+              v-if="isRichtextType(field.type) && richTextHasContent(customFields[field.id])"
+              :text="richTextPlain(customFields[field.id])"
+              :project-id="caseItem.project_id"
+            />
+            <template v-else>{{ formatTemplateFieldValue(field, customFields[field.id]) }}</template>
+          </n-descriptions-item>
         </n-descriptions>
         <n-text depth="3" class="section-label">前置条件</n-text>
         <InlineMarkdownContent
@@ -156,7 +164,12 @@ import { PLAN_RESULT_OPTIONS } from '@/constants/planStatus';
 import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
 import InlineMarkdownContent from '@/components/InlineMarkdownContent.vue';
 import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
-import SchemaTemplateFieldsView from '@/components/SchemaTemplateFieldsView.vue';
+import {
+  formatTemplateFieldValue,
+  isRichtextType,
+  richTextHasContent,
+  richTextPlain,
+} from '@/schemas/entityFieldSchema';
 import { useCaseModules } from '@/composables/useCaseModules';
 import { ensureContextForProject } from '@/composables/useProjectTemplate';
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
