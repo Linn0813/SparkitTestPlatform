@@ -52,29 +52,24 @@
 
     <n-tabs v-model:value="activeTab" type="line">
       <n-tab-pane name="cases" tab="计划用例">
-        <n-card size="small" :bordered="false" content-style="padding: 0">
-          <template #header-extra>
-            <n-space align="center">
-              <n-select
-                v-model:value="filterResult"
-                :options="resultFilterOptions"
-                clearable
-                placeholder="按结果筛选"
-                size="small"
-                style="width: 140px"
-              />
-              <n-button :disabled="isArchived" @click="openAddCases">关联用例</n-button>
-            </n-space>
-          </template>
-          <n-data-table
-            :columns="columns"
-            :data="displayedPlanCases"
-            :loading="loading"
-            :row-key="(row: PlanCase) => row.id"
-            :row-props="planCaseRowProps"
-            style="margin-top: 8px"
+        <n-space align="center" justify="end" style="margin-bottom: 8px">
+          <n-select
+            v-model:value="filterResult"
+            :options="resultFilterOptions"
+            clearable
+            placeholder="按结果筛选"
+            size="small"
+            style="width: 140px"
           />
-        </n-card>
+          <n-button :disabled="isArchived || !canManagePlan" @click="openAddCases">关联用例</n-button>
+        </n-space>
+        <n-data-table
+          :columns="columns"
+          :data="displayedPlanCases"
+          :loading="loading"
+          :row-key="(row: PlanCase) => row.id"
+          :row-props="planCaseRowProps"
+        />
       </n-tab-pane>
       <n-tab-pane name="bugs" tab="相关缺陷">
         <n-empty
