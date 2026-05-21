@@ -17,13 +17,15 @@ from app.models.project import ProjectMember
 from app.models.requirement import Requirement
 from app.models.template import ProjectFieldTemplate, TemplateScene
 from app.models.user import User
+from app.services.case_module_paths import load_project_modules
+from app.services.case_module_resolve import ImportModuleResolver
 from app.services.field_validator import load_project_member_user_ids, validate_custom_fields
 from app.services.links import set_case_requirements, validate_requirement_ids
 from app.services.template_fields import RESERVED_FIELD_NAMES_BY_SCENE
 
-# 与前端 constants/systemFields.ts 中 SYSTEM_CASE_FIELDS 顺序一致（模块列仅作占位，导入以页面所选为准）
+# 与前端 constants/systemFields.ts 中 SYSTEM_CASE_FIELDS 顺序一致
 CASE_SYSTEM_IMPORT_COLUMNS: list[tuple[str, Optional[str]]] = [
-    ("模块", None),
+    ("模块", "module_path"),
     ("用例标题", "title"),
     ("优先级", "priority"),
     ("前置条件", "precondition"),
@@ -53,12 +55,6 @@ SKIP_FIELD_TYPES = frozenset({"attachment", "requirement_link", "plan_link", "ve
 TAG_SPLIT = re.compile(r"[,，;；\n]+")
 MULTI_SPLIT = re.compile(r"[,，;；\n]+")
 MEMBER_MULTI_SPLIT = re.compile(r"[,，;；\n]+")
-
-TEMPLATE_INSTRUCTION = (
-    "填写说明：第2行为表头，第3行为示例（导入时会自动跳过）。"
-    "「模块」列无需填写，以导入弹窗所选模块为准。修改项目用例字段后请重新下载模板。"
-)
-
 
 @dataclass
 class ImportColumn:
@@ -186,6 +182,41 @@ def build_import_columns(fields_schema: list) -> list[ImportColumn]:
     return cols
 
 
+def _build_requirement_lookups(
+    rows: list[Requirement],
+) -> tuple[dict[str, str], dict[str, str | None]]:
+    by_num = {str(r.num): r.id for r in rows}
+    by_title: dict[str, str | None] = {}
+    for r in rows:
+        title = r.title.strip()
+        if not title:
+            continue
+        if title in by_title:
+            by_title[title] = None
+        else:
+            by_title[title] = r.id
+    return by_num, by_title
+
+
+def _resolve_requirement_token(
+    token: str,
+    *,
+    by_num: dict[str, str],
+    by_title: dict[str, str | None],
+) -> tuple[str | None, Optional[str]]:
+    if token.isdigit():
+        rid = by_num.get(token)
+        if not rid:
+            return None, f"未找到需求编号 {token}"
+        return rid, None
+    rid = by_title.get(token)
+    if rid is None and token in by_title:
+        return None, f"需求标题「{token}」不唯一，请使用需求编号"
+    if rid:
+        return rid, None
+    return None, f"未找到需求「{token}」，请填写需求标题或编号（如 1）"
+
+
 async def _parse_requirement_ids_cell(
     db: AsyncSession, project_id: str, raw: str
 ) -> tuple[list[str], Optional[str]]:
@@ -193,17 +224,15 @@ async def _parse_requirement_ids_cell(
         return [], None
     result = await db.execute(select(Requirement).where(Requirement.project_id == project_id))
     rows = list(result.scalars().all())
-    by_num = {str(r.num): r.id for r in rows}
+    by_num, by_title = _build_requirement_lookups(rows)
     ids: list[str] = []
     for part in [p.strip() for p in TAG_SPLIT.split(raw) if p.strip()]:
         token = part.lstrip("#").strip()
-        if token.isdigit():
-            rid = by_num.get(token)
-            if not rid:
-                return [], f"未找到需求编号 {token}"
+        rid, err = _resolve_requirement_token(token, by_num=by_num, by_title=by_title)
+        if err:
+            return [], err
+        if rid:
             ids.append(rid)
-            continue
-        return [], f"关联需求格式无效「{part}」，请填写需求编号（如 1），多个用逗号分隔"
     return ids, None
 
 
@@ -330,7 +359,8 @@ def _system_example_value(system_key: str) -> str:
         "precondition": "前置条件示例",
         "step_text": "步骤示例",
         "expected_result": "预期结果示例",
-        "requirement_ids": "1,2",
+        "requirement_ids": "示例需求标题",
+        "module_path": "父模块-子模块",
     }
     return examples.get(system_key, "")
 
@@ -364,25 +394,10 @@ def generate_template_workbook(columns: list[ImportColumn]) -> bytes:
     ws = wb.active
     ws.title = "用例导入"
     headers = expected_headers(columns)
-
-    ws.append([TEMPLATE_INSTRUCTION] + [""] * (max(len(headers) - 1, 0)))
     ws.append(headers)
-    example: list[Any] = []
-    for col in columns:
-        if col.kind == "system":
-            if col.system_key:
-                example.append(_system_example_value(col.system_key))
-            else:
-                example.append("")
-            continue
-        if col.kind == "custom" and col.field:
-            example.append(_custom_example_value(col.field))
-        else:
-            example.append("")
-    ws.append(example)
 
     header_font = Font(bold=True)
-    for cell in ws[2]:
+    for cell in ws[1]:
         cell.font = header_font
 
     buf = io.BytesIO()
@@ -403,14 +418,16 @@ def _header_mismatch_detail(file_headers: list[str], expected: list[str]) -> str
 async def parse_import_workbook(
     content: bytes,
     *,
-    module_id: str,
     project_id: str,
     user_id: str,
     db: AsyncSession,
 ) -> CaseImportResult:
-    mod = await db.get(CaseModule, module_id)
-    if not mod or mod.project_id != project_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid module")
+    project_modules = await load_project_modules(db, project_id)
+    module_resolver = ImportModuleResolver(
+        modules=list(project_modules),
+        project_id=project_id,
+        db=db,
+    )
 
     fields_schema = await _load_fields_schema(db, project_id)
     columns = build_import_columns(fields_schema)
@@ -457,6 +474,7 @@ async def parse_import_workbook(
             continue
 
         title = ""
+        module_path_raw = ""
         priority = CasePriority.P2
         precondition: Optional[str] = None
         step_text: Optional[str] = None
@@ -471,7 +489,9 @@ async def parse_import_workbook(
             if col.kind == "system":
                 if not col.system_key:
                     continue
-                if col.system_key == "title":
+                if col.system_key == "module_path":
+                    module_path_raw = val
+                elif col.system_key == "title":
                     title = val
                     if not title:
                         row_error = "用例标题不能为空"
@@ -515,6 +535,14 @@ async def parse_import_workbook(
             errors.append(CaseImportError(row=row_idx, message="用例标题不能为空"))
             continue
 
+        target_module_id, mod_err = await module_resolver.resolve(module_path_raw)
+        if mod_err:
+            errors.append(CaseImportError(row=row_idx, message=mod_err))
+            continue
+        if not target_module_id:
+            errors.append(CaseImportError(row=row_idx, message="无法解析模块"))
+            continue
+
         for field in _sort_template_fields(fields_schema):
             ftype = field.get("type") or "text"
             if ftype in SKIP_FIELD_TYPES:
@@ -553,7 +581,7 @@ async def parse_import_workbook(
 
         case = TestCase(
             project_id=project_id,
-            module_id=module_id,
+            module_id=target_module_id,
             title=title[:512],
             priority=priority,
             precondition=precondition,

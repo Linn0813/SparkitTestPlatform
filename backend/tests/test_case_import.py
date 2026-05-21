@@ -5,10 +5,40 @@ from app.services.case_import import (
     build_import_columns,
     expected_headers,
     generate_template_workbook,
+    _build_requirement_lookups,
     _find_header_row_index,
     _headers_match,
     _normalize_file_headers,
+    _resolve_requirement_token,
 )
+from app.models.requirement import Requirement
+
+
+def test_resolve_requirement_by_num_and_title():
+    rows = [
+        Requirement(project_id="p", num=1, title="Avatar-v1.0", created_by="u"),
+        Requirement(project_id="p", num=2, title="登录", created_by="u"),
+    ]
+    rows[0].id = "r1"
+    rows[1].id = "r2"
+    by_num, by_title = _build_requirement_lookups(rows)
+
+    rid, err = _resolve_requirement_token("1", by_num=by_num, by_title=by_title)
+    assert err is None and rid == "r1"
+
+    rid, err = _resolve_requirement_token("Avatar-v1.0", by_num=by_num, by_title=by_title)
+    assert err is None and rid == "r1"
+
+    dup = Requirement(project_id="p", num=3, title="重复", created_by="u")
+    dup.id = "r3"
+    dup2 = Requirement(project_id="p", num=4, title="重复", created_by="u")
+    dup2.id = "r4"
+    _, by_dup = _build_requirement_lookups([*rows, dup, dup2])
+    rid, err = _resolve_requirement_token("重复", by_num=by_num, by_title=by_dup)
+    assert rid is None and "不唯一" in (err or "")
+
+    rid, err = _resolve_requirement_token("不存在", by_num=by_num, by_title=by_title)
+    assert rid is None and "未找到需求" in (err or "")
 
 
 def test_build_import_columns_includes_module_and_custom():
@@ -28,14 +58,14 @@ def test_header_aliases_and_row_detection():
     expected = expected_headers(build_import_columns([]))
     alias_row = list(expected)
     alias_row[1] = "标题"
-    rows = [("填写说明",), tuple(alias_row)]
+    rows = [tuple(alias_row)]
     idx = _find_header_row_index(rows, expected)
-    assert idx == 1
+    assert idx == 0
     assert _headers_match(_normalize_file_headers(alias_row), expected)
     assert HEADER_ALIASES["标题"] == "用例标题"
 
 
-def test_generate_template_workbook_has_instruction_and_header():
+def test_generate_template_workbook_header_only():
     cols = build_import_columns(
         [{"id": "remark", "name": "备注", "type": "text", "required": False, "options": [], "sort": 0}]
     )
@@ -47,6 +77,7 @@ def test_generate_template_workbook_has_instruction_and_header():
     wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
-    assert "填写说明" in str(rows[0][0] or "")
-    assert list(rows[1])[:3] == ["模块", "用例标题", "优先级"]
-    assert rows[2][1] == "示例用例标题"
+    assert len(rows) == 1
+    assert list(rows[0])[:3] == ["模块", "用例标题", "优先级"]
+    assert "备注" in rows[0]
+

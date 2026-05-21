@@ -2,6 +2,27 @@
 
 应用**仅依赖 MySQL**（附件与图片也存库）。
 
+## 在自己电脑开发、连部署机数据库
+
+部署机（Mac mini）上保持 MySQL 运行：`./start.sh`（只需在部署机执行一次）。
+
+在你**开发机**上：
+
+1. 查部署机局域网 IP（在 Mac mini 上）：`ipconfig getifaddr en0`
+2. 编辑 `backend/.env`：
+
+```env
+DATABASE_URL=mysql+aiomysql://sparkit:sparkit@<部署机IP>:3307/sparkit
+```
+
+3. **不要**在开发机执行 `dev/start.sh`（除非你想用本机独立库）
+4. 验证：`cd backend && source .venv/bin/activate && python scripts/check_database.py`
+5. 本机启动：`./dev/run-backend.sh` + `frontend` 里 `npm run dev`
+
+部署机防火墙需允许 **3307** 入站（仅内网）。后端、前端进程在开发机跑，数据在部署机 MySQL。
+
+---
+
 ## 数据库：开发与部署共用
 
 在 macOS 上用 Docker 跑 MySQL，**开发环境 `backend/.env` 与部署环境使用同一个 `DATABASE_URL`**，避免两套库数据不一致。

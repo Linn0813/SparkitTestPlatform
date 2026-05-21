@@ -78,6 +78,14 @@ cd dev && ./stop.sh
 
 部署到本机其它进程（如 systemd 跑 uvicorn）时，同样使用上述 `DATABASE_URL`，保证与本地 `run-backend.sh` 访问同一库。
 
+### 在自己电脑开发、数据库在另一台 Mac 上
+
+`backend/.env` 使用部署机 IP，例如：
+
+`DATABASE_URL=mysql+aiomysql://sparkit:sparkit@172.19.3.69:3307/sparkit`
+
+详见 [dev/README.md](dev/README.md)「在自己电脑开发、连部署机数据库」。
+
 ## 性能
 
 MySQL 与后端同在 Mac 本机时，接口延迟远低于公网远程库。若仍慢，检查 `DATABASE_URL` 是否误指向外网 IP。连接池说明见 `GET /health` 的 `db_pool` 字段。
@@ -101,3 +109,7 @@ SparkitTestPlatform/
 ```
 
 详细说明见 [dev/README.md](dev/README.md)。
+
+cd /Users/linnlingling/SparkitTestPlatform
+./dev/run-backend.sh          # 终端 1，读 172.19.3.69 的库
+cd frontend && npm run dev 

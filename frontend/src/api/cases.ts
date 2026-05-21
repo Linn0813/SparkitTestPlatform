@@ -80,9 +80,8 @@ export async function downloadCaseImportTemplate() {
   window.URL.revokeObjectURL(url);
 }
 
-export function importCases(moduleId: string, file: File) {
+export function importCases(file: File) {
   const form = new FormData();
-  form.append('module_id', moduleId);
   form.append('file', file);
   return http.post<CaseImportResult>('/cases/import', form, {
     headers: { 'Content-Type': 'multipart/form-data' },

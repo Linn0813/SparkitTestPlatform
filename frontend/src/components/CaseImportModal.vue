@@ -7,19 +7,19 @@
     @update:show="(v) => emit('update:show', v)"
   >
     <n-alert type="info" :bordered="false" style="margin-bottom: 12px">
-      用例将导入到当前选中的模块。「模块」列可留空（以左侧所选模块为准）。请使用下载的模板：第 2 行为表头、第
-      3 行为示例（会自动跳过），从第 4 行起填写。列顺序为系统字段 + 项目「用例字段」中的可配置字段；修改字段后请重新下载。
+      在 Excel「模块」列填写完整路径（如「父模块-子模块」，也支持 / 分隔），不存在时将自动创建；留空则归入「未分类」。「关联需求」列填写需求标题或编号（如
+      1），多个用逗号分隔。下载的模板仅含表头，从第 2 行起填写数据。
     </n-alert>
     <n-space vertical :size="12">
       <n-button block @click="onDownloadTemplate" :loading="downloading">下载导入模板 (.xlsx)</n-button>
       <n-upload
         :max="1"
         accept=".xlsx"
-        :disabled="!moduleId || importing"
+        :disabled="importing"
         :custom-request="onUpload"
         @remove="clearFile"
       >
-        <n-button block :disabled="!moduleId">选择 Excel 文件</n-button>
+        <n-button block :disabled="importing">选择 Excel 文件</n-button>
       </n-upload>
     </n-space>
 
@@ -66,7 +66,6 @@ import {
 
 const props = defineProps<{
   show: boolean;
-  moduleId: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -107,14 +106,14 @@ async function onDownloadTemplate() {
 }
 
 async function onUpload({ file, onFinish, onError }: UploadCustomRequestOptions) {
-  if (!props.moduleId || !file.file) {
+  if (!file.file) {
     onError();
     return;
   }
   importing.value = true;
   result.value = null;
   try {
-    const { data } = await importCases(props.moduleId, file.file as File);
+    const { data } = await importCases(file.file as File);
     result.value = data;
     if (data.created > 0) {
       message.success(`已导入 ${data.created} 条用例`);

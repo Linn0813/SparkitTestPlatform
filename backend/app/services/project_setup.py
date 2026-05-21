@@ -3,7 +3,6 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.case import CaseModule
 from app.models.template import BugStatus, ProjectFieldTemplate, ProjectIntegration, TemplateScene
 from app.models.wecom_rule import BugWecomNotifyRule
 from app.services.defaults import DEFAULT_BUG_FIELDS, DEFAULT_BUG_STATUSES, DEFAULT_CASE_FIELDS
@@ -62,7 +61,3 @@ async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
                 enabled=True,
             )
         )
-
-    mod_result = await db.execute(select(CaseModule).where(CaseModule.project_id == project_id))
-    if not mod_result.scalars().first():
-        db.add(CaseModule(project_id=project_id, name="默认模块", parent_id=None, sort=0))

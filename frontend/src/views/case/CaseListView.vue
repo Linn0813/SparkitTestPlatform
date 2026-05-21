@@ -2,7 +2,7 @@
   <n-card title="测试用例">
     <template #header-extra>
       <n-space>
-        <n-button v-if="canCases" :disabled="!filters.module_id" @click="showImportModal = true">导入</n-button>
+        <n-button v-if="canCases" @click="showImportModal = true">导入</n-button>
         <n-button v-if="canCases" type="primary" @click="openCreateDrawer">新建用例</n-button>
       </n-space>
     </template>
@@ -32,11 +32,7 @@
     />
   </n-card>
 
-  <CaseImportModal
-    v-model:show="showImportModal"
-    :module-id="filters.module_id"
-    @imported="loadCases"
-  />
+  <CaseImportModal v-model:show="showImportModal" @imported="onCasesImported" />
 
   <n-drawer
     v-model:show="detailDrawerVisible"
@@ -450,6 +446,11 @@ async function onCaseDeleted() {
 }
 
 async function onCaseUpdated() {
+  await loadCases();
+}
+
+async function onCasesImported() {
+  await loadModules();
   await loadCases();
 }
 

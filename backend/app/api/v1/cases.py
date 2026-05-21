@@ -200,7 +200,6 @@ async def download_case_import_template(
 
 @router.post("/import", response_model=CaseImportResultOut)
 async def import_cases(
-    module_id: str = Form(...),
     file: UploadFile = File(...),
     ctx: ProjectContext = Depends(require_project_context_tester),
     db: AsyncSession = Depends(get_db),
@@ -214,7 +213,6 @@ async def import_cases(
     await ensure_project_defaults(ctx.project_id, db)
     result = await parse_import_workbook(
         content,
-        module_id=module_id,
         project_id=ctx.project_id,
         user_id=ctx.user.id,
         db=db,
