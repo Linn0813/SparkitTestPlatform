@@ -39,5 +39,6 @@ class PasswordChange(BaseModel):
 
 
 class UserProfileUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     wecom_mobile: Optional[str] = Field(default=None, max_length=32)
     wecom_userid: Optional[str] = Field(default=None, max_length=128)

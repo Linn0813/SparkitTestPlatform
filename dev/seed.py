@@ -17,7 +17,7 @@ from app.services.project_setup import ensure_project_defaults
 
 ADMIN_EMAIL = "admin@example.com"
 ADMIN_PASSWORD = "Admin123!"
-ADMIN_NAME = "系统管理员"
+ADMIN_NAME = "演示管理员"
 PROJECT_NAME = "演示项目"
 
 

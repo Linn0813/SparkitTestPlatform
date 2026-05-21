@@ -22,6 +22,10 @@ export function updateUser(
   return http.patch<User>(`/users/${id}`, data);
 }
 
-export function updateMyProfile(data: { wecom_mobile?: string | null; wecom_userid?: string | null }) {
+export function updateMyProfile(data: {
+  name?: string;
+  wecom_mobile?: string | null;
+  wecom_userid?: string | null;
+}) {
   return http.patch<User>('/users/me', data);
 }

@@ -1,8 +1,17 @@
 <template>
   <n-card title="个人设置">
+    <n-form label-placement="left" label-width="100" style="max-width: 480px; margin-bottom: 24px">
+      <n-form-item label="姓名">
+        <n-input v-model:value="profileForm.name" placeholder="在评论、提出人中显示" />
+      </n-form-item>
+      <n-form-item label="邮箱">
+        <n-input :value="auth.user?.email" disabled />
+      </n-form-item>
+      <n-form-item>
+        <n-button type="primary" :loading="profileSaving" @click="onSaveProfile">保存姓名</n-button>
+      </n-form-item>
+    </n-form>
     <n-descriptions bordered :column="1" style="margin-bottom: 24px">
-      <n-descriptions-item label="姓名">{{ auth.user?.name }}</n-descriptions-item>
-      <n-descriptions-item label="邮箱">{{ auth.user?.email }}</n-descriptions-item>
       <n-descriptions-item label="系统管理员">
         {{ auth.user?.is_system_admin ? '是' : '否' }}
       </n-descriptions-item>
@@ -39,12 +48,42 @@ import {
   useMessage,
 } from 'naive-ui';
 import { changePassword } from '@/api/auth';
+import { updateMyProfile } from '@/api/users';
 import { useAuthStore } from '@/stores/auth';
+import { watch } from 'vue';
 
 const auth = useAuthStore();
 const message = useMessage();
 const saving = ref(false);
+const profileSaving = ref(false);
+const profileForm = ref({ name: '' });
 const pwdForm = ref({ old_password: '', new_password: '', confirm: '' });
+
+watch(
+  () => auth.user?.name,
+  (name) => {
+    profileForm.value.name = name ?? '';
+  },
+  { immediate: true }
+);
+
+async function onSaveProfile() {
+  const name = profileForm.value.name.trim();
+  if (!name) {
+    message.warning('请填写姓名');
+    return;
+  }
+  profileSaving.value = true;
+  try {
+    await updateMyProfile({ name });
+    await auth.loadMe();
+    message.success('姓名已更新');
+  } catch {
+    message.error('保存失败');
+  } finally {
+    profileSaving.value = false;
+  }
+}
 
 async function onChangePassword() {
   if (!pwdForm.value.old_password || !pwdForm.value.new_password) {

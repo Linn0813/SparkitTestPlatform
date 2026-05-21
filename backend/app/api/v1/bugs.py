@@ -28,6 +28,7 @@ from app.models.bug import (
 from app.models.requirement import BugPlanLink, BugRequirementLink
 from app.models.template import BugStatus, ProjectFieldTemplate, TemplateScene
 from app.models.user import User
+from app.schemas.user import UserOut
 from app.schemas.bug import (
     BugActivityOut,
     BugAttachmentOut,
@@ -487,9 +488,15 @@ async def list_comments(
     result = await db.execute(
         select(BugComment).where(BugComment.bug_id == bug_id).order_by(BugComment.created_at.asc())
     )
+    comments = list(result.scalars().all())
+    user_ids = {c.user_id for c in comments}
+    user_map: dict[str, User] = {}
+    if user_ids:
+        users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        user_map = {u.id: u for u in users_result.scalars().all()}
     out: list[BugCommentOut] = []
-    for c in result.scalars().all():
-        user = await db.get(User, c.user_id)
+    for c in comments:
+        user = user_map.get(c.user_id)
         out.append(
             BugCommentOut(
                 id=c.id,

@@ -146,7 +146,7 @@
       <n-tab-pane name="comments" tab="评论">
         <n-space vertical style="width: 100%">
           <div v-for="c in comments" :key="c.id" class="comment-item">
-            <n-text strong>{{ c.user?.name ?? '用户' }}</n-text>
+            <n-text strong>{{ commentAuthorLabel(c) }}</n-text>
             <n-text depth="3" style="font-size: 12px; margin-left: 8px">{{ formatTime(c.created_at) }}</n-text>
             <InlineMarkdownContent :text="c.body" :project-id="bug.project_id" class="comment-body" />
           </div>
@@ -164,7 +164,7 @@
       <n-tab-pane name="activities" tab="操作记录">
         <n-timeline style="margin-top: 8px">
           <n-timeline-item v-for="a in activities" :key="`${a.source}-${a.id}`" :time="formatTime(a.created_at)">
-            <n-text strong>{{ a.actor?.name ?? '系统' }}</n-text>
+            <n-text strong>{{ activityActorLabel(a) }}</n-text>
             <span style="margin-left: 8px">{{ formatActivitySummary(a) }}</span>
           </n-timeline-item>
         </n-timeline>
@@ -225,6 +225,7 @@ import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { usePermissions } from '@/composables/usePermissions';
 import { mergeCustomFields, validateCustomFields } from '@/constants/fieldTypes';
 import type { BugActivity, BugComment, BugItem, BugStatusDef, Requirement, TestPlan } from '@/types/business';
+import { displayUserLabel } from '@/utils/displayUser';
 import { formatNumWithTitle } from '@/utils/entityNum';
 
 const props = defineProps<{
@@ -346,7 +347,18 @@ function memberName(userId: string | null | undefined): string {
   return memberOptions.value.find((o) => o.value === userId)?.label ?? userId;
 }
 
-const reporterLabel = computed(() => bug.value?.reporter?.name ?? memberName(bug.value?.reporter_id));
+function commentAuthorLabel(c: BugComment): string {
+  return displayUserLabel(c.user, c.user_id, memberName(c.user_id));
+}
+
+function activityActorLabel(a: BugActivity): string {
+  const id = a.actor?.id;
+  return displayUserLabel(a.actor, id, id ? memberName(id) : null) || '系统';
+}
+
+const reporterLabel = computed(() =>
+  displayUserLabel(bug.value?.reporter, bug.value?.reporter_id, memberName(bug.value?.reporter_id))
+);
 
 const followersLabel = computed(() => {
   if (!bug.value) return '—';

@@ -56,6 +56,10 @@ async def update_my_profile(
     db: AsyncSession = Depends(get_db),
 ):
     data = body.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] is not None:
+        data["name"] = str(data["name"]).strip()
+        if not data["name"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Name cannot be empty")
     if "wecom_mobile" in data and data["wecom_mobile"] is not None:
         mobile = str(data["wecom_mobile"]).strip()
         data["wecom_mobile"] = mobile or None
