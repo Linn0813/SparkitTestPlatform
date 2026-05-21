@@ -36,3 +36,13 @@ export function replaceSparkitImages(text: string, urlByKey: Record<string, stri
     return `![${alt}](${url})`;
   });
 }
+
+const INLINE_IMAGE_URL_RE = /\/api\/v1\/files\/raw\?[^)]+|https?:\/\/[^)]+/;
+
+/** 将已 escape 的 Markdown 图片语法转为 img 标签（支持相对 API 路径与绝对 URL） */
+export function renderInlineImageHtml(escapedText: string): string {
+  return escapedText.replace(
+    new RegExp(`!\\[([^\\]]*)\\]\\((${INLINE_IMAGE_URL_RE.source})\\)`, 'g'),
+    '<img src="$2" alt="$1" class="inline-md-img" loading="lazy" />'
+  );
+}

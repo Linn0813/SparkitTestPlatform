@@ -10,7 +10,7 @@
 import { computed, ref, watch } from 'vue';
 import { NSpin, NText } from 'naive-ui';
 import { getProjectFileUrl } from '@/api/projects';
-import { extractSparkitObjectKeys, replaceSparkitImages } from '@/utils/inlineImage';
+import { extractSparkitObjectKeys, replaceSparkitImages, renderInlineImageHtml } from '@/utils/inlineImage';
 
 const props = defineProps<{
   text?: string | null;
@@ -66,10 +66,7 @@ const html = computed(() => {
   const t = resolvedText.value;
   if (!t) return '';
   const escaped = escapeHtml(t);
-  const withImages = escaped.replace(
-    /!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g,
-    '<img src="$2" alt="$1" class="inline-md-img" loading="lazy" />'
-  );
+  const withImages = renderInlineImageHtml(escaped);
   return withImages.replace(/\n/g, '<br />');
 });
 </script>
