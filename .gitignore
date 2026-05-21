@@ -24,3 +24,5 @@ dist/
 # Logs
 *.log
 dev/logs/
+backend/alembic/versions/001_stored_files_content_longblob.py
+backend/alembic/versions/002_stored_files_drop_content.py

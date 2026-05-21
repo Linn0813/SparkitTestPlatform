@@ -30,6 +30,17 @@
       :row-props="rowProps"
       style="margin-top: 12px"
     />
+
+    <div class="case-list-pagination">
+      <n-pagination
+        v-model:page="page"
+        v-model:page-size="pageSize"
+        :item-count="total"
+        :page-sizes="[10, 20, 50, 100]"
+        show-size-picker
+        show-quick-jumper
+      />
+    </div>
   </n-card>
 
   <CaseImportModal v-model:show="showImportModal" @imported="onCasesImported" />
@@ -128,6 +139,7 @@ import {
   NForm,
   NFormItem,
   NInput,
+  NPagination,
   NSelect,
   NSpace,
   NTooltip,
@@ -166,8 +178,13 @@ const message = useMessage();
 const { modules, moduleOptions, treeData, loadModules } = useCaseModules();
 
 const cases = ref<TestCase[]>([]);
+const total = ref(0);
+const page = ref(1);
+const pageSize = ref(20);
 const requirements = ref<Requirement[]>([]);
 const loading = ref(false);
+const applyingRoute = ref(false);
+const paginationReady = ref(false);
 const detailDrawerVisible = ref(false);
 const createDrawerVisible = ref(false);
 const activeCaseId = ref<string | null>(null);
@@ -343,8 +360,11 @@ const columns = computed<DataTableColumns<TestCase>>(() => [
   },
 ]);
 
-function buildListParams(): ListCasesParams | undefined {
-  const p: ListCasesParams = {};
+function buildListParams(): ListCasesParams {
+  const p: ListCasesParams = {
+    page: page.value,
+    page_size: pageSize.value,
+  };
   if (filters.value.module_id) {
     p.module_id = filters.value.module_id;
     p.include_submodules = filters.value.include_submodules;
@@ -358,7 +378,7 @@ function buildListParams(): ListCasesParams | undefined {
     if (val) custom[fieldId] = val;
   }
   if (Object.keys(custom).length) p.custom_filters = JSON.stringify(custom);
-  return Object.keys(p).length ? p : undefined;
+  return p;
 }
 
 function syncQueryToRoute() {
@@ -375,10 +395,13 @@ function syncQueryToRoute() {
     if (val) q[`cf_${fieldId}`] = val;
   }
   if (activeCaseId.value) q.caseId = activeCaseId.value;
+  if (page.value > 1) q.page = String(page.value);
+  if (pageSize.value !== 20) q.page_size = String(pageSize.value);
   router.replace({ name: 'cases', query: q });
 }
 
 function applyRouteQuery() {
+  applyingRoute.value = true;
   const q = route.query;
   const custom: Record<string, string | null> = {};
   for (const f of fieldSchema.templateFields.value) {
@@ -397,16 +420,24 @@ function applyRouteQuery() {
     },
     fieldSchema.templateFields.value
   );
+  const pageQ = typeof q.page === 'string' ? parseInt(q.page, 10) : NaN;
+  page.value = Number.isFinite(pageQ) && pageQ > 0 ? pageQ : 1;
+  const pageSizeQ = typeof q.page_size === 'string' ? parseInt(q.page_size, 10) : NaN;
+  pageSize.value = Number.isFinite(pageSizeQ) && pageSizeQ > 0 ? pageSizeQ : 20;
+
   const caseId = typeof q.caseId === 'string' && q.caseId ? q.caseId : null;
   if (caseId) {
     activeCaseId.value = caseId;
     detailDrawerVisible.value = true;
   }
+  applyingRoute.value = false;
 }
 
 function applyFilters() {
+  const hadPage = page.value;
+  page.value = 1;
   syncQueryToRoute();
-  loadCases();
+  if (hadPage === 1) loadCases();
 }
 
 function resetFilters() {
@@ -468,13 +499,21 @@ async function loadMeta() {
 async function loadCases() {
   if (!ctx.projectId) {
     cases.value = [];
+    total.value = 0;
     return;
   }
   loading.value = true;
   try {
     const { data } = await listCases(buildListParams());
-    cases.value = data;
-    if (activeCaseId.value && !data.some((c) => c.id === activeCaseId.value)) {
+    total.value = data.total;
+    const maxPage = Math.max(1, Math.ceil(data.total / data.page_size) || 1);
+    if (page.value > maxPage) {
+      page.value = maxPage;
+      return;
+    }
+    cases.value = data.items;
+    if (data.page_size !== pageSize.value) pageSize.value = data.page_size;
+    if (activeCaseId.value && !data.items.some((c) => c.id === activeCaseId.value)) {
       closeDetailDrawer();
     }
   } finally {
@@ -526,9 +565,10 @@ async function saveNewCase() {
 }
 
 onMounted(async () => {
-  applyRouteQuery();
   await loadMeta();
+  applyRouteQuery();
   await loadModules();
+  paginationReady.value = true;
   await loadCases();
 });
 
@@ -540,20 +580,39 @@ watch(
     route.query.priority,
     route.query.q,
     route.query.caseId,
+    route.query.page,
+    route.query.page_size,
     ...fieldSchema.templateFields.value.map((f) => route.query[`cf_${f.id}`]),
   ],
-  () => {
+  async () => {
     applyRouteQuery();
-    loadCases();
+    await loadCases();
   }
 );
 
 watch(() => ctx.projectId, async () => {
-  filters.value = emptyCaseListFilters();
+  filters.value = emptyCaseListFilters(fieldSchema.templateFields.value);
+  page.value = 1;
   closeDetailDrawer();
   await loadMeta();
   await loadModules();
   await loadCases();
+});
+
+watch(pageSize, () => {
+  if (!paginationReady.value || applyingRoute.value) return;
+  if (page.value !== 1) {
+    page.value = 1;
+    return;
+  }
+  syncQueryToRoute();
+  loadCases();
+});
+
+watch(page, () => {
+  if (!paginationReady.value || applyingRoute.value) return;
+  syncQueryToRoute();
+  loadCases();
 });
 </script>
 
@@ -574,5 +633,11 @@ watch(() => ctx.projectId, async () => {
 
 .case-title-link:hover {
   text-decoration: underline;
+}
+
+.case-list-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 </style>

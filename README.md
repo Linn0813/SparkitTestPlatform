@@ -1,6 +1,6 @@
 # SparkitTestPlatform
 
-轻量测试管理平台（Python FastAPI + Vue3），**仅需 MySQL**：业务数据与附件/图片均存入数据库，表结构由 `backend/scripts/init_database.py` 初始化。
+轻量测试管理平台（Python FastAPI + Vue3）：业务数据在 **MySQL**，附件与视频在 **MinIO**（S3 兼容），表结构由 `backend/scripts/init_database.py` 初始化。
 
 ## 功能
 
@@ -9,25 +9,28 @@
 - **需求 / 版本**：需求管理、版本详情（关联需求与规划缺陷）
 - **测试用例**：模块树、步骤表格式 CRUD、导入
 - **测试计划**：关联用例、计划内执行、通过率、相关缺陷
-- **缺陷管理**：跟进人、CRUD、关联需求/计划、附件（存 MySQL）
+- **缺陷管理**：跟进人、CRUD、关联需求/计划、附件（MinIO，支持多视频）
 - **项目设置**：可编辑用例/缺陷字段模板、缺陷状态、企业微信 Webhook 通知
 
 详见 [docs/MVP.md](docs/MVP.md)。
 
-## 快速开始（macOS + Docker MySQL）
+## 快速开始（macOS + Docker MySQL + MinIO）
 
-**开发与部署共用同一数据库**：在 Mac 上用 Docker 跑 MySQL，本地调试后端时也连这个库（`127.0.0.1:3307` / `sparkit`），不要单独再配一套「仅开发用」的远程库。
+**开发与部署共用同一套中间件**：Docker 跑 MySQL（`3307`）与 MinIO（`9000`），`backend/.env` 指向 `127.0.0.1`。
 
-### 1. 准备数据库
+### 1. 准备 MySQL 与 MinIO
 
 安装 [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop/) 后：
 
 ```bash
 cd dev
 chmod +x use-local-db.sh   # 首次
-./use-local-db.sh            # 启动 MySQL + 配置 backend/.env
+./use-local-db.sh            # 启动 MySQL + MinIO + 配置 backend/.env
 ./init_database.sh         # 空库时：建表 + 演示账号
+cd ../backend && source .venv/bin/activate && pip install -r requirements.txt && alembic upgrade head
 ```
+
+MinIO 控制台：http://127.0.0.1:9001（默认 `minioadmin` / `minioadmin`）。若库中曾有 MySQL 内联附件，先执行 `python scripts/migrate_stored_files_to_minio.py` 再跑迁移。
 
 ### 2. 后端
 

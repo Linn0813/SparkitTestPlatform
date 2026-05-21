@@ -1,8 +1,13 @@
 <template>
   <n-card title="缺陷管理">
     <template #header-extra>
-      <n-button v-if="canCreate" type="primary" @click="openCreate">新建缺陷</n-button>
+      <n-space>
+        <n-button v-if="canCreate" @click="showImportModal = true">导入</n-button>
+        <n-button v-if="canCreate" type="primary" @click="openCreate">新建缺陷</n-button>
+      </n-space>
     </template>
+
+    <BugImportModal v-model:show="showImportModal" @imported="loadBugs" />
 
     <SchemaFieldFilters
       :model="filters"
@@ -26,6 +31,17 @@
       :row-props="rowProps"
       style="margin-top: 12px"
     />
+
+    <div class="bug-list-pagination">
+      <n-pagination
+        v-model:page="page"
+        v-model:page-size="pageSize"
+        :item-count="total"
+        :page-sizes="[10, 20, 50, 100]"
+        show-size-picker
+        show-quick-jumper
+      />
+    </div>
 
     <n-drawer
       v-model:show="drawerVisible"
@@ -128,6 +144,7 @@ import { useRoute, useRouter } from 'vue-router';
 import {
   NButton,
   NCard,
+  NSpace,
   NDataTable,
   NDrawer,
   NDrawerContent,
@@ -136,6 +153,7 @@ import {
   NInput,
   NModal,
   NSelect,
+  NPagination,
   useMessage,
   type DataTableColumns,
 } from 'naive-ui';
@@ -144,6 +162,7 @@ import { listPlans } from '@/api/plans';
 import { listRequirements } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
+import BugImportModal from '@/components/BugImportModal.vue';
 import SchemaFieldFilters from '@/components/SchemaFieldFilters.vue';
 import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
 import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
@@ -173,13 +192,19 @@ const canCreate = computed(() => canManageBugs(ctx.projectId));
 const { options: memberOptions } = useProjectMemberOptions(computed(() => ctx.projectId));
 
 const bugs = ref<BugItem[]>([]);
+const total = ref(0);
+const page = ref(1);
+const pageSize = ref(20);
 const statuses = ref<BugStatusDef[]>([]);
 const requirements = ref<Requirement[]>([]);
 const plans = ref<TestPlan[]>([]);
 const loading = ref(false);
 const showModal = ref(false);
+const showImportModal = ref(false);
 const drawerVisible = ref(false);
 const activeBugId = ref<string | null>(null);
+const applyingRoute = ref(false);
+const paginationReady = ref(false);
 
 const filters = ref<BugListFilterState>(emptyBugListFilters());
 const projectIdRef = computed(() => ctx.projectId);
@@ -337,8 +362,11 @@ function rowProps(row: BugItem) {
   };
 }
 
-function buildListParams(): ListBugsParams | undefined {
-  const p: ListBugsParams = {};
+function buildListParams(): ListBugsParams {
+  const p: ListBugsParams = {
+    page: page.value,
+    page_size: pageSize.value,
+  };
   const f = filters.value;
   if (f.status_key) p.status_key = f.status_key;
   if (f.reporter_id) p.reporter_id = f.reporter_id;
@@ -353,7 +381,7 @@ function buildListParams(): ListBugsParams | undefined {
     if (val) custom[fieldId] = val;
   }
   if (Object.keys(custom).length) p.custom_filters = JSON.stringify(custom);
-  return Object.keys(p).length ? p : undefined;
+  return p;
 }
 
 function syncQueryToRoute() {
@@ -371,10 +399,13 @@ function syncQueryToRoute() {
     if (val) q[`cf_${fieldId}`] = val;
   }
   if (activeBugId.value) q.bugId = activeBugId.value;
+  if (page.value > 1) q.page = String(page.value);
+  if (pageSize.value !== 20) q.page_size = String(pageSize.value);
   router.replace({ name: 'bugs', query: q });
 }
 
 function applyRouteQuery() {
+  applyingRoute.value = true;
   const q = route.query;
   const custom: Record<string, string | null> = {};
   for (const f of fieldSchema.templateFields.value) {
@@ -395,11 +426,17 @@ function applyRouteQuery() {
     },
     fieldSchema.templateFields.value
   );
+  const pageQ = typeof q.page === 'string' ? parseInt(q.page, 10) : NaN;
+  page.value = Number.isFinite(pageQ) && pageQ > 0 ? pageQ : 1;
+  const pageSizeQ = typeof q.page_size === 'string' ? parseInt(q.page_size, 10) : NaN;
+  pageSize.value = Number.isFinite(pageSizeQ) && pageSizeQ > 0 ? pageSizeQ : 20;
+
   const bugId = typeof q.bugId === 'string' && q.bugId ? q.bugId : null;
   if (bugId) {
     activeBugId.value = bugId;
     drawerVisible.value = true;
   }
+  applyingRoute.value = false;
 }
 
 function openBug(id: string) {
@@ -440,8 +477,10 @@ async function onBugUpdated() {
 }
 
 function applyFilters() {
+  const hadPage = page.value;
+  page.value = 1;
   syncQueryToRoute();
-  load();
+  if (hadPage === 1) load();
 }
 
 function resetFilters() {
@@ -477,8 +516,15 @@ async function load() {
   loading.value = true;
   try {
     const { data } = await listBugs(buildListParams());
-    bugs.value = data;
-    if (activeBugId.value && !data.some((b) => b.id === activeBugId.value)) {
+    total.value = data.total;
+    const maxPage = Math.max(1, Math.ceil(data.total / data.page_size) || 1);
+    if (page.value > maxPage) {
+      page.value = maxPage;
+      return;
+    }
+    bugs.value = data.items;
+    if (data.page_size !== pageSize.value) pageSize.value = data.page_size;
+    if (activeBugId.value && !data.items.some((b) => b.id === activeBugId.value)) {
       closeDrawer();
     }
   } finally {
@@ -535,6 +581,7 @@ onMounted(async () => {
   await loadMeta();
   applyRouteQuery();
   expandVisibleFromActiveFilters();
+  paginationReady.value = true;
   await load();
 });
 
@@ -569,9 +616,34 @@ watch(
 
 watch(() => ctx.projectId, async () => {
   filters.value = emptyBugListFilters();
+  page.value = 1;
   closeDrawer();
   await loadMeta();
   await load();
 });
+
+watch(pageSize, () => {
+  if (!paginationReady.value || applyingRoute.value) return;
+  if (page.value !== 1) {
+    page.value = 1;
+    return;
+  }
+  syncQueryToRoute();
+  load();
+});
+
+watch(page, () => {
+  if (!paginationReady.value || applyingRoute.value) return;
+  syncQueryToRoute();
+  load();
+});
 </script>
+
+<style scoped>
+.bug-list-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+</style>
 

@@ -1,6 +1,13 @@
 import http from './http';
 import type { BugActivity, BugComment, BugItem } from '@/types/business';
 
+export interface BugListPage {
+  items: BugItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface ListBugsParams {
   status_key?: string;
   assignee_id?: string;
@@ -13,10 +20,12 @@ export interface ListBugsParams {
   q?: string;
   /** JSON: { fieldId: value | __empty__ } */
   custom_filters?: string;
+  page?: number;
+  page_size?: number;
 }
 
 export function listBugs(params?: ListBugsParams) {
-  return http.get<BugItem[]>('/bugs', { params });
+  return http.get<BugListPage>('/bugs', { params });
 }
 
 export function getBug(id: string) {
@@ -71,6 +80,30 @@ export function createBugComment(bugId: string, body: string) {
 
 export function listBugActivities(bugId: string) {
   return http.get<BugActivity[]>(`/bugs/${bugId}/activities`);
+}
+
+export interface BugImportResult {
+  created: number;
+  errors: { row: number; message: string }[];
+}
+
+export async function downloadBugImportTemplate() {
+  const { data } = await http.get<Blob>('/bugs/import/template', { responseType: 'blob' });
+  const url = window.URL.createObjectURL(data);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'bug_import_template.xlsx';
+  link.click();
+  window.URL.revokeObjectURL(url);
+}
+
+export function importBugs(file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return http.post<BugImportResult>('/bugs/import', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  });
 }
 
 export function uploadAttachment(bugId: string, file: File) {

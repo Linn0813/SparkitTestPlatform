@@ -107,6 +107,15 @@ async def _build_context(
     }
 
 
+async def is_wecom_configured(db: AsyncSession, project_id: str) -> bool:
+    """项目已开启企微且配置了 Webhook 时才发送通知。"""
+    integ_q = await db.execute(
+        select(ProjectIntegration).where(ProjectIntegration.project_id == project_id)
+    )
+    integ = integ_q.scalar_one_or_none()
+    return bool(integ and integ.wecom_enabled and (integ.wecom_webhook_url or "").strip())
+
+
 async def send_bug_wecom_notification(
     db: AsyncSession,
     bug: Bug,
@@ -117,11 +126,14 @@ async def send_bug_wecom_notification(
     to_label: str | None = None,
 ) -> int:
     """发送群通知并 @ 对应成员。返回成功 @ 的人数（有 userid 或手机号）。"""
+    if not await is_wecom_configured(db, bug.project_id):
+        return 0
+
     integ_q = await db.execute(
         select(ProjectIntegration).where(ProjectIntegration.project_id == bug.project_id)
     )
     integ = integ_q.scalar_one_or_none()
-    if not integ or not integ.wecom_enabled or not integ.wecom_webhook_url:
+    if not integ or not integ.wecom_webhook_url:
         return 0
 
     follower_ids = await get_bug_follower_ids(db, bug.id)
@@ -144,6 +156,9 @@ async def send_bug_wecom_notification(
 
 
 async def notify_bug_created(db: AsyncSession, bug: Bug) -> int:
+    if not await is_wecom_configured(db, bug.project_id):
+        return 0
+
     result = await db.execute(
         select(BugWecomNotifyRule).where(
             BugWecomNotifyRule.project_id == bug.project_id,
@@ -180,6 +195,8 @@ async def notify_bug_status_change(
     to_key: str,
 ) -> int:
     if not from_key:
+        return 0
+    if not await is_wecom_configured(db, bug.project_id):
         return 0
 
     result = await db.execute(

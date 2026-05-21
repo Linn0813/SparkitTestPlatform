@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
+import io
+
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,9 +35,13 @@ from app.schemas.bug import (
     BugCommentCreate,
     BugCommentOut,
     BugCreate,
+    BugImportErrorOut,
+    BugImportResultOut,
+    BugListPageOut,
     BugOut,
     BugUpdate,
 )
+from app.services.bug_import import generate_bug_template_bytes, parse_bug_import_workbook
 from app.services.bug_activity import list_bug_activities_merged, log_bug_activity
 from app.services.bug_filters import apply_bug_list_filters, parse_custom_filters
 from app.services.field_validator import load_project_member_user_ids, validate_custom_fields
@@ -55,6 +62,9 @@ from app.services.serializers import bug_out, bug_out_list_batch
 from app.services.wecom_notify import notify_bug_created, notify_bug_status_change
 
 router = APIRouter(prefix="/bugs", tags=["bugs"])
+
+_DEFAULT_PAGE_SIZE = 20
+_MAX_PAGE_SIZE = 100
 
 
 async def _next_bug_num(project_id: str, db: AsyncSession) -> int:
@@ -82,7 +92,7 @@ async def _record_status_history(
     db.add(history)
 
 
-@router.get("", response_model=list[BugOut])
+@router.get("", response_model=BugListPageOut)
 async def list_bugs(
     status_key: Optional[str] = None,
     assignee_id: Optional[str] = None,
@@ -96,6 +106,8 @@ async def list_bugs(
     custom_filters: Optional[str] = Query(
         None, description="JSON: { fieldId: value | __empty__ }"
     ),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE),
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -131,9 +143,56 @@ async def list_bugs(
         template_fields=template_fields,
         custom_filters=parsed_custom or None,
     )
-    result = await db.execute(stmt.order_by(Bug.num.desc()))
+    count_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
+    total = count_result.scalar_one()
+
+    offset = (page - 1) * page_size
+    result = await db.execute(
+        stmt.order_by(Bug.num.desc()).offset(offset).limit(page_size)
+    )
     bugs = list(result.scalars().all())
-    return await bug_out_list_batch(bugs, db)
+    items = await bug_out_list_batch(bugs, db)
+    return BugListPageOut(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/import/template")
+async def download_bug_import_template(
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    await ensure_project_defaults(ctx.project_id, db)
+    content = await generate_bug_template_bytes(db, ctx.project_id)
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="bug_import_template.xlsx"'},
+    )
+
+
+@router.post("/import", response_model=BugImportResultOut)
+async def import_bugs(
+    file: UploadFile = File(...),
+    ctx: ProjectContext = Depends(require_project_context_tester),
+    db: AsyncSession = Depends(get_db),
+):
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".xlsx"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅支持 .xlsx 文件")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件为空")
+    await ensure_project_defaults(ctx.project_id, db)
+    result = await parse_bug_import_workbook(
+        content,
+        project_id=ctx.project_id,
+        user_id=ctx.user.id,
+        db=db,
+        record_status_history=_record_status_history,
+    )
+    return BugImportResultOut(
+        created=result.created,
+        errors=[BugImportErrorOut(row=e.row, message=e.message) for e in result.errors],
+    )
 
 
 @router.post("", response_model=BugOut, status_code=status.HTTP_201_CREATED)

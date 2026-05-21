@@ -302,9 +302,9 @@ async function loadBugs() {
   }
   loadingBugs.value = true;
   try {
-    const { data } = await listBugs({ plan_version_id: versionId.value });
-    bugs.value = data;
-    if (activeBugId.value && !data.some((b) => b.id === activeBugId.value)) {
+    const { data } = await listBugs({ plan_version_id: versionId.value, page_size: 100 });
+    bugs.value = data.items;
+    if (activeBugId.value && !data.items.some((b) => b.id === activeBugId.value)) {
       closeDrawer();
     }
   } finally {

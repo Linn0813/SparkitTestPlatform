@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     """文件下载签名链接的 API 根地址（给 img/video 用，需能访问后端）"""
     api_public_url: str = "http://127.0.0.1:8000"
 
+    minio_endpoint: str = "127.0.0.1:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_bucket: str = "sparkit"
+    minio_secure: bool = False
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

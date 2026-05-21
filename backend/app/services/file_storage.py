@@ -6,12 +6,12 @@ import logging
 import time
 import uuid
 from typing import Optional
-from urllib.parse import quote
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.services import minio_storage
 
 logger = logging.getLogger(__name__)
 
@@ -23,24 +23,13 @@ def _object_key(prefix: str, filename: str) -> str:
     return f"{prefix}/{uuid.uuid4()}.{ext}"
 
 
-def _sign_download_url(object_key: str, expires: int) -> str:
-    payload = f"{object_key}\n{expires}"
-    sig = hmac.new(
-        settings.secret_key.encode("utf-8"),
-        payload.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-    base = settings.api_public_url.rstrip("/")
-    q_key = quote(object_key, safe="")
-    return f"{base}/api/v1/files/raw?object_key={q_key}&expires={expires}&signature={sig}"
-
-
 def build_file_download_url(object_key: str, expires_seconds: int = 7 * 24 * 3600) -> str:
-    expires = int(time.time()) + expires_seconds
-    return _sign_download_url(object_key, expires)
+    """MinIO 预签名 GET，适合图片/视频直连与流式播放。"""
+    return minio_storage.presigned_get_url(object_key, expires_seconds)
 
 
 def verify_download_signature(object_key: str, expires: int, signature: str) -> bool:
+    """兼容旧版经 API 代理的签名链接（/files/raw）。"""
     if expires < int(time.time()):
         return False
     expected = hmac.new(
@@ -62,12 +51,12 @@ async def store_bytes(
     from app.models.stored_file import StoredFile
 
     storage_key = _object_key(prefix, filename)
+    await minio_storage.put_object(storage_key, data, content_type)
     row = StoredFile(
         storage_key=storage_key,
         filename=filename or "file.bin",
         content_type=content_type or "application/octet-stream",
         size=len(data),
-        content=data,
     )
     db.add(row)
     await db.flush()
@@ -106,12 +95,21 @@ async def get_file_by_key(db: AsyncSession, storage_key: str):
     return result.scalar_one_or_none()
 
 
+async def read_file_bytes(storage_key: str, row_content: Optional[bytes] = None) -> bytes | None:
+    """优先 MinIO；row_content 为迁移前留在 MySQL 的二进制（可选）。"""
+    data = await minio_storage.get_object_bytes(storage_key)
+    if data is not None:
+        return data
+    return row_content
+
+
 async def delete_object_safe(db: AsyncSession, object_key: str) -> None:
     from app.models.stored_file import StoredFile
 
     if not object_key or not object_key.startswith(_FILE_KEY_PREFIXES):
         return
     try:
+        await minio_storage.delete_object(object_key)
         result = await db.execute(select(StoredFile).where(StoredFile.storage_key == object_key))
         row = result.scalar_one_or_none()
         if row:

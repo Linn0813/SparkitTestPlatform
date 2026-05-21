@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -21,6 +21,7 @@ from app.models.template import ProjectFieldTemplate, TemplateScene
 from app.schemas.case import (
     CaseImportErrorOut,
     CaseImportResultOut,
+    CaseListPageOut,
     CaseModuleCreate,
     CaseModuleOut,
     CaseModuleUpdate,
@@ -42,6 +43,9 @@ from app.services.project_setup import ensure_project_defaults
 from app.services.serializers import case_out
 
 router = APIRouter(prefix="/cases", tags=["cases"])
+
+_DEFAULT_PAGE_SIZE = 20
+_MAX_PAGE_SIZE = 100
 
 
 def _collect_module_descendant_ids(modules: list[CaseModule], root_id: str) -> set[str]:
@@ -223,7 +227,7 @@ async def import_cases(
     )
 
 
-@router.get("", response_model=list[TestCaseOut])
+@router.get("", response_model=CaseListPageOut)
 async def list_cases(
     module_id: Optional[str] = None,
     include_submodules: bool = False,
@@ -233,6 +237,8 @@ async def list_cases(
     custom_filters: Optional[str] = Query(
         None, description="JSON: { fieldId: value | __empty__ }"
     ),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE),
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -277,11 +283,17 @@ async def list_cases(
         template_fields=template_fields,
         custom_filters=parsed_custom or None,
     )
-    result = await db.execute(stmt.order_by(TestCase.updated_at.desc()))
-    out: list[TestCaseOut] = []
+    count_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
+    total = count_result.scalar_one()
+
+    offset = (page - 1) * page_size
+    result = await db.execute(
+        stmt.order_by(TestCase.updated_at.desc()).offset(offset).limit(page_size)
+    )
+    items: list[TestCaseOut] = []
     for c in result.scalars().all():
-        out.append(await case_out(c, db, module_path=path_map.get(c.module_id)))
-    return out
+        items.append(await case_out(c, db, module_path=path_map.get(c.module_id)))
+    return CaseListPageOut(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.post("", response_model=TestCaseOut, status_code=status.HTTP_201_CREATED)

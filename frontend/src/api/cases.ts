@@ -17,6 +17,13 @@ export function deleteModule(id: string) {
   return http.delete(`/cases/modules/${id}`);
 }
 
+export interface CaseListPage {
+  items: TestCase[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface ListCasesParams {
   module_id?: string;
   include_submodules?: boolean;
@@ -24,10 +31,15 @@ export interface ListCasesParams {
   priority?: string;
   q?: string;
   custom_filters?: string;
+  page?: number;
+  page_size?: number;
 }
 
 export function listCases(params?: ListCasesParams) {
-  const query: Record<string, string | boolean> = {};
+  const query: Record<string, string | boolean | number> = {
+    page: params?.page ?? 1,
+    page_size: params?.page_size ?? 20,
+  };
   if (params?.module_id) {
     query.module_id = params.module_id;
     if (params.include_submodules) {
@@ -46,7 +58,7 @@ export function listCases(params?: ListCasesParams) {
   if (params?.custom_filters) {
     query.custom_filters = params.custom_filters;
   }
-  return http.get<TestCase[]>('/cases', { params: Object.keys(query).length ? query : undefined });
+  return http.get<CaseListPage>('/cases', { params: query });
 }
 
 export function getCase(id: string) {
@@ -85,5 +97,6 @@ export function importCases(file: File) {
   form.append('file', file);
   return http.post<CaseImportResult>('/cases/import', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
   });
 }

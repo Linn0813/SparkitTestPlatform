@@ -5,7 +5,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.services.file_storage import get_file_by_key, verify_download_signature
+from app.services.file_storage import get_file_by_key, read_file_bytes, verify_download_signature
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -22,8 +22,12 @@ async def download_file_raw(
     row = await get_file_by_key(db, object_key)
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    legacy_content = getattr(row, "content", None)
+    body = await read_file_bytes(object_key, legacy_content)
+    if body is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
     return Response(
-        content=row.content,
+        content=body,
         media_type=row.content_type or "application/octet-stream",
         headers={
             "Content-Disposition": f'inline; filename="{row.filename}"',

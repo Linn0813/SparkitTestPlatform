@@ -48,7 +48,7 @@ async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
                 wecom_enabled=False,
                 status_notify_template=DEFAULT_STATUS_TEMPLATE,
                 create_notify_template=DEFAULT_CREATE_TEMPLATE,
-                notify_on_create=True,
+                notify_on_create=False,
             )
         )
         await db.flush()
@@ -58,6 +58,6 @@ async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
                 kind="create",
                 message_template=DEFAULT_CREATE_TEMPLATE,
                 notify_roles=["reporter", "followers"],
-                enabled=True,
+                enabled=False,
             )
         )

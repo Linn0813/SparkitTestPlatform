@@ -47,6 +47,13 @@ class TestCaseOut(ORMBase):
     updated_at: datetime
 
 
+class CaseListPageOut(BaseModel):
+    items: list[TestCaseOut]
+    total: int
+    page: int
+    page_size: int
+
+
 class TestCaseCreate(BaseModel):
     module_id: str
     title: str = Field(min_length=1, max_length=512)

@@ -32,6 +32,13 @@ class BugOut(ORMBase):
     followers: list[UserOut] = []
 
 
+class BugListPageOut(BaseModel):
+    items: list[BugOut]
+    total: int
+    page: int
+    page_size: int
+
+
 class BugCreate(BaseModel):
     title: str = Field(min_length=1, max_length=512)
     status_key: Optional[str] = None
@@ -89,6 +96,16 @@ class BugCommentOut(ORMBase):
     body: str
     created_at: datetime
     user: Optional[UserOut] = None
+
+
+class BugImportErrorOut(BaseModel):
+    row: int
+    message: str
+
+
+class BugImportResultOut(BaseModel):
+    created: int
+    errors: list[BugImportErrorOut] = Field(default_factory=list)
 
 
 class BugActivityOut(BaseModel):

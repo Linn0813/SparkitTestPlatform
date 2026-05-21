@@ -548,9 +548,9 @@ async function onBugUpdated() {
 async function loadBugs() {
   loadingBugs.value = true;
   try {
-    const { data } = await listBugs({ plan_id: planId });
-    planBugs.value = data;
-    if (activeBugId.value && !data.some((b) => b.id === activeBugId.value)) {
+    const { data } = await listBugs({ plan_id: planId, page_size: 100 });
+    planBugs.value = data.items;
+    if (activeBugId.value && !data.items.some((b) => b.id === activeBugId.value)) {
       closeBugDrawer();
     }
   } finally {
@@ -647,8 +647,8 @@ const columns = computed<DataTableColumns<PlanCase>>(() => [
   },
 ]);
 
-function buildPickerParams(): ListCasesParams | undefined {
-  const p: ListCasesParams = {};
+function buildPickerParams(): ListCasesParams {
+  const p: ListCasesParams = { page: 1, page_size: 100 };
   if (filterModuleId.value) {
     p.module_id = filterModuleId.value;
     p.include_submodules = true;
@@ -656,14 +656,14 @@ function buildPickerParams(): ListCasesParams | undefined {
   if (filterPriority.value) p.priority = filterPriority.value;
   if (filterRequirementId.value) p.requirement_id = filterRequirementId.value;
   if (filterQ.value.trim()) p.q = filterQ.value.trim();
-  return Object.keys(p).length ? p : undefined;
+  return p;
 }
 
 async function loadCasePickerOptions() {
   pickerLoading.value = true;
   try {
     const { data } = await listCases(buildPickerParams());
-    pickerCases.value = data;
+    pickerCases.value = data.items;
     pruneCaseSelection();
   } finally {
     pickerLoading.value = false;

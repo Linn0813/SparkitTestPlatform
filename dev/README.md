@@ -1,10 +1,20 @@
 # SparkitTestPlatform 本地开发
 
-应用**仅依赖 MySQL**（附件与图片也存库）。
+业务数据在 **MySQL**，附件与视频在 **MinIO**（`dev/docker-compose.yml` 一并启动）。
+
+## 部署机安装 MySQL + MinIO
+
+在 **Mac mini（部署机）** 上进入仓库 `dev` 目录，执行一次：
+
+```bash
+./deploy-host.sh
+```
+
+详见 [deploy-host.md](deploy-host.md)。
 
 ## 在自己电脑开发、连部署机数据库
 
-部署机（Mac mini）上保持 MySQL 运行：`./start.sh`（只需在部署机执行一次）。
+部署机（Mac mini）上保持中间件运行：`./deploy-host.sh`（只需在部署机执行一次）。
 
 在你**开发机**上：
 

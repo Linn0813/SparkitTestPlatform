@@ -2,13 +2,12 @@
   <n-modal
     v-model:show="visible"
     preset="card"
-    title="导入用例"
+    title="导入缺陷"
     style="width: 520px"
     @update:show="(v) => emit('update:show', v)"
   >
     <n-alert type="info" :bordered="false" style="margin-bottom: 12px">
-      在 Excel「模块」列填写完整路径（如「父模块-子模块」，也支持 / 分隔），不存在时将自动创建；留空则归入「未分类」。「关联需求」列填写需求标题或编号（如
-      1），多个用逗号分隔。下载的模板仅含表头，从第 2 行起填写数据。
+      下载的模板仅含表头，从第 2 行起填写。「状态」可填状态名称或 key，留空则用项目首个状态。「提出人」「跟进人」填成员姓名或邮箱，提出人留空则为当前用户。「关联需求」填需求标题或编号。「关联测试计划」「规划迭代」「发现版本」填名称。
     </n-alert>
     <n-space vertical :size="12">
       <n-button block @click="onDownloadTemplate" :loading="downloading">下载导入模板 (.xlsx)</n-button>
@@ -58,11 +57,7 @@ import {
   useMessage,
   type UploadCustomRequestOptions,
 } from 'naive-ui';
-import {
-  downloadCaseImportTemplate,
-  importCases,
-  type CaseImportResult,
-} from '@/api/cases';
+import { downloadBugImportTemplate, importBugs, type BugImportResult } from '@/api/bugs';
 
 const props = defineProps<{
   show: boolean;
@@ -77,7 +72,7 @@ const message = useMessage();
 const visible = ref(props.show);
 const downloading = ref(false);
 const importing = ref(false);
-const result = ref<CaseImportResult | null>(null);
+const result = ref<BugImportResult | null>(null);
 
 watch(
   () => props.show,
@@ -96,7 +91,7 @@ function clearFile() {
 async function onDownloadTemplate() {
   downloading.value = true;
   try {
-    await downloadCaseImportTemplate();
+    await downloadBugImportTemplate();
     message.success('模板已下载');
   } catch {
     message.error('下载模板失败');
@@ -113,12 +108,12 @@ async function onUpload({ file, onFinish, onError }: UploadCustomRequestOptions)
   importing.value = true;
   result.value = null;
   try {
-    const { data } = await importCases(file.file as File);
+    const { data } = await importBugs(file.file as File);
     result.value = data;
     if (data.created > 0) {
       const errHint =
         data.errors.length > 0 ? `，${data.errors.length} 行未导入（见下方明细）` : '';
-      message.success(`已导入 ${data.created} 条用例${errHint}`);
+      message.success(`已导入 ${data.created} 条缺陷${errHint}`);
       emit('imported');
     } else if (!data.errors.length) {
       message.warning('文件中没有可导入的数据行');
