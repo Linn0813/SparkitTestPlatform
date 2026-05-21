@@ -9,9 +9,10 @@
         <n-button quaternary size="small" :disabled="!hasNext" @click="emit('next')">下一条</n-button>
       </n-space>
       <n-space :size="4" align="center">
-        <n-dropdown v-if="canEdit" trigger="click" :options="moreMenuOptions" @select="onMoreMenu">
-          <n-button quaternary size="small">更多</n-button>
-        </n-dropdown>
+        <template v-if="canEdit && !editMode">
+          <n-button quaternary size="small" @click="enterEdit">编辑</n-button>
+          <n-button quaternary size="small" type="error" @click="onDelete">删除</n-button>
+        </template>
         <n-button quaternary size="small" @click="emit('close')">关闭</n-button>
       </n-space>
     </div>
@@ -340,11 +341,6 @@ function formatActivitySummary(a: BugActivity): string {
   return a.summary;
 }
 
-const moreMenuOptions = [
-  { label: '编辑', key: 'edit' },
-  { label: '删除', key: 'delete' },
-];
-
 const requirementOptions = computed(() =>
   requirements.value.map((r) => ({ label: r.title, value: r.id }))
 );
@@ -460,11 +456,6 @@ function cancelEdit() {
     customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, bug.value.custom_fields);
   }
   editMode.value = false;
-}
-
-function onMoreMenu(key: string) {
-  if (key === 'edit') enterEdit();
-  if (key === 'delete') onDelete();
 }
 
 async function onStatusChange(key: string) {
