@@ -1,0 +1,31 @@
+from app.services.file_storage import build_file_download_url, verify_download_signature
+
+
+def test_build_file_download_url_uses_api_proxy(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.file_storage.settings.api_public_url",
+        "http://127.0.0.1:8000",
+    )
+    url = build_file_download_url("projects/p1/abc.png")
+    assert url.startswith("/api/v1/files/raw?object_key=projects%2Fp1%2Fabc.png")
+    assert "&expires=" in url
+    assert "&signature=" in url
+
+
+def test_build_file_download_url_absolute_when_public_api(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.file_storage.settings.api_public_url",
+        "http://192.168.1.10:8000",
+    )
+    url = build_file_download_url("projects/p1/abc.png")
+    assert url.startswith("http://192.168.1.10:8000/api/v1/files/raw?")
+
+
+def test_download_signature_roundtrip(monkeypatch):
+    monkeypatch.setattr("app.services.file_storage.settings.secret_key", "test-secret")
+    key = "projects/p1/file.png"
+    url = build_file_download_url(key, expires_seconds=3600)
+    assert "signature=" in url
+    sig = url.split("signature=")[1]
+    exp = int(url.split("expires=")[1].split("&")[0])
+    assert verify_download_signature(key, exp, sig)

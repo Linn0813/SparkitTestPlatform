@@ -93,11 +93,6 @@ onMounted(() => void refreshFileUrls());
 async function refreshFileUrls() {
   if (!props.projectId) return;
   for (const file of richValue.value.files) {
-    if (file.url) {
-      urlCache.value[file.object_key] = file.url;
-      continue;
-    }
-    if (urlCache.value[file.object_key]) continue;
     try {
       const { data } = await getProjectFileUrl(props.projectId, file.object_key);
       urlCache.value[file.object_key] = data.url;
@@ -108,7 +103,7 @@ async function refreshFileUrls() {
 }
 
 function fileUrl(file: RichTextFile): string {
-  return file.url || urlCache.value[file.object_key] || '';
+  return urlCache.value[file.object_key] || file.url || '';
 }
 
 function emitValue() {

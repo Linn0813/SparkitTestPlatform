@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5174,http://127.0.0.1:5174"
     wecom_request_timeout: int = 5
     app_public_url: str = "http://localhost:5174"
-    """文件下载签名链接的 API 根地址（给 img/video 用，需能访问后端）"""
+    """文件下载签名链接的 API 根地址；默认 localhost 时返回相对路径 /api/v1/files/raw（经前端代理）"""
     api_public_url: str = "http://127.0.0.1:8000"
 
     minio_endpoint: str = "127.0.0.1:9000"

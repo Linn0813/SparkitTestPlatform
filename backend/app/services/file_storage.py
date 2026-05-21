@@ -6,6 +6,7 @@ import logging
 import time
 import uuid
 from typing import Optional
+from urllib.parse import quote
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,9 +24,25 @@ def _object_key(prefix: str, filename: str) -> str:
     return f"{prefix}/{uuid.uuid4()}.{ext}"
 
 
+def _sign_download(object_key: str, expires_seconds: int) -> tuple[int, str]:
+    expires = int(time.time()) + expires_seconds
+    signature = hmac.new(
+        settings.secret_key.encode("utf-8"),
+        f"{object_key}\n{expires}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return expires, signature
+
+
 def build_file_download_url(object_key: str, expires_seconds: int = 7 * 24 * 3600) -> str:
-    """MinIO 预签名 GET，适合图片/视频直连与流式播放。"""
-    return minio_storage.presigned_get_url(object_key, expires_seconds)
+    """经后端 /files/raw 代理的签名链接，浏览器无需直连 MinIO。"""
+    expires, signature = _sign_download(object_key, expires_seconds)
+    q = quote(object_key, safe="")
+    path = f"/api/v1/files/raw?object_key={q}&expires={expires}&signature={signature}"
+    base = settings.api_public_url.rstrip("/")
+    if base.startswith("http://127.0.0.1") or base.startswith("http://localhost"):
+        return path
+    return f"{base}{path}"
 
 
 def verify_download_signature(object_key: str, expires: int, signature: str) -> bool:

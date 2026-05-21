@@ -35,7 +35,7 @@ cp .env.compose.example .env.compose
 # 例：./dev/link-dev-to-deploy.sh 172.19.3.69
 ```
 
-然后重启 `./dev/run-backend.sh`。上传附件会写到部署机 MinIO；浏览器打开的预签名链接为 `http://<部署机IP>:9000/...`。
+然后重启 `./dev/run-backend.sh`。附件与描述内图片经后端 `/api/v1/files/raw` 代理，**浏览器无需访问 MinIO 9000 端口**。
 
 ## 控制台
 
