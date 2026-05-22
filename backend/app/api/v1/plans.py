@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import case as sql_case
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -13,6 +13,7 @@ from app.core.deps import ProjectContext, require_project_context, require_proje
 from app.models.case import TestCase
 from app.models.plan import ExecuteResult, PlanCase, PlanCaseResult, PlanStatus, TestPlan
 from app.models.project_version import ProjectVersion
+from app.models.requirement import BugPlanLink
 from app.schemas.case import TestCaseOut
 from app.services.case_module_paths import build_module_path_map, load_project_modules
 from app.services.serializers import case_out as serialize_case
@@ -228,13 +229,10 @@ async def delete_plan(
     plan = await db.get(TestPlan, plan_id)
     if not plan or plan.project_id != ctx.project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
-    pcs = await db.execute(select(PlanCase).where(PlanCase.plan_id == plan_id))
-    for pc in pcs.scalars().all():
-        res = await db.execute(select(PlanCaseResult).where(PlanCaseResult.plan_case_id == pc.id))
-        r = res.scalar_one_or_none()
-        if r:
-            await db.delete(r)
-        await db.delete(pc)
+    pc_ids_sq = select(PlanCase.id).where(PlanCase.plan_id == plan_id)
+    await db.execute(delete(PlanCaseResult).where(PlanCaseResult.plan_case_id.in_(pc_ids_sq)))
+    await db.execute(delete(PlanCase).where(PlanCase.plan_id == plan_id))
+    await db.execute(delete(BugPlanLink).where(BugPlanLink.plan_id == plan_id))
     await db.delete(plan)
 
 

@@ -49,10 +49,11 @@ import {
   NSpace,
   NTag,
   NText,
+  useDialog,
   useMessage,
   type DataTableColumns,
 } from 'naive-ui';
-import { createPlan, listPlans } from '@/api/plans';
+import { createPlan, deletePlan, listPlans } from '@/api/plans';
 import VersionSelect from '@/components/VersionSelect.vue';
 import {
   PLAN_STATUS_OPTIONS,
@@ -73,6 +74,7 @@ const versionFilter = ref<string | null>(null);
 const { canManagePlans } = usePermissions();
 const canPlans = computed(() => canManagePlans(ctx.projectId));
 const message = useMessage();
+const dialog = useDialog();
 const plans = ref<TestPlan[]>([]);
 const loading = ref(false);
 const showModal = ref(false);
@@ -185,6 +187,27 @@ const columns: DataTableColumns<TestPlan> = [
     width: 150,
     render: (row) => formatDate(row.updated_at),
   },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 88,
+    render: (row) => {
+      if (!canPlans.value) return null;
+      return h(
+        NButton,
+        {
+          size: 'small',
+          quaternary: true,
+          type: 'error',
+          onClick: (e: MouseEvent) => {
+            e.stopPropagation();
+            onRemove(row);
+          },
+        },
+        () => '删除'
+      );
+    },
+  },
 ];
 
 async function load() {
@@ -221,6 +244,28 @@ async function onCreate() {
   form.value = { name: '', status: 'draft', description: '', version_id: null };
   await load();
   return true;
+}
+
+function onRemove(row: TestPlan) {
+  dialog.warning({
+    title: '删除测试计划',
+    content: `确定删除计划「${row.name}」？关联用例与缺陷链接将一并移除。`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deletePlan(row.id);
+        message.success('已删除');
+        await load();
+      } catch (e: unknown) {
+        const detail =
+          e && typeof e === 'object' && 'response' in e
+            ? (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+            : undefined;
+        message.error(typeof detail === 'string' ? detail : '删除失败');
+      }
+    },
+  });
 }
 
 onMounted(() => {

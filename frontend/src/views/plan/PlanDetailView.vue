@@ -19,6 +19,15 @@
           size="small"
           @update:value="onStatusChange"
         />
+        <n-button
+          v-if="canManagePlan"
+          quaternary
+          size="small"
+          type="error"
+          @click="onDeletePlan"
+        >
+          删除
+        </n-button>
       </n-space>
     </template>
 
@@ -267,6 +276,7 @@ import {
 import { listCases, type ListCasesParams } from '@/api/cases';
 import {
   addPlanCases,
+  deletePlan,
   getPlan,
   getPlanStats,
   listPlanCases,
@@ -437,6 +447,29 @@ const pickerColumns: DataTableColumns<TestCase> = [
 
 function goBack() {
   router.push({ name: 'plans' });
+}
+
+function onDeletePlan() {
+  if (!plan.value) return;
+  dialog.warning({
+    title: '删除测试计划',
+    content: `确定删除计划「${plan.value.name}」？关联用例与缺陷链接将一并移除。`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deletePlan(plan.value!.id);
+        message.success('已删除');
+        goBack();
+      } catch (e: unknown) {
+        const detail =
+          e && typeof e === 'object' && 'response' in e
+            ? (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+            : undefined;
+        message.error(typeof detail === 'string' ? detail : '删除失败');
+      }
+    },
+  });
 }
 
 function openPlanCase(row: PlanCase) {
