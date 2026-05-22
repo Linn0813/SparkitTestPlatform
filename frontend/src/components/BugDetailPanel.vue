@@ -80,72 +80,94 @@
       <n-text v-else depth="3">—</n-text>
     </template>
 
-    <n-form v-else label-placement="top" class="field-block">
-      <n-form-item label="缺陷标题" required>
-        <n-input v-model:value="editForm.title" />
-      </n-form-item>
-      <n-form-item label="状态">
-        <n-radio-group v-model:value="editForm.status_key" name="bug-status" size="small">
-          <n-space wrap :size="[8, 8]">
-            <n-radio-button v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </n-radio-button>
-          </n-space>
-        </n-radio-group>
-      </n-form-item>
-      <n-form-item label="提出人">
-        <n-select v-model:value="editForm.reporter_id" :options="memberOptions" filterable style="width: 100%" />
-      </n-form-item>
-      <n-form-item label="跟进人">
-        <n-select
-          v-model:value="editForm.follower_ids"
-          :options="memberOptions"
-          multiple
-          filterable
-          clearable
-          style="width: 100%"
-        />
-      </n-form-item>
-      <n-form-item label="规划迭代">
-        <VersionSelect v-model="editForm.plan_version_id" :project-id="bug.project_id" />
-      </n-form-item>
-      <n-form-item label="发现版本">
-        <VersionSelect v-model="editForm.found_version_id" :project-id="bug.project_id" />
-      </n-form-item>
-      <DynamicFieldForm
-        v-if="templateUiFields.length"
-        v-model="customFields"
-        :fields="templateUiFields"
-        :project-id="bug.project_id"
-      />
-      <n-form-item label="描述">
-        <PasteImageTextarea v-model="editForm.description" :project-id="bug.project_id" />
-      </n-form-item>
-      <n-form-item label="附件">
-        <n-upload :custom-request="onUpload" :show-file-list="false">
-          <n-button>上传附件</n-button>
-        </n-upload>
-      </n-form-item>
-      <n-form-item label="关联需求">
-        <n-select
-          v-model:value="editForm.requirement_ids"
-          :options="requirementOptions"
-          multiple
-          filterable
-          clearable
-          style="width: 100%"
-        />
-      </n-form-item>
-      <n-form-item label="关联测试计划">
-        <n-select
-          v-model:value="editForm.plan_ids"
-          :options="planOptions"
-          multiple
-          filterable
-          clearable
-          style="width: 100%"
-        />
-      </n-form-item>
+    <n-form v-else label-placement="top" class="field-block bug-edit-form">
+      <n-grid :cols="2" :x-gap="16" :y-gap="4">
+        <n-gi :span="2">
+          <n-form-item label="缺陷标题" required>
+            <n-input v-model:value="editForm.title" />
+          </n-form-item>
+        </n-gi>
+        <n-gi :span="2">
+          <n-form-item label="状态">
+            <n-radio-group v-model:value="editForm.status_key" name="bug-status" size="small">
+              <n-space wrap :size="[8, 8]">
+                <n-radio-button v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </n-radio-button>
+              </n-space>
+            </n-radio-group>
+          </n-form-item>
+        </n-gi>
+        <n-gi>
+          <n-form-item label="提出人">
+            <n-select v-model:value="editForm.reporter_id" :options="memberOptions" filterable />
+          </n-form-item>
+        </n-gi>
+        <n-gi>
+          <n-form-item label="跟进人">
+            <n-select
+              v-model:value="editForm.follower_ids"
+              :options="memberOptions"
+              multiple
+              filterable
+              clearable
+            />
+          </n-form-item>
+        </n-gi>
+        <n-gi>
+          <n-form-item label="规划迭代">
+            <VersionSelect v-model="editForm.plan_version_id" :project-id="bug.project_id" />
+          </n-form-item>
+        </n-gi>
+        <n-gi>
+          <n-form-item label="发现版本">
+            <VersionSelect v-model="editForm.found_version_id" :project-id="bug.project_id" />
+          </n-form-item>
+        </n-gi>
+        <n-gi>
+          <n-form-item label="关联需求">
+            <n-select
+              v-model:value="editForm.requirement_ids"
+              :options="requirementOptions"
+              multiple
+              filterable
+              clearable
+            />
+          </n-form-item>
+        </n-gi>
+        <n-gi>
+          <n-form-item label="关联测试计划">
+            <n-select
+              v-model:value="editForm.plan_ids"
+              :options="planOptions"
+              multiple
+              filterable
+              clearable
+            />
+          </n-form-item>
+        </n-gi>
+        <n-gi :span="2">
+          <DynamicFieldForm
+            v-if="templateUiFields.length"
+            v-model="customFields"
+            :fields="templateUiFields"
+            :project-id="bug.project_id"
+            :columns="2"
+          />
+        </n-gi>
+        <n-gi :span="2">
+          <n-form-item label="描述">
+            <PasteImageTextarea v-model="editForm.description" :project-id="bug.project_id" />
+          </n-form-item>
+        </n-gi>
+        <n-gi :span="2">
+          <n-form-item label="附件">
+            <n-upload :custom-request="onUpload" :show-file-list="false">
+              <n-button>上传附件</n-button>
+            </n-upload>
+          </n-form-item>
+        </n-gi>
+      </n-grid>
     </n-form>
 
     <n-tabs v-if="!editMode" type="line" class="tabs-block">
@@ -191,6 +213,8 @@ import {
   NEmpty,
   NForm,
   NFormItem,
+  NGi,
+  NGrid,
   NInput,
   NRadioButton,
   NRadioGroup,
@@ -617,6 +641,16 @@ watch(
 
 .field-block {
   margin-top: 0;
+}
+
+.bug-edit-form :deep(.n-form-item) {
+  margin-bottom: 12px;
+}
+
+.bug-edit-form :deep(.n-input),
+.bug-edit-form :deep(.n-select),
+.bug-edit-form :deep(.n-tree-select) {
+  width: 100%;
 }
 
 .section-label {

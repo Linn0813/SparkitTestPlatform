@@ -1,27 +1,41 @@
 <template>
   <template v-if="sortedFields.length">
     <n-divider v-if="showDivider">{{ title }}</n-divider>
-    <n-form-item
-      v-for="field in sortedFields"
-      :key="field.id"
-      :label="field.name"
-      :required="field.required"
-    >
-      <TemplateFieldInput
-        :field="field"
-        :model-value="modelValue[field.id]"
-        :project-id="effectiveProjectId"
-        @update:model-value="(v) => setValue(field.id, v)"
-      />
-    </n-form-item>
+    <n-grid v-if="columns > 1" :cols="columns" :x-gap="16" :y-gap="4">
+      <n-gi v-for="field in sortedFields" :key="field.id" :span="fieldSpan(field)">
+        <n-form-item :label="field.name" :required="field.required">
+          <TemplateFieldInput
+            :field="field"
+            :model-value="modelValue[field.id]"
+            :project-id="effectiveProjectId"
+            @update:model-value="(v) => setValue(field.id, v)"
+          />
+        </n-form-item>
+      </n-gi>
+    </n-grid>
+    <template v-else>
+      <n-form-item
+        v-for="field in sortedFields"
+        :key="field.id"
+        :label="field.name"
+        :required="field.required"
+      >
+        <TemplateFieldInput
+          :field="field"
+          :model-value="modelValue[field.id]"
+          :project-id="effectiveProjectId"
+          @update:model-value="(v) => setValue(field.id, v)"
+        />
+      </n-form-item>
+    </template>
   </template>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { NDivider, NFormItem } from 'naive-ui';
+import { NDivider, NFormItem, NGi, NGrid } from 'naive-ui';
 import TemplateFieldInput from '@/components/TemplateFieldInput.vue';
-import { sortTemplateFields } from '@/constants/fieldTypes';
+import { isRichtextType, sortTemplateFields } from '@/constants/fieldTypes';
 import { useContextStore } from '@/stores/context';
 import type { TemplateField } from '@/types/business';
 
@@ -32,10 +46,12 @@ const props = withDefaults(
     projectId?: string | null;
     title?: string;
     showDivider?: boolean;
+    columns?: number;
   }>(),
   {
     title: '自定义字段',
     showDivider: false,
+    columns: 1,
   }
 );
 
@@ -46,6 +62,12 @@ const emit = defineEmits<{
 const ctx = useContextStore();
 const effectiveProjectId = computed(() => props.projectId ?? ctx.projectId);
 const sortedFields = computed(() => sortTemplateFields(props.fields));
+
+function fieldSpan(field: TemplateField): number {
+  if (props.columns <= 1) return 1;
+  if (isRichtextType(field.type) || field.type === 'textarea') return props.columns;
+  return 1;
+}
 
 function setValue(id: string, value: unknown) {
   emit('update:modelValue', { ...props.modelValue, [id]: value });
