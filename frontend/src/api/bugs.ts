@@ -1,5 +1,5 @@
 import http from './http';
-import type { BugActivity, BugComment, BugItem } from '@/types/business';
+import type { BugActivity, BugAttachment, BugComment, BugItem } from '@/types/business';
 
 export interface BugListPage {
   items: BugItem[];
@@ -109,7 +109,15 @@ export function importBugs(file: File) {
 export function uploadAttachment(bugId: string, file: File) {
   const form = new FormData();
   form.append('file', file);
-  return http.post(`/bugs/${bugId}/attachments`, form, {
+  return http.post<BugAttachment>(`/bugs/${bugId}/attachments`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+}
+
+export function listBugAttachments(bugId: string) {
+  return http.get<BugAttachment[]>(`/bugs/${bugId}/attachments`);
+}
+
+export function deleteBugAttachment(bugId: string, attachmentId: string) {
+  return http.delete(`/bugs/${bugId}/attachments/${attachmentId}`);
 }

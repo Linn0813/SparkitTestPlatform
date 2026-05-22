@@ -75,6 +75,7 @@ class BugAttachmentOut(ORMBase):
     filename: str
     size: int
     created_at: datetime
+    url: str
 
 
 class BugCaseLinkOut(BaseModel):

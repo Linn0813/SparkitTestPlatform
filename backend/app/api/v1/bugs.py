@@ -57,7 +57,7 @@ from app.services.links import (
     validate_project_member_ids,
     validate_requirement_ids,
 )
-from app.services.file_storage import upload_bytes
+from app.services.file_storage import build_file_download_url, delete_object_safe, upload_bytes
 from app.services.project_setup import ensure_project_defaults
 from app.services.versions import validate_version_id
 from app.services.serializers import bug_out, bug_out_list_batch
@@ -67,6 +67,18 @@ router = APIRouter(prefix="/bugs", tags=["bugs"])
 
 _DEFAULT_PAGE_SIZE = 20
 _MAX_PAGE_SIZE = 100
+
+
+def _bug_attachment_out(att: BugAttachment) -> BugAttachmentOut:
+    return BugAttachmentOut(
+        id=att.id,
+        bug_id=att.bug_id,
+        object_key=att.object_key,
+        filename=att.filename,
+        size=att.size,
+        created_at=att.created_at,
+        url=build_file_download_url(att.object_key),
+    )
 
 
 async def _next_bug_num(project_id: str, db: AsyncSession) -> int:
@@ -618,7 +630,7 @@ async def list_attachments(
     if not bug or bug.project_id != ctx.project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
     result = await db.execute(select(BugAttachment).where(BugAttachment.bug_id == bug_id))
-    return [BugAttachmentOut.model_validate(a) for a in result.scalars().all()]
+    return [_bug_attachment_out(a) for a in result.scalars().all()]
 
 
 @router.post("/{bug_id}/attachments", response_model=BugAttachmentOut, status_code=status.HTTP_201_CREATED)
@@ -647,4 +659,32 @@ async def upload_attachment(
         detail={"attachment_id": att.id},
     )
     await db.refresh(att)
-    return BugAttachmentOut.model_validate(att)
+    return _bug_attachment_out(att)
+
+
+@router.delete("/{bug_id}/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_attachment(
+    bug_id: str,
+    attachment_id: str,
+    ctx: ProjectContext = Depends(require_project_context_tester),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    att = await db.get(BugAttachment, attachment_id)
+    if not att or att.bug_id != bug_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+    filename = att.filename
+    object_key = att.object_key
+    await log_bug_activity(
+        db,
+        bug_id=bug_id,
+        actor_id=ctx.user.id,
+        action_type="attachment",
+        summary=f"删除了附件：{filename}",
+        detail={"attachment_id": attachment_id},
+    )
+    await db.delete(att)
+    await db.flush()
+    await delete_object_safe(db, object_key)

@@ -78,6 +78,24 @@
         class="desc-preview"
       />
       <n-text v-else depth="3">—</n-text>
+      <n-text depth="3" class="section-label">附件</n-text>
+      <div v-if="attachments.length" class="attachment-list">
+        <div v-for="att in attachments" :key="att.id" class="attachment-item">
+          <a :href="att.url" target="_blank" rel="noopener noreferrer" class="attachment-link">
+            {{ att.filename }}
+          </a>
+          <n-text depth="3" class="attachment-meta">
+            {{ formatFileSize(att.size) }} · {{ formatTime(att.created_at) }}
+          </n-text>
+          <img
+            v-if="isImageAttachment(att.filename)"
+            :src="att.url"
+            :alt="att.filename"
+            class="attachment-thumb"
+          />
+        </div>
+      </div>
+      <n-text v-else depth="3">—</n-text>
     </template>
 
     <n-form v-else label-placement="top" class="field-block bug-edit-form">
@@ -162,9 +180,34 @@
         </n-gi>
         <n-gi :span="2">
           <n-form-item label="附件">
-            <n-upload :custom-request="onUpload" :show-file-list="false">
-              <n-button>上传附件</n-button>
-            </n-upload>
+            <n-space vertical style="width: 100%">
+              <n-upload :custom-request="onUpload" :show-file-list="false">
+                <n-button>上传附件</n-button>
+              </n-upload>
+              <div v-if="attachments.length" class="attachment-list">
+                <div v-for="att in attachments" :key="att.id" class="attachment-item">
+                  <n-space align="center" justify="space-between" style="width: 100%">
+                    <div class="attachment-item-main">
+                      <a :href="att.url" target="_blank" rel="noopener noreferrer" class="attachment-link">
+                        {{ att.filename }}
+                      </a>
+                      <n-text depth="3" class="attachment-meta">
+                        {{ formatFileSize(att.size) }} · {{ formatTime(att.created_at) }}
+                      </n-text>
+                    </div>
+                    <n-button size="tiny" quaternary type="error" @click="onDeleteAttachment(att)">
+                      删除
+                    </n-button>
+                  </n-space>
+                  <img
+                    v-if="isImageAttachment(att.filename)"
+                    :src="att.url"
+                    :alt="att.filename"
+                    class="attachment-thumb"
+                  />
+                </div>
+              </div>
+            </n-space>
           </n-form-item>
         </n-gi>
       </n-grid>
@@ -235,8 +278,10 @@ import type { UploadCustomRequestOptions } from 'naive-ui';
 import {
   createBugComment,
   deleteBug,
+  deleteBugAttachment,
   getBug,
   listBugActivities,
+  listBugAttachments,
   listBugComments,
   updateBug,
   uploadAttachment,
@@ -260,7 +305,7 @@ import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
 import { mergeCustomFields, validateCustomFields } from '@/constants/fieldTypes';
-import type { BugActivity, BugComment, BugItem, BugStatusDef, Requirement, TestPlan } from '@/types/business';
+import type { BugActivity, BugAttachment, BugComment, BugItem, BugStatusDef, Requirement, TestPlan } from '@/types/business';
 import { displayUserLabel } from '@/utils/displayUser';
 import { formatNumWithTitle } from '@/utils/entityNum';
 
@@ -295,6 +340,7 @@ const requirements = ref<Requirement[]>([]);
 const plans = ref<TestPlan[]>([]);
 const comments = ref<BugComment[]>([]);
 const activities = ref<BugActivity[]>([]);
+const attachments = ref<BugAttachment[]>([]);
 const newComment = ref('');
 
 const ctx = useContextStore();
@@ -376,6 +422,16 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleString('zh-CN');
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isImageAttachment(filename: string): boolean {
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(filename);
+}
+
 function memberName(userId: string | null | undefined): string {
   if (!userId) return '—';
   return memberOptions.value.find((o) => o.value === userId)?.label ?? userId;
@@ -444,6 +500,11 @@ async function loadCommentsAndActivities() {
   activities.value = a.data;
 }
 
+async function loadAttachments() {
+  const { data } = await listBugAttachments(props.bugId);
+  attachments.value = data;
+}
+
 async function load() {
   loading.value = true;
   try {
@@ -463,7 +524,7 @@ async function load() {
     plans.value = pl.data;
     customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, b.data.custom_fields);
     fillEditForm(b.data);
-    await loadCommentsAndActivities();
+    await Promise.all([loadCommentsAndActivities(), loadAttachments()]);
   } finally {
     loading.value = false;
   }
@@ -561,7 +622,29 @@ async function onUpload({ file }: UploadCustomRequestOptions) {
   if (!file.file) return;
   await uploadAttachment(props.bugId, file.file as File);
   message.success('已上传');
-  await loadCommentsAndActivities();
+  await Promise.all([loadAttachments(), loadCommentsAndActivities()]);
+}
+
+function onDeleteAttachment(att: BugAttachment) {
+  dialog.warning({
+    title: '删除附件',
+    content: `确定删除附件「${att.filename}」？`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deleteBugAttachment(props.bugId, att.id);
+        message.success('已删除');
+        await Promise.all([loadAttachments(), loadCommentsAndActivities()]);
+      } catch (e: unknown) {
+        const detail =
+          e && typeof e === 'object' && 'response' in e
+            ? (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+            : undefined;
+        message.error(typeof detail === 'string' ? detail : '删除失败');
+      }
+    },
+  });
 }
 
 watch(
@@ -680,5 +763,48 @@ watch(
 
 .comment-body {
   margin-top: 8px;
+}
+
+.attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attachment-item {
+  padding: 10px 12px;
+  border: 1px solid var(--n-border-color);
+  border-radius: 8px;
+  background: var(--n-color);
+}
+
+.attachment-item-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.attachment-link {
+  color: var(--n-primary-color, #18a058);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.attachment-link:hover {
+  text-decoration: underline;
+}
+
+.attachment-meta {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.attachment-thumb {
+  display: block;
+  margin-top: 8px;
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 4px;
+  object-fit: contain;
 }
 </style>

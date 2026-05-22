@@ -199,6 +199,16 @@ export interface BugComment {
   user?: { id: string; name: string; email: string };
 }
 
+export interface BugAttachment {
+  id: string;
+  bug_id: string;
+  object_key: string;
+  filename: string;
+  size: number;
+  created_at: string;
+  url: string;
+}
+
 export interface BugActivity {
   id: string;
   source: string;
