@@ -44,6 +44,7 @@ from app.schemas.bug import (
 )
 from app.services.bug_import import generate_bug_template_bytes, parse_bug_import_workbook
 from app.services.bug_activity import list_bug_activities_merged, log_bug_activity
+from app.services.bug_delete import delete_bug_cascade
 from app.services.bug_filters import apply_bug_list_filters, parse_custom_filters
 from app.services.field_validator import load_project_member_user_ids, validate_custom_fields
 from app.services.file_cleanup import cleanup_after_bug_content_change, cleanup_after_bug_deleted
@@ -264,13 +265,18 @@ async def create_bug(
         action_type="create",
         summary="创建了缺陷",
     )
-    if mention_count > 0:
+    if mention_count is not None:
+        summary = (
+            f"已发送企微通知（@{mention_count} 人）"
+            if mention_count > 0
+            else "已发送企微通知（未 @ 任何人）"
+        )
         await log_bug_activity(
             db,
             bug_id=bug.id,
             actor_id=ctx.user.id,
             action_type="wecom_notify",
-            summary=f"已发送企微通知（@{mention_count} 人）",
+            summary=summary,
         )
     await db.refresh(bug)
     return await bug_out(bug, db)
@@ -440,15 +446,20 @@ async def update_bug(
     if "status_key" in data and data["status_key"] != old_status:
         mention_count = await notify_bug_status_change(db, bug, old_status, data["status_key"])
         await _record_status_history(
-            bug, old_status, data["status_key"], ctx.user.id, db, notified=mention_count > 0
+            bug, old_status, data["status_key"], ctx.user.id, db, notified=mention_count is not None
         )
-        if mention_count > 0:
+        if mention_count is not None:
+            summary = (
+                f"已发送企微通知（@{mention_count} 人）"
+                if mention_count > 0
+                else "已发送企微通知（未 @ 任何人）"
+            )
             await log_bug_activity(
                 db,
                 bug_id=bug.id,
                 actor_id=ctx.user.id,
                 action_type="wecom_notify",
-                summary=f"已发送企微通知（@{mention_count} 人）",
+                summary=summary,
             )
     await db.refresh(bug)
     return await bug_out(bug, db)
@@ -464,16 +475,7 @@ async def delete_bug(
     if not bug or bug.project_id != ctx.project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
     await cleanup_after_bug_deleted(db, ctx.project_id, bug)
-    links = await db.execute(select(BugCaseLink).where(BugCaseLink.bug_id == bug_id))
-    for link in links.scalars().all():
-        await db.delete(link)
-    flinks = await db.execute(select(BugFollowerLink).where(BugFollowerLink.bug_id == bug_id))
-    for link in flinks.scalars().all():
-        await db.delete(link)
-    atts = await db.execute(select(BugAttachment).where(BugAttachment.bug_id == bug_id))
-    for a in atts.scalars().all():
-        await db.delete(a)
-    await db.delete(bug)
+    await delete_bug_cascade(db, bug)
 
 
 @router.get("/{bug_id}/comments", response_model=list[BugCommentOut])

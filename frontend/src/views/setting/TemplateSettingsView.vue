@@ -74,36 +74,26 @@
           <n-form-item label="Webhook URL">
             <n-input v-model:value="wecom.wecom_webhook_url" type="textarea" :rows="2" />
           </n-form-item>
+          <n-form-item label="站点访问地址">
+            <n-input
+              v-model:value="wecom.app_public_url"
+              placeholder="如 http://172.19.3.69:5174（企微通知 {link} 用，勿填 localhost）"
+              clearable
+            />
+          </n-form-item>
           <n-space>
-            <n-button type="primary" @click="saveWecom">保存 Webhook</n-button>
+            <n-button type="primary" @click="saveWecomWebhook">保存 Webhook</n-button>
             <n-button @click="onTestWecom">发送测试</n-button>
           </n-space>
 
-          <n-divider title-placement="left">新建缺陷通知</n-divider>
-          <n-form-item label="启用">
-            <n-switch v-model:value="createRule.enabled" />
-          </n-form-item>
-          <n-form-item label="通知对象">
-            <n-select
-              v-model:value="createRule.notify_roles"
-              :options="notifyRoleOptions"
-              multiple
-              style="max-width: 480px"
-            />
-          </n-form-item>
-          <n-form-item label="消息模板">
-            <n-input v-model:value="createRule.message_template" type="textarea" :rows="5" />
-          </n-form-item>
-          <n-button type="primary" @click="saveCreateRule">保存新建规则</n-button>
-
-          <n-divider title-placement="left">状态流转通知</n-divider>
+          <n-divider title-placement="left">通知规则</n-divider>
           <n-alert type="info" :bordered="false" style="margin-bottom: 12px">
-            仅当配置了精确的「原状态 → 目标状态」规则且启用时才会发送企微；未配置的流转不会通知。
-            占位符：{project} {num} {title} {from_status} {to_status} {reporter} {followers} {link}。
-            @ 提醒需成员在「我的资料」填写企微绑定手机号或 userid。
+            每条规则在编辑弹窗中保存后立即生效。占位符：{project} {num} {title} {from_status} {to_status}
+            {reporter} {followers} {link}。
+            @ 提醒需通知对象本人在右上角「我的资料」填写企微 userid 或绑定手机号；未绑定则只发群消息、不会 @ 任何人。
           </n-alert>
-          <n-data-table :columns="transitionRuleColumns" :data="transitionRules" size="small" />
-          <n-button size="small" style="margin-top: 8px" @click="openTransitionModal()">添加流转规则</n-button>
+          <n-data-table :columns="wecomRuleColumns" :data="sortedWecomRules" size="small" />
+          <n-button size="small" style="margin-top: 8px" @click="openRuleModal()">添加规则</n-button>
         </n-form>
       </n-tab-pane>
     </n-tabs>
@@ -172,38 +162,50 @@
     </n-modal>
 
     <n-modal
-      v-model:show="showTransitionModal"
+      v-model:show="showRuleModal"
       preset="dialog"
-      :title="editingTransitionRule ? '编辑流转规则' : '添加流转规则'"
+      :title="editingRule ? '编辑通知规则' : '添加通知规则'"
       positive-text="保存"
-      @positive-click="onSaveTransitionRule"
+      @positive-click="onSaveRule"
     >
       <n-form label-width="100">
-        <n-form-item label="原状态">
+        <n-form-item label="触发类型">
           <n-select
-            v-model:value="transitionForm.from_status_key"
-            :options="statusKeyOptions"
-            placeholder="选择原状态"
+            v-model:value="ruleForm.kind"
+            :options="ruleKindOptions"
+            :disabled="!!editingRule"
+            style="width: 100%"
           />
         </n-form-item>
-        <n-form-item label="目标状态">
-          <n-select
-            v-model:value="transitionForm.to_status_key"
-            :options="statusKeyOptions"
-            placeholder="选择目标状态"
-          />
-        </n-form-item>
-        <n-form-item label="启用"><n-switch v-model:value="transitionForm.enabled" /></n-form-item>
+        <template v-if="ruleForm.kind === 'transition'">
+          <n-form-item label="原状态">
+            <n-select
+              v-model:value="ruleForm.from_status_keys"
+              :options="statusKeyOptions"
+              placeholder="选择原状态（可多选）"
+              multiple
+            />
+          </n-form-item>
+          <n-form-item label="目标状态">
+            <n-select
+              v-model:value="ruleForm.to_status_keys"
+              :options="statusKeyOptions"
+              placeholder="选择目标状态（可多选）"
+              multiple
+            />
+          </n-form-item>
+        </template>
+        <n-form-item label="启用"><n-switch v-model:value="ruleForm.enabled" /></n-form-item>
         <n-form-item label="通知对象">
           <n-select
-            v-model:value="transitionForm.notify_roles"
+            v-model:value="ruleForm.notify_roles"
             :options="notifyRoleOptions"
             multiple
             style="width: 100%"
           />
         </n-form-item>
         <n-form-item label="消息模板">
-          <n-input v-model:value="transitionForm.message_template" type="textarea" :rows="5" />
+          <n-input v-model:value="ruleForm.message_template" type="textarea" :rows="5" />
         </n-form-item>
       </n-form>
     </n-modal>
@@ -267,6 +269,7 @@ import {
 import { useSettingScope } from '@/composables/useSettingScope';
 import { invalidateProjectFieldSchemaCache } from '@/composables/useProjectFieldSchema';
 import { validateTemplateFieldNames } from '@/schemas/entityFieldSchema';
+import { apiErrorMessage } from '@/utils/apiError';
 import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
 import type { BugStatusDef, TemplateField, WecomNotifyRule } from '@/types/business';
@@ -293,20 +296,16 @@ const statuses = ref<BugStatusDef[]>([]);
 const wecom = ref({
   wecom_enabled: false,
   wecom_webhook_url: '' as string | null,
-});
-
-const createRule = ref({
-  message_template: DEFAULT_CREATE_TEMPLATE,
-  notify_roles: ['reporter', 'followers'] as string[],
-  enabled: true,
+  app_public_url: '' as string | null,
 });
 
 const wecomRules = ref<WecomNotifyRule[]>([]);
-const showTransitionModal = ref(false);
-const editingTransitionRule = ref<WecomNotifyRule | null>(null);
-const transitionForm = ref({
-  from_status_key: '',
-  to_status_key: '',
+const showRuleModal = ref(false);
+const editingRule = ref<WecomNotifyRule | null>(null);
+const ruleForm = ref({
+  kind: 'transition' as 'create' | 'transition',
+  from_status_keys: [] as string[],
+  to_status_keys: [] as string[],
   message_template: DEFAULT_TRANSITION_TEMPLATE,
   notify_roles: ['reporter', 'followers'] as string[],
   enabled: true,
@@ -348,9 +347,35 @@ const statusKeyOptions = computed(() =>
   statuses.value.map((s) => ({ label: s.label, value: s.key }))
 );
 
-const transitionRules = computed(() =>
-  wecomRules.value.filter((r) => r.kind === 'transition')
+const hasCreateRule = computed(() => wecomRules.value.some((r) => r.kind === 'create'));
+
+const ruleKindOptions = computed(() => {
+  const opts = [{ label: '状态流转', value: 'transition' as const }];
+  if (!hasCreateRule.value || editingRule.value?.kind === 'create') {
+    opts.unshift({ label: '新建缺陷', value: 'create' as const });
+  }
+  return opts;
+});
+
+const sortedWecomRules = computed(() =>
+  [...wecomRules.value].sort((a, b) => {
+    if (a.kind === 'create' && b.kind !== 'create') return -1;
+    if (a.kind !== 'create' && b.kind === 'create') return 1;
+    const af = a.from_status_key ?? '';
+    const bf = b.from_status_key ?? '';
+    if (af !== bf) return af.localeCompare(bf);
+    return (a.to_status_key ?? '').localeCompare(b.to_status_key ?? '');
+  })
 );
+
+function formatNotifyRoles(roles: string[]) {
+  const map: Record<string, string> = {
+    reporter: '提出人',
+    followers: '跟进人',
+    assignee: '处理人',
+  };
+  return roles.map((r) => map[r] ?? r).join('、') || '-';
+}
 
 /** 字段编辑抽屉内：将当前表单草稿合并进列表，供右侧实时预览 */
 const draftPreviewFields = computed<TemplateField[]>(() => {
@@ -406,18 +431,30 @@ const statusColumns: DataTableColumns<BugStatusDef> = [
   },
 ];
 
-const transitionRuleColumns: DataTableColumns<WecomNotifyRule> = [
+const wecomRuleColumns: DataTableColumns<WecomNotifyRule> = [
+  {
+    title: '触发',
+    key: 'kind',
+    width: 100,
+    render: (r) => (r.kind === 'create' ? '新建缺陷' : '状态流转'),
+  },
   {
     title: '原状态',
     key: 'from_status_key',
     width: 120,
-    render: (r) => r.from_status_label ?? r.from_status_key ?? '-',
+    render: (r) => (r.kind === 'create' ? '-' : (r.from_status_label ?? r.from_status_key ?? '-')),
   },
   {
     title: '目标状态',
     key: 'to_status_key',
     width: 120,
-    render: (r) => r.to_status_label ?? r.to_status_key ?? '-',
+    render: (r) => (r.kind === 'create' ? '-' : (r.to_status_label ?? r.to_status_key ?? '-')),
+  },
+  {
+    title: '通知对象',
+    key: 'notify_roles',
+    ellipsis: { tooltip: true },
+    render: (r) => formatNotifyRoles(r.notify_roles ?? []),
   },
   {
     title: '启用',
@@ -431,8 +468,10 @@ const transitionRuleColumns: DataTableColumns<WecomNotifyRule> = [
     width: 140,
     render: (row) =>
       h(NSpace, { size: 4 }, () => [
-        h(NButton, { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openTransitionModal(row) }, () => '编辑'),
-        h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeTransitionRule(row) }, () => '删除'),
+        h(NButton, { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openRuleModal(row) }, () => '编辑'),
+        row.kind === 'transition'
+          ? h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeRule(row) }, () => '删除')
+          : null,
       ]),
   },
 ];
@@ -513,35 +552,49 @@ function openStatusModal(row?: BugStatusDef) {
 
 function applyWecomRules(rules: WecomNotifyRule[]) {
   wecomRules.value = rules;
-  const create = rules.find((r) => r.kind === 'create');
-  createRule.value = {
-    message_template: create?.message_template ?? DEFAULT_CREATE_TEMPLATE,
-    notify_roles: [...(create?.notify_roles ?? ['reporter', 'followers'])],
-    enabled: create?.enabled ?? true,
-  };
 }
 
-function openTransitionModal(row?: WecomNotifyRule) {
-  editingTransitionRule.value = row ?? null;
-  transitionForm.value = row
-    ? {
-        from_status_key: row.from_status_key ?? '',
-        to_status_key: row.to_status_key ?? '',
-        message_template: row.message_template,
-        notify_roles: [...(row.notify_roles ?? ['reporter', 'followers'])],
-        enabled: row.enabled,
-      }
-    : {
-        from_status_key: '',
-        to_status_key: '',
-        message_template: DEFAULT_TRANSITION_TEMPLATE,
-        notify_roles: ['reporter', 'followers'],
-        enabled: true,
-      };
-  showTransitionModal.value = true;
+function ruleStatusKeys(row: WecomNotifyRule, side: 'from' | 'to'): string[] {
+  if (side === 'from') {
+    if (row.from_status_keys?.length) return row.from_status_keys;
+    if (row.from_status_key) return [row.from_status_key];
+    return [];
+  }
+  if (row.to_status_keys?.length) return row.to_status_keys;
+  if (row.to_status_key) return [row.to_status_key];
+  return [];
 }
 
-function removeTransitionRule(row: WecomNotifyRule) {
+function openRuleModal(row?: WecomNotifyRule) {
+  editingRule.value = row ?? null;
+  if (row) {
+    ruleForm.value = {
+      kind: row.kind,
+      from_status_keys: [...ruleStatusKeys(row, 'from')],
+      to_status_keys: [...ruleStatusKeys(row, 'to')],
+      message_template: row.message_template,
+      notify_roles: [...(row.notify_roles ?? ['reporter', 'followers'])],
+      enabled: row.enabled,
+    };
+  } else {
+    const kind = hasCreateRule.value ? 'transition' : 'create';
+    ruleForm.value = {
+      kind,
+      from_status_keys: [],
+      to_status_keys: [],
+      message_template: kind === 'create' ? DEFAULT_CREATE_TEMPLATE : DEFAULT_TRANSITION_TEMPLATE,
+      notify_roles: ['reporter', 'followers'],
+      enabled: true,
+    };
+  }
+  showRuleModal.value = true;
+}
+
+function removeRule(row: WecomNotifyRule) {
+  if (row.kind === 'create') {
+    message.warning('新建缺陷规则不可删除，请编辑后关闭启用');
+    return;
+  }
   dialog.warning({
     title: '确认删除',
     content: `删除流转规则「${row.from_status_label ?? row.from_status_key} → ${row.to_status_label ?? row.to_status_key}」？`,
@@ -561,47 +614,57 @@ function removeTransitionRule(row: WecomNotifyRule) {
   });
 }
 
-async function onSaveTransitionRule() {
+async function onSaveRule() {
   const projectId = await syncContext();
   if (!projectId) return false;
-  const f = transitionForm.value;
-  if (!f.from_status_key || !f.to_status_key) {
-    message.warning('请选择原状态和目标状态');
-    return false;
-  }
-  if (f.from_status_key === f.to_status_key) {
-    message.warning('原状态与目标状态不能相同');
-    return false;
-  }
+  const f = ruleForm.value;
   if (!f.message_template.trim()) {
     message.warning('请填写消息模板');
     return false;
   }
+  if (f.kind === 'transition') {
+    if (!f.from_status_keys.length || !f.to_status_keys.length) {
+      message.warning('请至少选择一个原状态和一个目标状态');
+      return false;
+    }
+    const overlap = f.from_status_keys.filter((k) => f.to_status_keys.includes(k));
+    if (overlap.length) {
+      message.warning('原状态与目标状态不能有相同项');
+      return false;
+    }
+  }
   try {
-    if (editingTransitionRule.value) {
-      await updateWecomNotifyRule(projectId, editingTransitionRule.value.id, {
-        from_status_key: f.from_status_key,
-        to_status_key: f.to_status_key,
-        message_template: f.message_template.trim(),
-        notify_roles: f.notify_roles,
-        enabled: f.enabled,
+    const payload = {
+      message_template: f.message_template.trim(),
+      notify_roles: f.notify_roles,
+      enabled: f.enabled,
+    };
+    if (f.kind === 'create') {
+      if (editingRule.value) {
+        await updateWecomNotifyRule(projectId, editingRule.value.id, payload);
+      } else {
+        await upsertCreateWecomRule(projectId, payload);
+      }
+    } else if (editingRule.value) {
+      await updateWecomNotifyRule(projectId, editingRule.value.id, {
+        ...payload,
+        from_status_keys: f.from_status_keys,
+        to_status_keys: f.to_status_keys,
       });
     } else {
       await createWecomNotifyRule(projectId, {
         kind: 'transition',
-        from_status_key: f.from_status_key,
-        to_status_key: f.to_status_key,
-        message_template: f.message_template.trim(),
-        notify_roles: f.notify_roles,
-        enabled: f.enabled,
+        from_status_keys: f.from_status_keys,
+        to_status_keys: f.to_status_keys,
+        ...payload,
       });
     }
-    showTransitionModal.value = false;
+    showRuleModal.value = false;
     message.success('已保存');
     await loadWecomRules(projectId);
     return true;
-  } catch {
-    message.error('保存失败');
+  } catch (e) {
+    message.error(apiErrorMessage(e, '保存失败'));
     return false;
   }
 }
@@ -689,13 +752,8 @@ async function load() {
     caseFields.value = [];
     bugFields.value = [];
     statuses.value = [];
-    wecom.value = { wecom_enabled: false, wecom_webhook_url: null };
+    wecom.value = { wecom_enabled: false, wecom_webhook_url: null, app_public_url: null };
     wecomRules.value = [];
-    createRule.value = {
-      message_template: DEFAULT_CREATE_TEMPLATE,
-      notify_roles: ['reporter', 'followers'],
-      enabled: true,
-    };
     return;
   }
   try {
@@ -714,6 +772,7 @@ async function load() {
     wecom.value = {
       wecom_enabled: w.data.wecom_enabled,
       wecom_webhook_url: w.data.wecom_webhook_url,
+      app_public_url: w.data.app_public_url,
     };
     applyWecomRules(rules.data);
   } catch {
@@ -742,45 +801,39 @@ async function saveTemplate(scene: 'functional_case' | 'bug', fields: TemplateFi
   }
 }
 
-async function saveWecom() {
+async function saveWecomWebhook(): Promise<boolean> {
   const projectId = await syncContext();
-  if (!projectId) return;
+  if (!projectId) return false;
   try {
-    await updateWecom(projectId, wecom.value);
-    message.success('已保存 Webhook 配置');
-  } catch {
-    message.error('保存失败');
-  }
-}
-
-async function saveCreateRule() {
-  const projectId = await syncContext();
-  if (!projectId) return;
-  if (!createRule.value.message_template.trim()) {
-    message.warning('请填写新建缺陷消息模板');
-    return;
-  }
-  try {
-    await upsertCreateWecomRule(projectId, {
-      message_template: createRule.value.message_template.trim(),
-      notify_roles: createRule.value.notify_roles,
-      enabled: createRule.value.enabled,
-    });
-    message.success('已保存新建规则');
-    await loadWecomRules(projectId);
-  } catch {
-    message.error('保存失败');
+    const { data } = await updateWecom(projectId, wecom.value);
+    wecom.value = {
+      wecom_enabled: data.wecom_enabled,
+      wecom_webhook_url: data.wecom_webhook_url,
+      app_public_url: data.app_public_url,
+    };
+    message.success('Webhook 已保存');
+    return true;
+  } catch (e) {
+    message.error(apiErrorMessage(e, '保存失败'));
+    return false;
   }
 }
 
 async function onTestWecom() {
   const projectId = await syncContext();
   if (!projectId) return;
+  const url = wecom.value.wecom_webhook_url?.trim();
+  if (!url) {
+    message.warning('请先填写 Webhook URL');
+    return;
+  }
+  const saved = await saveWecomWebhook();
+  if (!saved) return;
   try {
     await testWecom(projectId);
-    message.success('测试消息已发送');
-  } catch {
-    message.error('发送失败');
+    message.success('测试消息已发送，请到企微群查看');
+  } catch (e) {
+    message.error(apiErrorMessage(e, '发送失败，请确认 Webhook URL 已保存且有效'));
   }
 }
 

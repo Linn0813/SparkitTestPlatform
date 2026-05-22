@@ -45,7 +45,8 @@ async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
     integ = await db.execute(
         select(ProjectIntegration).where(ProjectIntegration.project_id == project_id)
     )
-    if not integ.scalar_one_or_none():
+    integ_row = integ.scalar_one_or_none()
+    if not integ_row:
         db.add(
             ProjectIntegration(
                 project_id=project_id,
@@ -56,6 +57,14 @@ async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
             )
         )
         await db.flush()
+
+    create_rule = await db.execute(
+        select(BugWecomNotifyRule).where(
+            BugWecomNotifyRule.project_id == project_id,
+            BugWecomNotifyRule.kind == "create",
+        )
+    )
+    if not create_rule.scalar_one_or_none():
         db.add(
             BugWecomNotifyRule(
                 project_id=project_id,

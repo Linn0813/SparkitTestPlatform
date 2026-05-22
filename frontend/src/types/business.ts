@@ -28,6 +28,7 @@ export interface WecomIntegration {
   project_id: string;
   wecom_webhook_url: string | null;
   wecom_enabled: boolean;
+  app_public_url: string | null;
   status_notify_template: string | null;
   create_notify_template: string | null;
   notify_on_create: boolean;
@@ -39,6 +40,8 @@ export interface WecomNotifyRule {
   kind: 'create' | 'transition';
   from_status_key: string | null;
   to_status_key: string | null;
+  from_status_keys?: string[];
+  to_status_keys?: string[];
   message_template: string;
   notify_roles: string[];
   enabled: boolean;

@@ -90,6 +90,9 @@ async def cleanup_after_case_content_change(
 
 async def cleanup_after_bug_deleted(db: AsyncSession, project_id: str, bug: Bug) -> None:
     inline_keys = file_keys_from_bug(bug)
+    comments = await db.execute(select(BugComment).where(BugComment.bug_id == bug.id))
+    for comment in comments.scalars().all():
+        inline_keys.update(file_keys_from_comment_body(comment.body))
     await delete_unreferenced_keys(db, project_id, inline_keys, omit_bug_id=bug.id)
     atts = await db.execute(select(BugAttachment).where(BugAttachment.bug_id == bug.id))
     for att in atts.scalars().all():

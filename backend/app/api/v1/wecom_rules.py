@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -16,6 +15,11 @@ from app.schemas.wecom_rule import (
     WecomNotifyRuleUpdate,
 )
 from app.services.wecom_notify import DEFAULT_CREATE_TEMPLATE
+from app.services.wecom_rule_utils import (
+    keys_signature,
+    resolve_transition_keys_from_body,
+    rule_transition_keys,
+)
 
 router = APIRouter(prefix="/projects", tags=["wecom-rules"])
 
@@ -25,20 +29,62 @@ async def _status_labels(db: AsyncSession, project_id: str) -> dict[str, str]:
     return {s.key: s.label for s in result.scalars().all()}
 
 
+def _labels_join(keys: list[str], labels: dict[str, str]) -> str | None:
+    if not keys:
+        return None
+    return "、".join(labels.get(k, k) for k in keys)
+
+
 def _rule_out(rule: BugWecomNotifyRule, labels: dict[str, str]) -> WecomNotifyRuleOut:
+    from_keys, to_keys = rule_transition_keys(rule)
     return WecomNotifyRuleOut(
         id=rule.id,
         project_id=rule.project_id,
         kind=rule.kind,
-        from_status_key=rule.from_status_key,
-        to_status_key=rule.to_status_key,
+        from_status_key=from_keys[0] if len(from_keys) == 1 else None,
+        to_status_key=to_keys[0] if len(to_keys) == 1 else None,
+        from_status_keys=from_keys,
+        to_status_keys=to_keys,
         message_template=rule.message_template,
         notify_roles=rule.notify_roles if isinstance(rule.notify_roles, list) else [],
         enabled=rule.enabled,
         created_at=rule.created_at,
-        from_status_label=labels.get(rule.from_status_key) if rule.from_status_key else None,
-        to_status_label=labels.get(rule.to_status_key) if rule.to_status_key else None,
+        from_status_label=_labels_join(from_keys, labels),
+        to_status_label=_labels_join(to_keys, labels),
     )
+
+
+async def _ensure_unique_transition_rule(
+    db: AsyncSession,
+    project_id: str,
+    from_keys: list[str],
+    to_keys: list[str],
+    *,
+    exclude_id: str | None = None,
+) -> None:
+    sig = keys_signature(from_keys, to_keys)
+    result = await db.execute(
+        select(BugWecomNotifyRule).where(
+            BugWecomNotifyRule.project_id == project_id,
+            BugWecomNotifyRule.kind == "transition",
+        )
+    )
+    for existing in result.scalars().all():
+        if exclude_id and existing.id == exclude_id:
+            continue
+        ef, et = rule_transition_keys(existing)
+        if keys_signature(ef, et) == sig:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Rule already exists for this transition set",
+            )
+
+
+def _apply_transition_keys(row: BugWecomNotifyRule, from_keys: list[str], to_keys: list[str]) -> None:
+    row.from_status_keys = from_keys
+    row.to_status_keys = to_keys
+    row.from_status_key = None
+    row.to_status_key = None
 
 
 @router.get("/{project_id}/wecom-notify-rules", response_model=list[WecomNotifyRuleOut])
@@ -53,7 +99,7 @@ async def list_wecom_notify_rules(
     result = await db.execute(
         select(BugWecomNotifyRule)
         .where(BugWecomNotifyRule.project_id == project_id)
-        .order_by(BugWecomNotifyRule.kind, BugWecomNotifyRule.from_status_key, BugWecomNotifyRule.to_status_key)
+        .order_by(BugWecomNotifyRule.kind, BugWecomNotifyRule.created_at)
     )
     return [_rule_out(r, labels) for r in result.scalars().all()]
 
@@ -71,17 +117,19 @@ async def create_wecom_notify_rule(
 ):
     if ctx.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    from_keys: list[str] = []
+    to_keys: list[str] = []
     if body.kind == "transition":
-        if not body.from_status_key or not body.to_status_key:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="from_status_key and to_status_key required for transition rules",
+        try:
+            from_keys, to_keys = resolve_transition_keys_from_body(
+                from_status_keys=body.from_status_keys,
+                to_status_keys=body.to_status_keys,
+                from_status_key=body.from_status_key,
+                to_status_key=body.to_status_key,
             )
-        if body.from_status_key == body.to_status_key:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="from and to status must differ",
-            )
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        await _ensure_unique_transition_rule(db, project_id, from_keys, to_keys)
     elif body.kind == "create":
         existing = await db.execute(
             select(BugWecomNotifyRule).where(
@@ -98,21 +146,16 @@ async def create_wecom_notify_rule(
     row = BugWecomNotifyRule(
         project_id=project_id,
         kind=body.kind,
-        from_status_key=body.from_status_key if body.kind == "transition" else None,
-        to_status_key=body.to_status_key if body.kind == "transition" else None,
         message_template=body.message_template.strip(),
         notify_roles=body.notify_roles,
         enabled=body.enabled,
     )
+    if body.kind == "transition":
+        _apply_transition_keys(row, from_keys, to_keys)
     db.add(row)
-    try:
-        await db.flush()
-    except IntegrityError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Rule already exists for this transition",
-        ) from e
+    await db.flush()
     labels = await _status_labels(db, project_id)
+    await db.refresh(row)
     return _rule_out(row, labels)
 
 
@@ -130,27 +173,38 @@ async def update_wecom_notify_rule(
     if not row or row.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
     data = body.model_dump(exclude_unset=True)
-    if row.kind == "transition":
-        from_k = data.get("from_status_key", row.from_status_key)
-        to_k = data.get("to_status_key", row.to_status_key)
-        if from_k and to_k and from_k == to_k:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="from and to status must differ",
+    if row.kind == "create":
+        data.pop("from_status_key", None)
+        data.pop("to_status_key", None)
+        data.pop("from_status_keys", None)
+        data.pop("to_status_keys", None)
+    elif row.kind == "transition":
+        current_from, current_to = rule_transition_keys(row)
+        try:
+            from_keys, to_keys = resolve_transition_keys_from_body(
+                from_status_keys=data.get("from_status_keys", current_from),
+                to_status_keys=data.get("to_status_keys", current_to),
+                from_status_key=data.get("from_status_key"),
+                to_status_key=data.get("to_status_key"),
             )
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        await _ensure_unique_transition_rule(db, project_id, from_keys, to_keys, exclude_id=rule_id)
+        _apply_transition_keys(row, from_keys, to_keys)
+        data.pop("from_status_key", None)
+        data.pop("to_status_key", None)
+        data.pop("from_status_keys", None)
+        data.pop("to_status_keys", None)
     for k, v in data.items():
         if k == "message_template" and v is not None:
             setattr(row, k, v.strip())
-        else:
+        elif k == "enabled":
+            row.enabled = v
+        elif v is not None:
             setattr(row, k, v)
-    try:
-        await db.flush()
-    except IntegrityError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Rule already exists for this transition",
-        ) from e
+    await db.flush()
     labels = await _status_labels(db, project_id)
+    await db.refresh(row)
     return _rule_out(row, labels)
 
 
@@ -205,8 +259,11 @@ async def upsert_create_rule(
         for k, v in data.items():
             if k == "message_template" and v is not None:
                 row.message_template = v.strip()
+            elif k == "enabled":
+                row.enabled = v
             elif v is not None:
                 setattr(row, k, v)
     await db.flush()
     labels = await _status_labels(db, project_id)
+    await db.refresh(row)
     return _rule_out(row, labels)

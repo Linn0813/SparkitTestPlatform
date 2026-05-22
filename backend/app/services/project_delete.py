@@ -88,6 +88,7 @@ async def _delete_bug_data(db: AsyncSession, project_id: str) -> None:
     await db.execute(delete(BugFollowerLink).where(BugFollowerLink.bug_id.in_(bug_ids_sq)))
     await db.execute(delete(BugCaseLink).where(BugCaseLink.bug_id.in_(bug_ids_sq)))
     await db.execute(delete(BugRequirementLink).where(BugRequirementLink.bug_id.in_(bug_ids_sq)))
+    await db.execute(delete(BugPlanLink).where(BugPlanLink.bug_id.in_(bug_ids_sq)))
     await db.execute(delete(Bug).where(Bug.project_id == project_id))
 
 

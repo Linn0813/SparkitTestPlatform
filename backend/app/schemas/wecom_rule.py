@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.common import ORMBase
 
@@ -14,6 +14,8 @@ class WecomNotifyRuleOut(ORMBase):
     kind: WecomRuleKind
     from_status_key: Optional[str] = None
     to_status_key: Optional[str] = None
+    from_status_keys: list[str] = Field(default_factory=list)
+    to_status_keys: list[str] = Field(default_factory=list)
     message_template: str
     notify_roles: list[str]
     enabled: bool
@@ -26,6 +28,8 @@ class WecomNotifyRuleCreate(BaseModel):
     kind: WecomRuleKind = "transition"
     from_status_key: Optional[str] = Field(default=None, max_length=64)
     to_status_key: Optional[str] = Field(default=None, max_length=64)
+    from_status_keys: Optional[list[str]] = None
+    to_status_keys: Optional[list[str]] = None
     message_template: str = Field(min_length=1)
     notify_roles: list[str] = Field(default_factory=lambda: ["reporter", "followers"])
     enabled: bool = True
@@ -34,6 +38,8 @@ class WecomNotifyRuleCreate(BaseModel):
 class WecomNotifyRuleUpdate(BaseModel):
     from_status_key: Optional[str] = Field(default=None, max_length=64)
     to_status_key: Optional[str] = Field(default=None, max_length=64)
+    from_status_keys: Optional[list[str]] = None
+    to_status_keys: Optional[list[str]] = None
     message_template: Optional[str] = None
     notify_roles: Optional[list[str]] = None
     enabled: Optional[bool] = None

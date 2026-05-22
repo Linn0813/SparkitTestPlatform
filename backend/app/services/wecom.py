@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import httpx
 
 from app.core.config import settings
+from app.core.public_url import build_bug_detail_url
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ def build_bug_status_message(
     project_name: str,
     bug_id: str,
 ) -> str:
-    link = f"{settings.app_public_url}/bugs?highlight={bug_id}"
+    link = build_bug_detail_url(bug_id)
     lines = [
         f"### 缺陷状态变更 {bug_num}",
         f"> **项目**: {project_name}",

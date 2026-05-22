@@ -169,6 +169,7 @@ async def get_wecom(
         project_id=project_id,
         wecom_webhook_url=row.wecom_webhook_url,
         wecom_enabled=row.wecom_enabled,
+        app_public_url=row.app_public_url,
         status_notify_template=row.status_notify_template,
         create_notify_template=row.create_notify_template,
         notify_on_create=row.notify_on_create,
@@ -190,12 +191,15 @@ async def update_wecom(
     )
     row = result.scalar_one()
     for k, v in body.model_dump(exclude_unset=True).items():
+        if k == "app_public_url":
+            v = (v or "").strip() or None
         setattr(row, k, v)
     await db.flush()
     return WecomIntegrationOut(
         project_id=project_id,
         wecom_webhook_url=row.wecom_webhook_url,
         wecom_enabled=row.wecom_enabled,
+        app_public_url=row.app_public_url,
         status_notify_template=row.status_notify_template,
         create_notify_template=row.create_notify_template,
         notify_on_create=row.notify_on_create,

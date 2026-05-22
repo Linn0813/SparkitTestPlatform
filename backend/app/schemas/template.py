@@ -56,6 +56,7 @@ class WecomIntegrationOut(BaseModel):
     project_id: str
     wecom_webhook_url: Optional[str] = None
     wecom_enabled: bool
+    app_public_url: Optional[str] = None
     status_notify_template: Optional[str] = None
     create_notify_template: Optional[str] = None
     notify_on_create: bool = True
@@ -64,6 +65,7 @@ class WecomIntegrationOut(BaseModel):
 class WecomIntegrationUpdate(BaseModel):
     wecom_webhook_url: Optional[str] = None
     wecom_enabled: Optional[bool] = None
+    app_public_url: Optional[str] = None
     status_notify_template: Optional[str] = None
     create_notify_template: Optional[str] = None
     notify_on_create: Optional[bool] = None

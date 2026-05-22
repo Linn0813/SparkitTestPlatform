@@ -54,6 +54,7 @@ class ProjectIntegration(Base):
     )
     wecom_webhook_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     wecom_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    app_public_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status_notify_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     create_notify_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notify_on_create: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

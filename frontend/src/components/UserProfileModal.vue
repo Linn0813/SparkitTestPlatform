@@ -11,14 +11,15 @@
       <n-form-item label="姓名">
         <n-input :value="auth.user?.name" disabled />
       </n-form-item>
-      <n-form-item label="企微绑定手机号（用于群 @ 提醒）">
-        <n-input v-model:value="form.wecom_mobile" placeholder="与企微账号一致的手机号" clearable />
-      </n-form-item>
-      <n-form-item label="企微 userid（可选，有则优先 @）">
-        <n-input v-model:value="form.wecom_userid" placeholder="企业微信成员账号" clearable />
+      <n-form-item label="企微绑定手机号">
+        <n-input
+          v-model:value="form.wecom_mobile"
+          placeholder="与企微账号一致的手机号，用于群消息 @ 提醒"
+          clearable
+        />
       </n-form-item>
       <n-alert type="info" :bordered="false">
-        群机器人无法通过显示姓名 @ 人，需填写手机号或 userid。未填写时仍会出现在消息正文，但不会收到 @ 提醒。
+        填写与企微一致的手机号后，缺陷通知会 @ 你并推送提醒。未填写时仍会发群消息，但不会 @ 到你。
       </n-alert>
     </n-form>
   </n-modal>
@@ -36,7 +37,7 @@ const emit = defineEmits<{ 'update:show': [value: boolean] }>();
 const auth = useAuthStore();
 const message = useMessage();
 const visible = ref(props.show);
-const form = ref({ wecom_mobile: '', wecom_userid: '' });
+const form = ref({ wecom_mobile: '' });
 
 watch(
   () => props.show,
@@ -45,7 +46,6 @@ watch(
     if (v) {
       form.value = {
         wecom_mobile: auth.user?.wecom_mobile ?? '',
-        wecom_userid: auth.user?.wecom_userid ?? '',
       };
     }
   }
@@ -57,7 +57,6 @@ async function onSave() {
   try {
     const { data } = await updateMyProfile({
       wecom_mobile: form.value.wecom_mobile.trim() || null,
-      wecom_userid: form.value.wecom_userid.trim() || null,
     });
     if (auth.user) {
       auth.user = { ...auth.user, ...data };

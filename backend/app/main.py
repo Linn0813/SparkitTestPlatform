@@ -8,11 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import dispose_engine
+from app.core.schema_patches import ensure_schema_patches
 from app.services.minio_storage import ensure_bucket
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    await ensure_schema_patches()
     await ensure_bucket()
     yield
     await dispose_engine()

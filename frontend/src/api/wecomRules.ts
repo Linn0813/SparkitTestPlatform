@@ -11,6 +11,8 @@ export function createWecomNotifyRule(
     kind?: 'create' | 'transition';
     from_status_key?: string;
     to_status_key?: string;
+    from_status_keys?: string[];
+    to_status_keys?: string[];
     message_template: string;
     notify_roles?: string[];
     enabled?: boolean;
@@ -25,6 +27,8 @@ export function updateWecomNotifyRule(
   data: Partial<{
     from_status_key: string;
     to_status_key: string;
+    from_status_keys: string[];
+    to_status_keys: string[];
     message_template: string;
     notify_roles: string[];
     enabled: boolean;
