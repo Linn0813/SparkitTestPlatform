@@ -166,6 +166,7 @@ import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
 import type { Requirement, TestCase } from '@/types/business';
 import { modulePathLabel } from '@/utils/moduleTree';
+import { pickAdjacentItemId } from '@/utils/listNavigation';
 import { truncateForTable } from '@/utils/text';
 
 const ctx = useContextStore();
@@ -472,7 +473,6 @@ function goNext() {
 }
 
 async function onCaseDeleted() {
-  closeDetailDrawer();
   await loadCases();
 }
 
@@ -502,6 +502,9 @@ async function loadCases() {
     total.value = 0;
     return;
   }
+  const prevIndex = activeCaseId.value
+    ? cases.value.findIndex((c) => c.id === activeCaseId.value)
+    : -1;
   loading.value = true;
   try {
     const { data } = await listCases(buildListParams());
@@ -514,7 +517,9 @@ async function loadCases() {
     cases.value = data.items;
     if (data.page_size !== pageSize.value) pageSize.value = data.page_size;
     if (activeCaseId.value && !data.items.some((c) => c.id === activeCaseId.value)) {
-      closeDetailDrawer();
+      const nextId = pickAdjacentItemId(data.items, prevIndex);
+      if (nextId) openCaseDetail(nextId);
+      else closeDetailDrawer();
     }
   } finally {
     loading.value = false;

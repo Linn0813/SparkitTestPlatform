@@ -1,9 +1,9 @@
 <template>
-  <template v-if="sortedFields.length">
+  <div v-if="sortedFields.length" :class="{ 'dynamic-field-form--compact': compact }">
     <n-divider v-if="showDivider">{{ title }}</n-divider>
-    <n-grid v-if="columns > 1" :cols="columns" :x-gap="16" :y-gap="4">
+    <n-grid v-if="columns > 1" :cols="columns" :x-gap="compact ? 12 : 16" :y-gap="compact ? 2 : 4">
       <n-gi v-for="field in sortedFields" :key="field.id" :span="fieldSpan(field)">
-        <n-form-item :label="field.name" :required="field.required">
+        <n-form-item :label="field.name" :required="field.required" label-placement="top">
           <TemplateFieldInput
             :field="field"
             :model-value="modelValue[field.id]"
@@ -14,12 +14,13 @@
       </n-gi>
     </n-grid>
     <template v-else>
-      <n-form-item
-        v-for="field in sortedFields"
-        :key="field.id"
-        :label="field.name"
-        :required="field.required"
-      >
+        <n-form-item
+          v-for="field in sortedFields"
+          :key="field.id"
+          :label="field.name"
+          :required="field.required"
+          label-placement="top"
+        >
         <TemplateFieldInput
           :field="field"
           :model-value="modelValue[field.id]"
@@ -28,7 +29,7 @@
         />
       </n-form-item>
     </template>
-  </template>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -47,11 +48,13 @@ const props = withDefaults(
     title?: string;
     showDivider?: boolean;
     columns?: number;
+    compact?: boolean;
   }>(),
   {
     title: '自定义字段',
     showDivider: false,
     columns: 1,
+    compact: false,
   }
 );
 
@@ -73,3 +76,14 @@ function setValue(id: string, value: unknown) {
   emit('update:modelValue', { ...props.modelValue, [id]: value });
 }
 </script>
+
+<style scoped>
+.dynamic-field-form--compact :deep(.n-form-item) {
+  margin-bottom: 4px;
+}
+
+.dynamic-field-form--compact :deep(.n-form-item-label) {
+  padding-bottom: 2px;
+  min-height: auto;
+}
+</style>

@@ -7,11 +7,11 @@
       :autosize="autosize"
       :rows="rows"
       :disabled="disabled"
-      :placeholder="placeholder"
+      :placeholder="effectivePlaceholder"
       @update:value="(v) => emit('update:modelValue', v)"
       @paste="onPaste"
     />
-    <n-text v-if="!disabled && projectId" depth="3" class="paste-hint">
+    <n-text v-if="!compact && !disabled && projectId" depth="3" class="paste-hint">
       支持 Ctrl+V / ⌘V 在光标处粘贴截图或图片
     </n-text>
     <n-alert v-else-if="!disabled && !projectId" type="warning" :show-icon="false" style="margin-top: 6px">
@@ -21,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import { NAlert, NInput, NText, useMessage } from 'naive-ui';
 import type { InputInst } from 'naive-ui';
 import { uploadProjectFile } from '@/api/projects';
@@ -35,13 +35,21 @@ const props = withDefaults(
     placeholder?: string;
     rows?: number;
     autosize?: boolean | { minRows?: number; maxRows?: number };
+    compact?: boolean;
   }>(),
   {
     disabled: false,
     rows: 4,
     autosize: () => ({ minRows: 3, maxRows: 12 }),
+    compact: false,
   }
 );
+
+const effectivePlaceholder = computed(() => {
+  if (props.placeholder) return props.placeholder;
+  if (props.compact) return '描述（支持 Ctrl+V / ⌘V 粘贴截图）';
+  return undefined;
+});
 
 const emit = defineEmits<{
   'update:modelValue': [value: string];

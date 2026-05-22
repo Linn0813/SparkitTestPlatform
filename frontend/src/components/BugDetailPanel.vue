@@ -21,7 +21,7 @@
       </n-space>
     </div>
 
-    <div class="panel-title-row">
+    <div v-if="!editMode" class="panel-title-row">
       <n-text strong class="bug-title">{{ bug.title }}</n-text>
       <n-dropdown
         v-if="!editMode"
@@ -47,7 +47,7 @@
       </n-dropdown>
     </div>
 
-    <div class="panel-body">
+    <div class="panel-body" :class="{ 'panel-body--edit': editMode }">
     <template v-if="!editMode">
       <n-descriptions :column="2" label-placement="left" class="field-block">
         <n-descriptions-item
@@ -98,120 +98,50 @@
       <n-text v-else depth="3">—</n-text>
     </template>
 
-    <n-form v-else label-placement="top" class="field-block bug-edit-form">
-      <n-grid :cols="2" :x-gap="16" :y-gap="4">
-        <n-gi :span="2">
-          <n-form-item label="缺陷标题" required>
-            <n-input v-model:value="editForm.title" />
-          </n-form-item>
-        </n-gi>
-        <n-gi :span="2">
-          <n-form-item label="状态">
-            <n-radio-group v-model:value="editForm.status_key" name="bug-status" size="small">
-              <n-space wrap :size="[8, 8]">
-                <n-radio-button v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </n-radio-button>
-              </n-space>
-            </n-radio-group>
-          </n-form-item>
-        </n-gi>
-        <n-gi>
-          <n-form-item label="提出人">
-            <n-select v-model:value="editForm.reporter_id" :options="memberOptions" filterable />
-          </n-form-item>
-        </n-gi>
-        <n-gi>
-          <n-form-item label="跟进人">
-            <n-select
-              v-model:value="editForm.follower_ids"
-              :options="memberOptions"
-              multiple
-              filterable
-              clearable
-            />
-          </n-form-item>
-        </n-gi>
-        <n-gi>
-          <n-form-item label="规划迭代">
-            <VersionSelect v-model="editForm.plan_version_id" :project-id="bug.project_id" />
-          </n-form-item>
-        </n-gi>
-        <n-gi>
-          <n-form-item label="发现版本">
-            <VersionSelect v-model="editForm.found_version_id" :project-id="bug.project_id" />
-          </n-form-item>
-        </n-gi>
-        <n-gi>
-          <n-form-item label="关联需求">
-            <n-select
-              v-model:value="editForm.requirement_ids"
-              :options="requirementOptions"
-              multiple
-              filterable
-              clearable
-            />
-          </n-form-item>
-        </n-gi>
-        <n-gi>
-          <n-form-item label="关联测试计划">
-            <n-select
-              v-model:value="editForm.plan_ids"
-              :options="planOptions"
-              multiple
-              filterable
-              clearable
-            />
-          </n-form-item>
-        </n-gi>
-        <n-gi :span="2">
-          <DynamicFieldForm
-            v-if="templateUiFields.length"
-            v-model="customFields"
-            :fields="templateUiFields"
-            :project-id="bug.project_id"
-            :columns="2"
-          />
-        </n-gi>
-        <n-gi :span="2">
-          <n-form-item label="描述">
-            <PasteImageTextarea v-model="editForm.description" :project-id="bug.project_id" />
-          </n-form-item>
-        </n-gi>
-        <n-gi :span="2">
-          <n-form-item label="附件">
-            <n-space vertical style="width: 100%">
-              <n-upload :custom-request="onUpload" :show-file-list="false">
-                <n-button>上传附件</n-button>
-              </n-upload>
-              <div v-if="attachments.length" class="attachment-list">
-                <div v-for="att in attachments" :key="att.id" class="attachment-item">
-                  <n-space align="center" justify="space-between" style="width: 100%">
-                    <div class="attachment-item-main">
-                      <a :href="att.url" target="_blank" rel="noopener noreferrer" class="attachment-link">
-                        {{ att.filename }}
-                      </a>
-                      <n-text depth="3" class="attachment-meta">
-                        {{ formatFileSize(att.size) }} · {{ formatTime(att.created_at) }}
-                      </n-text>
-                    </div>
-                    <n-button size="tiny" quaternary type="error" @click="onDeleteAttachment(att)">
-                      删除
-                    </n-button>
-                  </n-space>
-                  <img
-                    v-if="isImageAttachment(att.filename)"
-                    :src="att.url"
-                    :alt="att.filename"
-                    class="attachment-thumb"
-                  />
+    <BugFormFields
+      v-else
+      v-model="editForm"
+      v-model:custom-fields="customFields"
+      mode="edit"
+      class="field-block"
+      :project-id="bug.project_id"
+      :template-fields="templateUiFields"
+      :status-options="statusOptions"
+      :member-options="memberOptions"
+      :requirement-options="requirementOptions"
+      :plan-options="planOptions"
+    >
+      <template #attachments>
+        <n-space vertical :size="8" style="width: 100%">
+          <n-upload :custom-request="onUpload" :show-file-list="false">
+            <n-button size="small">上传附件</n-button>
+          </n-upload>
+          <div v-if="attachments.length" class="attachment-list attachment-list--compact">
+            <div v-for="att in attachments" :key="att.id" class="attachment-item attachment-item--compact">
+              <n-space align="center" justify="space-between" style="width: 100%">
+                <div class="attachment-item-main">
+                  <a :href="att.url" target="_blank" rel="noopener noreferrer" class="attachment-link">
+                    {{ att.filename }}
+                  </a>
+                  <n-text depth="3" class="attachment-meta">
+                    {{ formatFileSize(att.size) }} · {{ formatTime(att.created_at) }}
+                  </n-text>
                 </div>
-              </div>
-            </n-space>
-          </n-form-item>
-        </n-gi>
-      </n-grid>
-    </n-form>
+                <n-button size="tiny" quaternary type="error" @click="onDeleteAttachment(att)">
+                  删除
+                </n-button>
+              </n-space>
+              <img
+                v-if="isImageAttachment(att.filename)"
+                :src="att.url"
+                :alt="att.filename"
+                class="attachment-thumb attachment-thumb--compact"
+              />
+            </div>
+          </div>
+        </n-space>
+      </template>
+    </BugFormFields>
 
     <n-tabs v-if="!editMode" type="line" class="tabs-block">
       <n-tab-pane name="comments" tab="评论">
@@ -254,14 +184,7 @@ import {
   NDescriptionsItem,
   NDropdown,
   NEmpty,
-  NForm,
   NFormItem,
-  NGi,
-  NGrid,
-  NInput,
-  NRadioButton,
-  NRadioGroup,
-  NSelect,
   NSpace,
   NSpin,
   NTabPane,
@@ -289,10 +212,9 @@ import {
 import { listPlans } from '@/api/plans';
 import { listRequirements } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
-import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
+import BugFormFields, { type BugFormModel } from '@/components/BugFormFields.vue';
 import InlineMarkdownContent from '@/components/InlineMarkdownContent.vue';
 import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
-import VersionSelect from '@/components/VersionSelect.vue';
 import {
   formatTemplateFieldValue,
   isRichtextType,
@@ -345,16 +267,16 @@ const newComment = ref('');
 
 const ctx = useContextStore();
 
-const editForm = ref({
+const editForm = ref<BugFormModel>({
   title: '',
   status_key: '',
   description: '',
-  reporter_id: null as string | null,
-  follower_ids: [] as string[],
-  requirement_ids: [] as string[],
-  plan_ids: [] as string[],
-  plan_version_id: null as string | null,
-  found_version_id: null as string | null,
+  reporter_id: null,
+  follower_ids: [],
+  requirement_ids: [],
+  plan_ids: [],
+  plan_version_id: null,
+  found_version_id: null,
 });
 
 const schemaProjectId = computed(() => bug.value?.project_id ?? ctx.projectId);
@@ -722,18 +644,12 @@ watch(
   min-height: 0;
 }
 
+.panel-body--edit {
+  padding: 12px 16px 16px;
+}
+
 .field-block {
   margin-top: 0;
-}
-
-.bug-edit-form :deep(.n-form-item) {
-  margin-bottom: 12px;
-}
-
-.bug-edit-form :deep(.n-input),
-.bug-edit-form :deep(.n-select),
-.bug-edit-form :deep(.n-tree-select) {
-  width: 100%;
 }
 
 .section-label {
@@ -806,5 +722,18 @@ watch(
   max-height: 200px;
   border-radius: 4px;
   object-fit: contain;
+}
+
+.attachment-list--compact {
+  gap: 6px;
+}
+
+.attachment-item--compact {
+  padding: 6px 8px;
+}
+
+.attachment-thumb--compact {
+  max-height: 120px;
+  margin-top: 6px;
 }
 </style>

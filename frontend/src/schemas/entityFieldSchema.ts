@@ -188,6 +188,26 @@ export function detailTemplateFields(scene: EntityScene, fields: TemplateField[]
   return list;
 }
 
+/** 缺陷表单：适合 Radio 平铺的单选模板字段（严重程度、平台等） */
+export function isPromotedRadioSelectField(field: TemplateField): boolean {
+  if (field.type !== 'select') return false;
+  const name = field.name;
+  if (name.includes('严重') || name.includes('平台')) return true;
+  return (field.options?.length ?? 0) <= 8;
+}
+
+export function splitPromotedTemplateFields(fields: TemplateField[]): {
+  promoted: TemplateField[];
+  rest: TemplateField[];
+} {
+  const promoted: TemplateField[] = [];
+  const rest: TemplateField[] = [];
+  for (const f of fields) {
+    (isPromotedRadioSelectField(f) ? promoted : rest).push(f);
+  }
+  return { promoted, rest };
+}
+
 export function buildFieldCatalog(scene: EntityScene, templateFields: TemplateField[]): FieldCatalogItem[] {
   const templateDefs: FieldCatalogItem[] = filterableTemplateFields(scene, templateFields).map((f) => ({
     key: templateFilterKey(f.id),

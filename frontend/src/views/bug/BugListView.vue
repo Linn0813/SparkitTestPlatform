@@ -65,76 +65,33 @@
       </n-drawer-content>
     </n-drawer>
 
-    <n-modal
-      v-model:show="showModal"
-      preset="dialog"
-      title="新建缺陷"
-      positive-text="创建"
-      style="width: 560px"
-      @positive-click="onCreate"
+    <n-drawer
+      v-model:show="createDrawerVisible"
+      :width="'50%'"
+      placement="right"
+      :trap-focus="false"
     >
-      <n-form label-placement="top">
-        <n-form-item label="缺陷标题" required>
-          <n-input v-model:value="form.title" placeholder="请输入缺陷标题" />
-        </n-form-item>
-        <n-form-item label="状态">
-          <n-select v-model:value="form.status_key" :options="statusOptions" style="width: 100%" />
-        </n-form-item>
-        <n-form-item label="提出人">
-          <n-select
-            v-model:value="form.reporter_id"
-            :options="memberOptions"
-            filterable
-            style="width: 100%"
-          />
-        </n-form-item>
-        <n-form-item label="跟进人">
-          <n-select
-            v-model:value="form.follower_ids"
-            :options="memberOptions"
-            multiple
-            filterable
-            clearable
-            style="width: 100%"
-          />
-        </n-form-item>
-        <n-form-item label="描述">
-          <PasteImageTextarea v-model="form.description" :project-id="ctx.projectId" />
-        </n-form-item>
-        <n-form-item label="关联需求">
-          <n-select
-            v-model:value="form.requirement_ids"
-            :options="requirementOptions"
-            multiple
-            filterable
-            clearable
-            style="width: 100%"
-          />
-        </n-form-item>
-        <n-form-item label="关联测试计划">
-          <n-select
-            v-model:value="form.plan_ids"
-            :options="planOptions"
-            multiple
-            filterable
-            clearable
-            style="width: 100%"
-          />
-        </n-form-item>
-        <n-form-item label="规划迭代">
-          <VersionSelect v-model="form.plan_version_id" :project-id="ctx.projectId" />
-        </n-form-item>
-        <n-form-item label="发现版本">
-          <VersionSelect v-model="form.found_version_id" :project-id="ctx.projectId" />
-        </n-form-item>
-        <DynamicFieldForm
-          v-if="templateUiFields.length"
-          v-model="createCustomFields"
-          :fields="templateUiFields"
+      <n-drawer-content title="新建缺陷" closable body-content-style="padding: 12px 16px">
+        <BugFormFields
+          v-if="ctx.projectId"
+          v-model="form"
+          v-model:custom-fields="createCustomFields"
+          mode="create"
           :project-id="ctx.projectId"
+          :template-fields="templateUiFields"
+          :status-options="statusOptions"
+          :member-options="memberOptions"
+          :requirement-options="requirementOptions"
+          :plan-options="planOptions"
         />
-      </n-form>
-    </n-modal>
+        <template #footer>
+          <n-space justify="end">
+            <n-button @click="createDrawerVisible = false">取消</n-button>
+            <n-button type="primary" :loading="creating" @click="onCreate">创建</n-button>
+          </n-space>
+        </template>
+      </n-drawer-content>
+    </n-drawer>
   </n-card>
 </template>
 
@@ -148,11 +105,6 @@ import {
   NDataTable,
   NDrawer,
   NDrawerContent,
-  NForm,
-  NFormItem,
-  NInput,
-  NModal,
-  NSelect,
   NPagination,
   useMessage,
   type DataTableColumns,
@@ -162,11 +114,9 @@ import { listPlans } from '@/api/plans';
 import { listRequirements } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
+import BugFormFields, { type BugFormModel } from '@/components/BugFormFields.vue';
 import BugImportModal from '@/components/BugImportModal.vue';
 import SchemaFieldFilters from '@/components/SchemaFieldFilters.vue';
-import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
-import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
-import VersionSelect from '@/components/VersionSelect.vue';
 import {
   emptyBugListFilters,
   syncCustomFilterKeys,
@@ -181,6 +131,7 @@ import { useContextStore } from '@/stores/context';
 import { useAuthStore } from '@/stores/auth';
 import type { BugItem, BugStatusDef, Requirement, TestPlan } from '@/types/business';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
+import { pickAdjacentItemId } from '@/utils/listNavigation';
 
 const route = useRoute();
 const router = useRouter();
@@ -199,7 +150,8 @@ const statuses = ref<BugStatusDef[]>([]);
 const requirements = ref<Requirement[]>([]);
 const plans = ref<TestPlan[]>([]);
 const loading = ref(false);
-const showModal = ref(false);
+const createDrawerVisible = ref(false);
+const creating = ref(false);
 const showImportModal = ref(false);
 const drawerVisible = ref(false);
 const activeBugId = ref<string | null>(null);
@@ -240,16 +192,16 @@ function expandVisibleFromActiveFilters() {
   setVisibleKeys([...new Set([...visibleKeys.value, ...extra])]);
 }
 
-const form = ref({
+const form = ref<BugFormModel>({
   title: '',
-  status_key: null as string | null,
+  status_key: '',
   description: '',
-  reporter_id: null as string | null,
-  follower_ids: [] as string[],
-  requirement_ids: [] as string[],
-  plan_ids: [] as string[],
-  plan_version_id: null as string | null,
-  found_version_id: null as string | null,
+  reporter_id: null,
+  follower_ids: [],
+  requirement_ids: [],
+  plan_ids: [],
+  plan_version_id: null,
+  found_version_id: null,
 });
 
 const createCustomFields = ref<Record<string, unknown>>({});
@@ -468,7 +420,6 @@ function goNext() {
 }
 
 async function onBugDeleted() {
-  closeDrawer();
   await load();
 }
 
@@ -513,6 +464,9 @@ async function load() {
     bugs.value = [];
     return;
   }
+  const prevIndex = activeBugId.value
+    ? bugs.value.findIndex((b) => b.id === activeBugId.value)
+    : -1;
   loading.value = true;
   try {
     const { data } = await listBugs(buildListParams());
@@ -525,7 +479,9 @@ async function load() {
     bugs.value = data.items;
     if (data.page_size !== pageSize.value) pageSize.value = data.page_size;
     if (activeBugId.value && !data.items.some((b) => b.id === activeBugId.value)) {
-      closeDrawer();
+      const nextId = pickAdjacentItemId(data.items, prevIndex);
+      if (nextId) openBug(nextId);
+      else closeDrawer();
     }
   } finally {
     loading.value = false;
@@ -535,7 +491,7 @@ async function load() {
 function openCreate() {
   form.value = {
     title: '',
-    status_key: statuses.value[0]?.key ?? null,
+    status_key: statuses.value[0]?.key ?? '',
     reporter_id: auth.user?.id ?? null,
     follower_ids: [],
     description: '',
@@ -545,36 +501,40 @@ function openCreate() {
     found_version_id: null,
   };
   createCustomFields.value = emptyCustomFields(fieldSchema.templateFieldsForUi.value);
-  showModal.value = true;
+  createDrawerVisible.value = true;
 }
 
 async function onCreate() {
   if (!form.value.title.trim()) {
     message.warning('请填写标题');
-    return false;
+    return;
   }
   const customErr = validateCustomFields(fieldSchema.templateFieldsForUi.value, createCustomFields.value);
   if (customErr) {
     message.warning(customErr);
-    return false;
+    return;
   }
-  const { data } = await createBug({
-    title: form.value.title.trim(),
-    status_key: form.value.status_key ?? undefined,
-    reporter_id: form.value.reporter_id ?? undefined,
-    follower_ids: form.value.follower_ids,
-    description: form.value.description || undefined,
-    requirement_ids: form.value.requirement_ids,
-    plan_ids: form.value.plan_ids,
-    plan_version_id: form.value.plan_version_id ?? undefined,
-    found_version_id: form.value.found_version_id ?? undefined,
-    custom_fields: createCustomFields.value,
-  });
-  message.success('已创建');
-  showModal.value = false;
-  await load();
-  openBug(data.id);
-  return true;
+  creating.value = true;
+  try {
+    const { data } = await createBug({
+      title: form.value.title.trim(),
+      status_key: form.value.status_key || undefined,
+      reporter_id: form.value.reporter_id ?? undefined,
+      follower_ids: form.value.follower_ids,
+      description: form.value.description || undefined,
+      requirement_ids: form.value.requirement_ids,
+      plan_ids: form.value.plan_ids,
+      plan_version_id: form.value.plan_version_id ?? undefined,
+      found_version_id: form.value.found_version_id ?? undefined,
+      custom_fields: createCustomFields.value,
+    });
+    message.success('已创建');
+    createDrawerVisible.value = false;
+    await load();
+    openBug(data.id);
+  } finally {
+    creating.value = false;
+  }
 }
 
 onMounted(async () => {

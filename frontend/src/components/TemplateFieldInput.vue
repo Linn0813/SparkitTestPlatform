@@ -53,6 +53,13 @@
     style="width: 100%"
     @update:value="(v) => emitValue(v)"
   />
+  <SelectRadioField
+    v-else-if="field.type === 'select' && useRadioSelect"
+    :model-value="selectValue"
+    :options="field.options ?? []"
+    :name="`field-${field.id}`"
+    @update:model-value="(v) => emitValue(v)"
+  />
   <n-select
     v-else-if="field.type === 'select'"
     :value="selectValue"
@@ -88,8 +95,10 @@ import { computed, toRef } from 'vue';
 import { NDatePicker, NInput, NInputNumber, NSelect, NSwitch } from 'naive-ui';
 import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
 import RichTextFieldInput from '@/components/RichTextFieldInput.vue';
+import SelectRadioField from '@/components/SelectRadioField.vue';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { isRichtextType, isTextLikeType } from '@/constants/fieldTypes';
+import { isPromotedRadioSelectField } from '@/schemas/entityFieldSchema';
 import type { TemplateField } from '@/types/business';
 
 const props = withDefaults(
@@ -122,6 +131,8 @@ const placeholder = computed(() => {
 const memberPlaceholder = computed(() =>
   props.projectId ? `请选择${props.field.name}` : '请先选择项目'
 );
+
+const useRadioSelect = computed(() => isPromotedRadioSelectField(props.field));
 
 const selectOptions = computed(() => (props.field.options ?? []).map((o) => ({ label: o, value: o })));
 
