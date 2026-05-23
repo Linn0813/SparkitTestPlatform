@@ -11,6 +11,14 @@ DEFAULT_BUG_FIELDS: list = [
         "options": ["致命", "严重", "一般", "轻微"],
         "sort": 0,
     },
+    {
+        "id": "field_source",
+        "name": "来源",
+        "type": "select",
+        "required": False,
+        "options": ["需求测试", "内部体验", "线上反馈"],
+        "sort": 1,
+    },
 ]
 
 DEFAULT_NOTIFY_ROLES = ["reporter", "followers"]
