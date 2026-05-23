@@ -20,21 +20,8 @@
                 :selected-version-id="selectedVersionId"
                 @update:selected-version-id="onVersionSelect"
               />
-              <n-grid :cols="24" :x-gap="16" :y-gap="16" responsive="screen">
-                <n-gi :span="8">
-                  <WorkbenchBugOverviewChart
-                    ref="bugOverviewChartRef"
-                    :chart="bugOverviewChart"
-                    :link-for="bugOverviewLink"
-                  />
-                </n-gi>
-                <n-gi :span="16">
-                  <WorkbenchPlanChart
-                    ref="planChartRef"
-                    :chart="data?.overview.plan_execution_chart"
-                  />
-                </n-gi>
-              </n-grid>
+              <WorkbenchBugFocus ref="bugFocusRef" :focus="data?.overview.bug_focus" />
+              <WorkbenchPlanFocus ref="planFocusRef" :focus="data?.overview.plan_focus" />
             </n-space>
           </n-tab-pane>
 
@@ -139,8 +126,6 @@
 import {
   NAlert,
   NButton,
-  NGi,
-  NGrid,
   NListItem,
   NSpace,
   NSpin,
@@ -149,16 +134,14 @@ import {
   NTag,
   NText,
 } from 'naive-ui';
-import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { type RouteLocationRaw } from 'vue-router';
 import { fetchWorkbench } from '@/api/dashboard';
 import { listBugStatuses } from '@/api/templates';
 import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
-import { FILTER_EMPTY_VALUE } from '@/constants/bugFilters';
 import type {
   ActivePlanBrief,
-  BugOverviewChart,
   BugStatusDef,
   DashboardWorkbench,
   RequirementTodoBrief,
@@ -166,10 +149,9 @@ import type {
 import { formatNumWithTitle, formatNum } from '@/utils/entityNum';
 import TodoSection from './components/TodoSection.vue';
 import WorkbenchStatCards from './components/WorkbenchStatCards.vue';
-import WorkbenchBugOverviewChart from './components/WorkbenchBugOverviewChart.vue';
+import WorkbenchBugFocus from './components/WorkbenchBugFocus.vue';
+import WorkbenchPlanFocus from './components/WorkbenchPlanFocus.vue';
 import WorkbenchVersionFocus from './components/WorkbenchVersionFocus.vue';
-
-const WorkbenchPlanChart = defineAsyncComponent(() => import('./components/WorkbenchPlanChart.vue'));
 
 type ChartExpose = { resize?: () => void };
 
@@ -184,31 +166,13 @@ const activeTab = ref<'overview' | 'todo'>('overview');
 const bugStatuses = ref<BugStatusDef[]>([]);
 const selectedVersionId = ref<string | null>(null);
 const versionFocusRef = ref<ChartExpose | null>(null);
-const bugOverviewChartRef = ref<ChartExpose | null>(null);
-const planChartRef = ref<ChartExpose | null>(null);
-
-const emptyBugOverview: BugOverviewChart = {
-  total: 0,
-  by_status: [],
-  versions: [],
-  cells: [],
-};
-
-const bugOverviewChart = computed(
-  () => data.value?.overview.bug_overview_chart ?? emptyBugOverview
-);
-
-function bugOverviewLink(statusKey: string, versionId: string | null): RouteLocationRaw {
-  const query: Record<string, string> = { status_key: statusKey };
-  if (versionId) query.plan_version_id = versionId;
-  else query.plan_version_id = FILTER_EMPTY_VALUE;
-  return { name: 'bugs', query };
-}
+const bugFocusRef = ref<ChartExpose | null>(null);
+const planFocusRef = ref<ChartExpose | null>(null);
 
 function resizeOverviewCharts() {
   versionFocusRef.value?.resize?.();
-  bugOverviewChartRef.value?.resize?.();
-  planChartRef.value?.resize?.();
+  bugFocusRef.value?.resize?.();
+  planFocusRef.value?.resize?.();
 }
 
 const projectName = computed(() => {

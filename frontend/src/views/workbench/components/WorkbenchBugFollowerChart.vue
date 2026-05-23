@@ -1,5 +1,5 @@
 <template>
-  <n-card size="small" :title="cardTitle">
+  <n-card size="small" :title="title">
     <div v-if="!hasCategories" class="chart-placeholder" :style="chartBoxStyle">
       <n-text depth="3">暂无数据</n-text>
     </div>
@@ -16,7 +16,7 @@ import {
   WORKBENCH_OVERVIEW_CHART_HEIGHT,
   workbenchCategoryGridRight,
 } from '@/constants/workbenchCharts';
-import type { BugOverviewChart } from '@/types/business';
+import type { BugFollowerOverviewChart } from '@/types/business';
 import { formatVersionDisplay } from '@/utils/versionLabel';
 import { echarts, type ECharts } from '@/utils/echarts';
 
@@ -24,12 +24,12 @@ const UNASSIGNED_SERIES = '__unassigned__';
 
 const props = withDefaults(
   defineProps<{
-    chart: BugOverviewChart;
+    chart: BugFollowerOverviewChart;
     title?: string;
-    linkFor?: (statusKey: string, versionId: string | null) => RouteLocationRaw | null;
+    linkFor?: (followerId: string | null, versionId: string | null) => RouteLocationRaw | null;
   }>(),
   {
-    title: '缺陷',
+    title: '跟进人',
   }
 );
 
@@ -37,30 +37,27 @@ const router = useRouter();
 const chartRef = ref<HTMLDivElement | null>(null);
 let instance: ECharts | null = null;
 
-const hasCategories = computed(() => (props.chart.by_status?.length ?? 0) > 0);
-
-const cardTitle = computed(() => props.title);
+const hasCategories = computed(() => (props.chart.followers?.length ?? 0) > 0);
 
 const chartBoxStyle = { height: `${WORKBENCH_OVERVIEW_CHART_HEIGHT}px` };
 
-function cellCount(statusKey: string, versionId: string | null): number {
+function cellCount(followerId: string | null, versionId: string | null): number {
   const cell = props.chart.cells.find(
-    (c) => c.status_key === statusKey && (c.version_id ?? null) === versionId
+    (c) => (c.follower_id ?? null) === followerId && (c.version_id ?? null) === versionId
   );
   return cell?.count ?? 0;
 }
 
 function render() {
   if (!chartRef.value || !hasCategories.value) return;
-  const statuses = props.chart.by_status;
-  const xData = statuses.map((s) => s.label);
+  const followers = props.chart.followers;
+  const xData = followers.map((f) => f.label);
 
   if (!instance) {
     instance = echarts.init(chartRef.value);
     instance.on('click', (p) => {
-      const d = p.data as { statusKey?: string; versionId?: string | null };
-      if (!d.statusKey) return;
-      const to = props.linkFor?.(d.statusKey, d.versionId ?? null);
+      const d = p.data as { followerId?: string | null; versionId?: string | null };
+      const to = props.linkFor?.(d.followerId ?? null, d.versionId ?? null);
       if (to) router.push(to);
     });
   }
@@ -81,14 +78,14 @@ function render() {
   const series = slices.map((slice) => ({
     name: slice.name,
     type: 'bar' as const,
-    stack: 'bug',
+    stack: 'follower',
     barMaxWidth: 28,
     itemStyle: { color: VERSION_STACK_COLORS[slice.colorIndex % VERSION_STACK_COLORS.length] },
-    data: statuses.map((st) => {
+    data: followers.map((f) => {
       const versionId = slice.id === UNASSIGNED_SERIES ? null : slice.id;
       return {
-        value: cellCount(st.key, versionId),
-        statusKey: st.key,
+        value: cellCount(f.id, versionId),
+        followerId: f.id,
         versionId,
       };
     }),
@@ -108,11 +105,18 @@ function render() {
         },
       },
       legend: { type: 'scroll', top: 0 },
-      grid: { left: 8, right: gridRight, top: 48, bottom: 8, containLabel: true },
+      grid: { left: 8, right: gridRight, top: 48, bottom: 20, containLabel: true },
       xAxis: {
         type: 'category',
         data: xData,
-        axisLabel: { interval: 0, rotate: xData.length > 4 ? 20 : 0 },
+        axisLabel: {
+          interval: 0,
+          rotate: 0,
+          fontSize: 11,
+          hideOverlap: true,
+          overflow: 'truncate',
+          width: 72,
+        },
       },
       yAxis: { type: 'value', minInterval: 1 },
       series,

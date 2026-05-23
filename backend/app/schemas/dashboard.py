@@ -21,6 +21,7 @@ class ActivePlanBrief(BaseModel):
     case_total: int
     not_run: int
     pass_rate: Optional[float] = None
+    version: Optional[VersionBrief] = None
 
 
 class StatusCountItem(BaseModel):
@@ -49,6 +50,30 @@ class BugOverviewChart(BaseModel):
     cells: list[BugOverviewCell] = []
 
 
+class FollowerBrief(BaseModel):
+    id: Optional[str] = None
+    label: str
+
+
+class BugFollowerCell(BaseModel):
+    follower_id: Optional[str] = None
+    version_id: Optional[str] = None
+    count: int
+
+
+class BugFollowerOverviewChart(BaseModel):
+    """跟进人待办（待确认/处理中/挂起）× 规划版本。"""
+
+    followers: list[FollowerBrief] = []
+    versions: list[VersionBrief] = []
+    cells: list[BugFollowerCell] = []
+
+
+class BugFocus(BaseModel):
+    by_version_status: BugOverviewChart
+    follower_by_version: BugFollowerOverviewChart
+
+
 class VersionFocus(BaseModel):
     version: Optional[VersionBrief] = None
     versions: list[VersionBrief] = []
@@ -69,10 +94,15 @@ class PlanExecutionChart(BaseModel):
     points: list[PlanChartPoint]
 
 
+class PlanFocus(BaseModel):
+    unfinished_plans: list[ActivePlanBrief] = []
+    execution_chart: PlanExecutionChart
+
+
 class DashboardOverview(BaseModel):
     version_focus: VersionFocus
-    bug_overview_chart: BugOverviewChart
-    plan_execution_chart: PlanExecutionChart
+    bug_focus: BugFocus
+    plan_focus: PlanFocus
 
 
 class RequirementTodoBrief(BaseModel):

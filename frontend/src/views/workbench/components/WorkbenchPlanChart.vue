@@ -1,7 +1,7 @@
 <template>
-  <n-card size="small" title="计划 · 用例执行">
-    <div v-if="hasData" ref="chartRef" class="chart-box" :style="chartBoxStyle" />
-    <div v-else class="chart-placeholder" :style="chartBoxStyle">
+  <n-card size="small" :title="cardTitle" class="plan-chart-card">
+    <div v-if="hasData" ref="chartRef" class="chart-box" />
+    <div v-else class="chart-placeholder">
       <n-empty description="暂无未开始或进行中的计划" size="small" />
     </div>
   </n-card>
@@ -19,9 +19,15 @@ import {
 import type { PlanExecutionChart } from '@/types/business';
 import { echarts, type ECharts } from '@/utils/echarts';
 
-const props = defineProps<{
-  chart: PlanExecutionChart | undefined;
-}>();
+const props = withDefaults(
+  defineProps<{
+    chart: PlanExecutionChart | undefined;
+    title?: string;
+  }>(),
+  {
+    title: '计划 · 用例执行',
+  }
+);
 
 const router = useRouter();
 const chartRef = ref<HTMLDivElement | null>(null);
@@ -29,7 +35,9 @@ let instance: ECharts | null = null;
 
 const hasData = computed(() => (props.chart?.points?.length ?? 0) > 0);
 
-const chartBoxStyle = { height: `${WORKBENCH_OVERVIEW_CHART_HEIGHT}px` };
+const cardTitle = computed(() => props.title);
+
+const chartContentHeight = `${WORKBENCH_OVERVIEW_CHART_HEIGHT}px`;
 
 const resultOrder = ['not_run', 'pass', 'fail', 'block', 'skip'];
 
@@ -117,9 +125,22 @@ watch(
 </script>
 
 <style scoped>
+.plan-chart-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.plan-chart-card :deep(.n-card__content) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: v-bind(chartContentHeight);
+}
 .chart-box,
 .chart-placeholder {
   width: 100%;
+  flex: 1;
+  min-height: v-bind(chartContentHeight);
 }
 .chart-placeholder {
   display: flex;

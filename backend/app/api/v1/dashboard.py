@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,6 +15,7 @@ from app.constants.requirement_status import (
     REQUIREMENT_STATUS_KEYS,
     REQUIREMENT_STATUS_LABELS,
 )
+from app.services.dashboard_version import pick_default_version
 from app.services.serializers import bug_out_todo
 from app.constants.dashboard_todo import (
     BUG_OVERVIEW_EXCLUDED_STATUS_KEYS,
@@ -31,18 +33,24 @@ from app.models.project import ProjectRole
 from app.models.project_version import ProjectVersion
 from app.models.requirement import Requirement, RequirementStatus
 from app.models.template import BugStatus
+from app.models.user import User
 from app.schemas.bug import BugOut
 from app.schemas.dashboard import (
     ActivePlanBrief,
+    BugFocus,
+    BugFollowerCell,
+    BugFollowerOverviewChart,
+    BugOverviewCell,
+    BugOverviewChart,
     DashboardOverview,
     DashboardSummary,
     DashboardTodo,
     DashboardWorkbench,
+    FollowerBrief,
     PlanChartPoint,
     PlanExecutionChart,
+    PlanFocus,
     RequirementTodoBrief,
-    BugOverviewCell,
-    BugOverviewChart,
     StatusBreakdown,
     StatusCountItem,
     VersionFocus,
@@ -83,6 +91,14 @@ def _version_brief(ver: ProjectVersion) -> VersionBrief:
     return VersionBrief(id=ver.id, num=ver.num, name=ver.name)
 
 
+def _version_picker_order():
+    return (
+        ProjectVersion.released_at.is_(None),
+        ProjectVersion.released_at.desc(),
+        ProjectVersion.num.desc(),
+    )
+
+
 async def _resolve_version(
     db: AsyncSession, project_id: str, version_id: Optional[str]
 ) -> ProjectVersion | None:
@@ -91,13 +107,9 @@ async def _resolve_version(
         if not ver or ver.project_id != project_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid version")
         return ver
-    result = await db.execute(
-        select(ProjectVersion)
-        .where(ProjectVersion.project_id == project_id)
-        .order_by(ProjectVersion.updated_at.desc())
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
+    result = await db.execute(select(ProjectVersion).where(ProjectVersion.project_id == project_id))
+    versions = list(result.scalars().all())
+    return pick_default_version(versions)
 
 
 async def _version_focus(
@@ -107,7 +119,7 @@ async def _version_focus(
     versions_q = await db.execute(
         select(ProjectVersion)
         .where(ProjectVersion.project_id == project_id)
-        .order_by(ProjectVersion.updated_at.desc())
+        .order_by(*_version_picker_order())
         .limit(_VERSION_PICKER_LIMIT)
     )
     versions = [_version_brief(v) for v in versions_q.scalars().all()]
@@ -234,6 +246,81 @@ async def _bug_overview_chart(db: AsyncSession, project_id: str) -> BugOverviewC
     return BugOverviewChart(total=total, by_status=by_status, versions=versions, cells=cells)
 
 
+async def _bug_follower_overview_chart(db: AsyncSession, project_id: str) -> BugFollowerOverviewChart:
+    """跟进人待办（待确认/处理中/挂起）× 规划版本。"""
+    status_keys = MEMBER_FOLLOWER_TODO_STATUS_KEYS
+    cell_map: dict[tuple[str | None, str | None], int] = defaultdict(int)
+    follower_ids: set[str] = set()
+    version_ids: set[str] = set()
+
+    linked_rows = await db.execute(
+        select(BugFollowerLink.user_id, Bug.plan_version_id, func.count())
+        .join(Bug, Bug.id == BugFollowerLink.bug_id)
+        .where(Bug.project_id == project_id, Bug.status_key.in_(status_keys))
+        .group_by(BugFollowerLink.user_id, Bug.plan_version_id)
+    )
+    for user_id, plan_version_id, cnt in linked_rows.all():
+        cell_map[(user_id, plan_version_id)] = cnt
+        follower_ids.add(user_id)
+        if plan_version_id:
+            version_ids.add(plan_version_id)
+
+    has_follower_subq = select(BugFollowerLink.bug_id).distinct()
+    unassigned_rows = await db.execute(
+        select(Bug.plan_version_id, func.count())
+        .where(
+            Bug.project_id == project_id,
+            Bug.status_key.in_(status_keys),
+            Bug.id.notin_(has_follower_subq),
+        )
+        .group_by(Bug.plan_version_id)
+    )
+    for plan_version_id, cnt in unassigned_rows.all():
+        if cnt > 0:
+            cell_map[(None, plan_version_id)] = cnt
+            if plan_version_id:
+                version_ids.add(plan_version_id)
+
+    followers: list[FollowerBrief] = []
+    if any(fid is None for fid, _ in cell_map):
+        followers.append(FollowerBrief(id=None, label="未指定跟进人"))
+    if follower_ids:
+        user_rows = await db.execute(select(User.id, User.name).where(User.id.in_(follower_ids)))
+        name_map = {uid: name for uid, name in user_rows.all()}
+        for uid in sorted(follower_ids, key=lambda x: name_map.get(x, x)):
+            followers.append(FollowerBrief(id=uid, label=name_map.get(uid, uid)))
+
+    follower_totals: dict[str | None, int] = defaultdict(int)
+    for (fid, _), cnt in cell_map.items():
+        follower_totals[fid] += cnt
+    followers.sort(key=lambda f: (-follower_totals.get(f.id, 0), f.label))
+
+    versions: list[VersionBrief] = []
+    if version_ids:
+        ver_rows = await db.execute(
+            select(ProjectVersion)
+            .where(ProjectVersion.id.in_(version_ids), ProjectVersion.project_id == project_id)
+            .order_by(*_version_picker_order())
+        )
+        versions = [_version_brief(v) for v in ver_rows.scalars().all()]
+
+    cells = [
+        BugFollowerCell(follower_id=fid, version_id=vid, count=cnt)
+        for (fid, vid), cnt in cell_map.items()
+        if cnt > 0
+    ]
+    return BugFollowerOverviewChart(followers=followers, versions=versions, cells=cells)
+
+
+async def _bug_focus(db: AsyncSession, project_id: str) -> BugFocus:
+    by_version_status = await _bug_overview_chart(db, project_id)
+    follower_by_version = await _bug_follower_overview_chart(db, project_id)
+    return BugFocus(
+        by_version_status=by_version_status,
+        follower_by_version=follower_by_version,
+    )
+
+
 async def _plan_case_results_by_pc_id(db: AsyncSession, plan_id: str) -> tuple[list[str], dict[str, ExecuteResult]]:
     plan_map = await _plan_case_results_map(db, [plan_id])
     return plan_map.get(plan_id, ([], {}))
@@ -335,7 +422,12 @@ async def _plan_progress_map(
     return out
 
 
-def _plan_to_brief(plan: TestPlan, progress: tuple[int, int, float | None]) -> ActivePlanBrief:
+def _plan_to_brief(
+    plan: TestPlan,
+    progress: tuple[int, int, float | None],
+    *,
+    version: VersionBrief | None = None,
+) -> ActivePlanBrief:
     total, not_run, pass_rate = progress
     status = plan.status.value if hasattr(plan.status, "value") else str(plan.status)
     return ActivePlanBrief(
@@ -345,6 +437,65 @@ def _plan_to_brief(plan: TestPlan, progress: tuple[int, int, float | None]) -> A
         case_total=total,
         not_run=not_run,
         pass_rate=pass_rate,
+        version=version,
+    )
+
+
+async def _unfinished_plans(
+    db: AsyncSession, project_id: str
+) -> tuple[list[TestPlan], dict[str, VersionBrief]]:
+    plans_q = await db.execute(
+        select(TestPlan)
+        .where(
+            TestPlan.project_id == project_id,
+            TestPlan.status.in_([PlanStatus.draft, PlanStatus.active]),
+        )
+        .order_by(TestPlan.updated_at.desc())
+        .limit(_PLAN_CHART_LIMIT)
+    )
+    plans = list(plans_q.scalars().all())
+    version_ids = {p.version_id for p in plans if p.version_id}
+    ver_map: dict[str, VersionBrief] = {}
+    if version_ids:
+        ver_rows = await db.execute(
+            select(ProjectVersion).where(
+                ProjectVersion.id.in_(version_ids),
+                ProjectVersion.project_id == project_id,
+            )
+        )
+        ver_map = {v.id: _version_brief(v) for v in ver_rows.scalars().all()}
+    return plans, ver_map
+
+
+async def _plan_focus(db: AsyncSession, project_id: str) -> PlanFocus:
+    plans, ver_map = await _unfinished_plans(db, project_id)
+    progress_map = await _plan_progress_map(db, [p.id for p in plans])
+    results_map = await _plan_case_results_map(db, [p.id for p in plans])
+    unfinished_plans = [
+        _plan_to_brief(
+            p,
+            progress_map.get(p.id, (0, 0, None)),
+            version=ver_map.get(p.version_id) if p.version_id else None,
+        )
+        for p in plans
+    ]
+    points: list[PlanChartPoint] = []
+    for plan in plans:
+        pc_ids, result_by_pc = results_map.get(plan.id, ([], {}))
+        by_result, pass_rate = _execute_result_counts(pc_ids, result_by_pc)
+        status = plan.status.value if hasattr(plan.status, "value") else str(plan.status)
+        points.append(
+            PlanChartPoint(
+                plan_id=plan.id,
+                plan_name=plan.name,
+                status=status,
+                by_result=by_result,
+                pass_rate=pass_rate,
+            )
+        )
+    return PlanFocus(
+        unfinished_plans=unfinished_plans,
+        execution_chart=PlanExecutionChart(points=points),
     )
 
 
@@ -512,6 +663,16 @@ async def _bug_overview_chart_session(project_id: str) -> BugOverviewChart:
         return await _bug_overview_chart(db, project_id)
 
 
+async def _bug_focus_session(project_id: str) -> BugFocus:
+    async with async_session_factory() as db:
+        return await _bug_focus(db, project_id)
+
+
+async def _plan_focus_session(project_id: str) -> PlanFocus:
+    async with async_session_factory() as db:
+        return await _plan_focus(db, project_id)
+
+
 async def _plan_execution_chart_session(project_id: str) -> PlanExecutionChart:
     async with async_session_factory() as db:
         return await _plan_execution_chart(db, project_id)
@@ -594,8 +755,8 @@ async def workbench(
     summary_task = _summary_counts_session(project_id)
     overview_task = asyncio.gather(
         _version_focus_session(project_id, version_id),
-        _bug_overview_chart_session(project_id),
-        _plan_execution_chart_session(project_id),
+        _bug_focus_session(project_id),
+        _plan_focus_session(project_id),
     )
     todo_task = (
         _build_todo_tester(project_id)
@@ -604,12 +765,12 @@ async def workbench(
     )
 
     summary, overview_parts, todo = await asyncio.gather(summary_task, overview_task, todo_task)
-    version_focus, bug_overview_chart, plan_execution_chart = overview_parts
+    version_focus, bug_focus, plan_focus = overview_parts
 
     overview = DashboardOverview(
         version_focus=version_focus,
-        bug_overview_chart=bug_overview_chart,
-        plan_execution_chart=plan_execution_chart,
+        bug_focus=bug_focus,
+        plan_focus=plan_focus,
     )
     return DashboardWorkbench(
         summary=summary,

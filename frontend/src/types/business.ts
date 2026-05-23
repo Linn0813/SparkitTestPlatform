@@ -233,6 +233,7 @@ export interface ActivePlanBrief {
   case_total: number;
   not_run: number;
   pass_rate: number | null;
+  version?: VersionBrief | null;
 }
 
 export interface StatusCountItem {
@@ -279,10 +280,37 @@ export interface PlanExecutionChart {
   points: PlanChartPoint[];
 }
 
+export interface FollowerBrief {
+  id: string | null;
+  label: string;
+}
+
+export interface BugFollowerCell {
+  follower_id: string | null;
+  version_id: string | null;
+  count: number;
+}
+
+export interface BugFollowerOverviewChart {
+  followers: FollowerBrief[];
+  versions: VersionBrief[];
+  cells: BugFollowerCell[];
+}
+
+export interface BugFocus {
+  by_version_status: BugOverviewChart;
+  follower_by_version: BugFollowerOverviewChart;
+}
+
+export interface PlanFocus {
+  unfinished_plans: ActivePlanBrief[];
+  execution_chart: PlanExecutionChart;
+}
+
 export interface DashboardOverview {
   version_focus: VersionFocus;
-  bug_overview_chart: BugOverviewChart;
-  plan_execution_chart: PlanExecutionChart;
+  bug_focus: BugFocus;
+  plan_focus: PlanFocus;
 }
 
 export interface RequirementTodoBrief {
