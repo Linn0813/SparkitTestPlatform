@@ -27,9 +27,12 @@ export interface CaseListPage {
 export interface ListCasesParams {
   module_id?: string;
   include_submodules?: boolean;
+  /** 逗号分隔多值，同字段 OR 匹配；含 __empty__ 表示未关联需求 */
   requirement_id?: string;
+  /** 逗号分隔多值，同字段 OR 匹配 */
   priority?: string;
   q?: string;
+  /** JSON: { fieldId: value | value[] | __empty__ }，多值 OR 匹配 */
   custom_filters?: string;
   page?: number;
   page_size?: number;

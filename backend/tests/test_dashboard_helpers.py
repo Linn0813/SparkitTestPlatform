@@ -46,6 +46,18 @@ def test_todo_status_constants():
     assert "pending_confirm" in MEMBER_FOLLOWER_TODO_STATUS_KEYS
     assert "in_progress" in MEMBER_FOLLOWER_TODO_STATUS_KEYS
     assert "suspended" in MEMBER_FOLLOWER_TODO_STATUS_KEYS
+
+
+def test_unplanned_bug_excluded_status_keys():
+    from app.constants.dashboard_todo import UNPLANNED_BUG_EXCLUDED_STATUS_KEYS
+
+    assert "accepted" in UNPLANNED_BUG_EXCLUDED_STATUS_KEYS
+    assert "rejected" in UNPLANNED_BUG_EXCLUDED_STATUS_KEYS
+    assert "suspended" in UNPLANNED_BUG_EXCLUDED_STATUS_KEYS
+    assert "to_requirement" in UNPLANNED_BUG_EXCLUDED_STATUS_KEYS
+
+
+def test_tester_todo_constants():
     assert TESTER_FIXED_BUG_STATUS_KEY == "fixed"
     assert "not_tested" in TESTER_TODO_REQUIREMENT_STATUS_KEYS
     assert "testing" in TESTER_TODO_REQUIREMENT_STATUS_KEYS

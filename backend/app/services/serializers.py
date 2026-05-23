@@ -31,7 +31,7 @@ async def _version_brief(db: AsyncSession, version_id: str | None) -> VersionBri
     return _version_brief_from_row(row)
 
 
-def bug_out_todo(bug: Bug) -> BugOut:
+def bug_out_todo(bug: Bug, *, plan_version: VersionBrief | None = None) -> BugOut:
     """工作台待办列表：仅用 Bug 行字段，避免关联查询。"""
     return BugOut(
         id=bug.id,
@@ -47,7 +47,7 @@ def bug_out_todo(bug: Bug) -> BugOut:
         plan_ids=[],
         plan_version_id=bug.plan_version_id,
         found_version_id=bug.found_version_id,
-        plan_version=None,
+        plan_version=plan_version,
         found_version=None,
         follower_ids=[],
         created_at=bug.created_at,

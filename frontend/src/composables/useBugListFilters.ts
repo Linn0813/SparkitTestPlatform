@@ -1,30 +1,30 @@
 import type { TemplateField } from '@/types/business';
 
 export interface BugListFilterState {
-  status_key: string | null;
-  reporter_id: string | null;
-  follower_id: string | null;
-  plan_version_id: string | null;
-  found_version_id: string | null;
-  requirement_id: string | null;
-  plan_id: string | null;
+  status_keys: string[];
+  reporter_ids: string[];
+  follower_ids: string[];
+  plan_version_ids: string[];
+  found_version_ids: string[];
+  requirement_ids: string[];
+  plan_ids: string[];
   q: string;
-  custom: Record<string, string | null>;
+  custom: Record<string, string[]>;
 }
 
 export function emptyBugListFilters(templateFields: TemplateField[] = []): BugListFilterState {
-  const custom: Record<string, string | null> = {};
+  const custom: Record<string, string[]> = {};
   for (const f of templateFields) {
-    custom[f.id] = null;
+    custom[f.id] = [];
   }
   return {
-    status_key: null,
-    reporter_id: null,
-    follower_id: null,
-    plan_version_id: null,
-    found_version_id: null,
-    requirement_id: null,
-    plan_id: null,
+    status_keys: [],
+    reporter_ids: [],
+    follower_ids: [],
+    plan_version_ids: [],
+    found_version_ids: [],
+    requirement_ids: [],
+    plan_ids: [],
     q: '',
     custom,
   };
@@ -36,7 +36,7 @@ export function syncCustomFilterKeys(
 ): BugListFilterState {
   const next = { ...state.custom };
   for (const f of templateFields) {
-    if (!(f.id in next)) next[f.id] = null;
+    if (!(f.id in next)) next[f.id] = [];
   }
   for (const id of Object.keys(next)) {
     if (!templateFields.some((f) => f.id === id)) delete next[id];

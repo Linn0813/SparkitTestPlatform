@@ -350,9 +350,11 @@ const statusKeyOptions = computed(() =>
 const hasCreateRule = computed(() => wecomRules.value.some((r) => r.kind === 'create'));
 
 const ruleKindOptions = computed(() => {
-  const opts = [{ label: '状态流转', value: 'transition' as const }];
+  const opts: { label: string; value: 'transition' | 'create' }[] = [
+    { label: '状态流转', value: 'transition' },
+  ];
   if (!hasCreateRule.value || editingRule.value?.kind === 'create') {
-    opts.unshift({ label: '新建缺陷', value: 'create' as const });
+    opts.unshift({ label: '新建缺陷', value: 'create' });
   }
   return opts;
 });

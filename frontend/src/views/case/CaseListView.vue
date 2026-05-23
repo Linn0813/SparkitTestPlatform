@@ -166,6 +166,7 @@ import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
 import type { Requirement, TestCase } from '@/types/business';
 import { modulePathLabel } from '@/utils/moduleTree';
+import { decodeFilterQuery, encodeFilterValues, hasFilterValues } from '@/utils/filterQueryCodec';
 import { pickAdjacentItemId } from '@/utils/listNavigation';
 import { truncateForTable } from '@/utils/text';
 
@@ -371,12 +372,14 @@ function buildListParams(): ListCasesParams {
     p.include_submodules = filters.value.include_submodules;
   }
   const f = filters.value;
-  if (f.requirement_id) p.requirement_id = f.requirement_id;
-  if (f.priority) p.priority = f.priority;
+  const encodedRequirement = encodeFilterValues(f.requirement_ids);
+  if (encodedRequirement) p.requirement_id = encodedRequirement;
+  const encodedPriority = encodeFilterValues(f.priorities);
+  if (encodedPriority) p.priority = encodedPriority;
   if (f.q?.trim()) p.q = f.q.trim();
-  const custom: Record<string, string> = {};
+  const custom: Record<string, string | string[]> = {};
   for (const [fieldId, val] of Object.entries(f.custom)) {
-    if (val) custom[fieldId] = val;
+    if (hasFilterValues(val)) custom[fieldId] = val.length === 1 ? val[0] : val;
   }
   if (Object.keys(custom).length) p.custom_filters = JSON.stringify(custom);
   return p;
@@ -389,11 +392,14 @@ function syncQueryToRoute() {
     if (filters.value.include_submodules) q.includeSubmodules = '1';
   }
   const f = filters.value;
-  if (f.requirement_id) q.requirement_id = f.requirement_id;
-  if (f.priority) q.priority = f.priority;
+  const qRequirement = encodeFilterValues(f.requirement_ids);
+  if (qRequirement) q.requirement_id = qRequirement;
+  const qPriority = encodeFilterValues(f.priorities);
+  if (qPriority) q.priority = qPriority;
   if (f.q?.trim()) q.q = f.q.trim();
   for (const [fieldId, val] of Object.entries(f.custom)) {
-    if (val) q[`cf_${fieldId}`] = val;
+    const encoded = encodeFilterValues(val);
+    if (encoded) q[`cf_${fieldId}`] = encoded;
   }
   if (activeCaseId.value) q.caseId = activeCaseId.value;
   if (page.value > 1) q.page = String(page.value);
@@ -404,10 +410,10 @@ function syncQueryToRoute() {
 function applyRouteQuery() {
   applyingRoute.value = true;
   const q = route.query;
-  const custom: Record<string, string | null> = {};
+  const custom: Record<string, string[]> = {};
   for (const f of fieldSchema.templateFields.value) {
     const key = `cf_${f.id}`;
-    custom[f.id] = typeof q[key] === 'string' ? q[key] : null;
+    custom[f.id] = decodeFilterQuery(q[key]);
   }
   const rawModule = q.moduleId;
   filters.value = syncCustomFilterKeys(
@@ -415,8 +421,8 @@ function applyRouteQuery() {
       module_id: typeof rawModule === 'string' && rawModule ? rawModule : null,
       include_submodules: q.includeSubmodules === '1',
       q: typeof q.q === 'string' ? q.q : '',
-      priority: typeof q.priority === 'string' ? q.priority : null,
-      requirement_id: typeof q.requirement_id === 'string' ? q.requirement_id : null,
+      priorities: decodeFilterQuery(q.priority),
+      requirement_ids: decodeFilterQuery(q.requirement_id),
       custom,
     },
     fieldSchema.templateFields.value

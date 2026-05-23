@@ -40,14 +40,14 @@
       </n-gi>
       <n-gi>
         <n-form-item label="提出人">
-          <n-select v-model:value="form.reporter_id" :options="memberOptions" filterable size="small" />
+          <n-select v-model:value="form.reporter_id" :options="reporterFollowerOptions" filterable size="small" />
         </n-form-item>
       </n-gi>
       <n-gi>
         <n-form-item label="跟进人">
           <n-select
             v-model:value="form.follower_ids"
-            :options="memberOptions"
+            :options="reporterFollowerOptions"
             multiple
             filterable
             clearable
@@ -148,11 +148,16 @@ const props = withDefaults(
     templateFields: TemplateField[];
     statusOptions: { label: string; value: string }[];
     memberOptions: { label: string; value: string }[];
+    memberNameOptions?: { label: string; value: string }[];
     requirementOptions: { label: string; value: string }[];
     planOptions: { label: string; value: string }[];
     mode?: 'create' | 'edit';
   }>(),
   { mode: 'create' }
+);
+
+const reporterFollowerOptions = computed(
+  () => props.memberNameOptions ?? props.memberOptions
 );
 
 const promotedFields = computed(() => splitPromotedTemplateFields(props.templateFields).promoted);

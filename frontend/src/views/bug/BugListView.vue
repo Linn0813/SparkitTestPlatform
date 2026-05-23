@@ -16,6 +16,7 @@
       :visible-keys="visibleKeys"
       :status-options="statusOptions"
       :member-options="memberOptions"
+      :member-name-options="memberNameOptions"
       :requirement-options="requirementOptions"
       :plan-options="planOptions"
       @apply="applyFilters"
@@ -81,6 +82,7 @@
           :template-fields="templateUiFields"
           :status-options="statusOptions"
           :member-options="memberOptions"
+          :member-name-options="memberNameOptions"
           :requirement-options="requirementOptions"
           :plan-options="planOptions"
         />
@@ -131,6 +133,7 @@ import { useContextStore } from '@/stores/context';
 import { useAuthStore } from '@/stores/auth';
 import type { BugItem, BugStatusDef, Requirement, TestPlan } from '@/types/business';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
+import { decodeFilterQuery, encodeFilterValues, hasFilterValues, resolveStatusKeysFromRouteQuery } from '@/utils/filterQueryCodec';
 import { pickAdjacentItemId } from '@/utils/listNavigation';
 
 const route = useRoute();
@@ -140,7 +143,8 @@ const auth = useAuthStore();
 const message = useMessage();
 const { canManageBugs } = usePermissions();
 const canCreate = computed(() => canManageBugs(ctx.projectId));
-const { options: memberOptions } = useProjectMemberOptions(computed(() => ctx.projectId));
+const { options: memberOptions, nameOptions: memberNameOptions, nameByUserId } =
+  useProjectMemberOptions(computed(() => ctx.projectId));
 
 const bugs = ref<BugItem[]>([]);
 const total = ref(0);
@@ -177,16 +181,16 @@ function onVisibleKeysChange(keys: string[]) {
 function expandVisibleFromActiveFilters() {
   const f = filters.value;
   const extra: string[] = [];
-  if (f.status_key) extra.push('status');
-  if (f.reporter_id) extra.push('reporter');
-  if (f.follower_id) extra.push('follower');
-  if (f.plan_version_id) extra.push('plan_version');
-  if (f.found_version_id) extra.push('found_version');
-  if (f.requirement_id) extra.push('requirement');
-  if (f.plan_id) extra.push('plan');
+  if (hasFilterValues(f.status_keys)) extra.push('status');
+  if (hasFilterValues(f.reporter_ids)) extra.push('reporter');
+  if (hasFilterValues(f.follower_ids)) extra.push('follower');
+  if (hasFilterValues(f.plan_version_ids)) extra.push('plan_version');
+  if (hasFilterValues(f.found_version_ids)) extra.push('found_version');
+  if (hasFilterValues(f.requirement_ids)) extra.push('requirement');
+  if (hasFilterValues(f.plan_ids)) extra.push('plan');
   if (f.q?.trim()) extra.push('q');
   for (const [fieldId, val] of Object.entries(f.custom)) {
-    if (val) extra.push(`cf:${fieldId}`);
+    if (hasFilterValues(val)) extra.push(`cf:${fieldId}`);
   }
   if (!extra.length) return;
   setVisibleKeys([...new Set([...visibleKeys.value, ...extra])]);
@@ -242,7 +246,13 @@ function formatDate(iso: string) {
 function followersSummary(row: BugItem): string {
   const names = row.followers?.map((f) => f.name).filter(Boolean);
   if (names?.length) return names.join('、');
-  if (row.follower_ids?.length) return `${row.follower_ids.length} 人`;
+  if (row.follower_ids?.length) {
+    const labels = row.follower_ids
+      .map((id) => nameByUserId.value.get(id))
+      .filter(Boolean) as string[];
+    if (labels.length) return labels.join('、');
+    return `${row.follower_ids.length} 人`;
+  }
   return '—';
 }
 
@@ -313,17 +323,24 @@ function buildListParams(): ListBugsParams {
     page_size: pageSize.value,
   };
   const f = filters.value;
-  if (f.status_key) p.status_key = f.status_key;
-  if (f.reporter_id) p.reporter_id = f.reporter_id;
-  if (f.follower_id) p.follower_id = f.follower_id;
-  if (f.plan_version_id) p.plan_version_id = f.plan_version_id;
-  if (f.found_version_id) p.found_version_id = f.found_version_id;
-  if (f.requirement_id) p.requirement_id = f.requirement_id;
-  if (f.plan_id) p.plan_id = f.plan_id;
+  const encodedStatus = encodeFilterValues(f.status_keys);
+  if (encodedStatus) p.status_key = encodedStatus;
+  const encodedReporter = encodeFilterValues(f.reporter_ids);
+  if (encodedReporter) p.reporter_id = encodedReporter;
+  const encodedFollower = encodeFilterValues(f.follower_ids);
+  if (encodedFollower) p.follower_id = encodedFollower;
+  const encodedPlanVersion = encodeFilterValues(f.plan_version_ids);
+  if (encodedPlanVersion) p.plan_version_id = encodedPlanVersion;
+  const encodedFoundVersion = encodeFilterValues(f.found_version_ids);
+  if (encodedFoundVersion) p.found_version_id = encodedFoundVersion;
+  const encodedRequirement = encodeFilterValues(f.requirement_ids);
+  if (encodedRequirement) p.requirement_id = encodedRequirement;
+  const encodedPlan = encodeFilterValues(f.plan_ids);
+  if (encodedPlan) p.plan_id = encodedPlan;
   if (f.q?.trim()) p.q = f.q.trim();
-  const custom: Record<string, string> = {};
+  const custom: Record<string, string | string[]> = {};
   for (const [fieldId, val] of Object.entries(f.custom)) {
-    if (val) custom[fieldId] = val;
+    if (hasFilterValues(val)) custom[fieldId] = val.length === 1 ? val[0] : val;
   }
   if (Object.keys(custom).length) p.custom_filters = JSON.stringify(custom);
   return p;
@@ -332,16 +349,24 @@ function buildListParams(): ListBugsParams {
 function syncQueryToRoute() {
   const q: Record<string, string> = {};
   const f = filters.value;
-  if (f.status_key) q.status_key = f.status_key;
-  if (f.reporter_id) q.reporter_id = f.reporter_id;
-  if (f.follower_id) q.follower_id = f.follower_id;
-  if (f.plan_version_id) q.plan_version_id = f.plan_version_id;
-  if (f.found_version_id) q.found_version_id = f.found_version_id;
-  if (f.requirement_id) q.requirement_id = f.requirement_id;
-  if (f.plan_id) q.plan_id = f.plan_id;
+  const qStatus = encodeFilterValues(f.status_keys);
+  if (qStatus) q.status_key = qStatus;
+  const qReporter = encodeFilterValues(f.reporter_ids);
+  if (qReporter) q.reporter_id = qReporter;
+  const qFollower = encodeFilterValues(f.follower_ids);
+  if (qFollower) q.follower_id = qFollower;
+  const qPlanVersion = encodeFilterValues(f.plan_version_ids);
+  if (qPlanVersion) q.plan_version_id = qPlanVersion;
+  const qFoundVersion = encodeFilterValues(f.found_version_ids);
+  if (qFoundVersion) q.found_version_id = qFoundVersion;
+  const qRequirement = encodeFilterValues(f.requirement_ids);
+  if (qRequirement) q.requirement_id = qRequirement;
+  const qPlan = encodeFilterValues(f.plan_ids);
+  if (qPlan) q.plan_id = qPlan;
   if (f.q?.trim()) q.q = f.q.trim();
   for (const [fieldId, val] of Object.entries(f.custom)) {
-    if (val) q[`cf_${fieldId}`] = val;
+    const encoded = encodeFilterValues(val);
+    if (encoded) q[`cf_${fieldId}`] = encoded;
   }
   if (activeBugId.value) q.bugId = activeBugId.value;
   if (page.value > 1) q.page = String(page.value);
@@ -352,20 +377,24 @@ function syncQueryToRoute() {
 function applyRouteQuery() {
   applyingRoute.value = true;
   const q = route.query;
-  const custom: Record<string, string | null> = {};
+  const custom: Record<string, string[]> = {};
   for (const f of fieldSchema.templateFields.value) {
     const key = `cf_${f.id}`;
-    custom[f.id] = typeof q[key] === 'string' ? q[key] : null;
+    custom[f.id] = decodeFilterQuery(q[key]);
   }
   filters.value = syncCustomFilterKeys(
     {
-      status_key: typeof q.status_key === 'string' ? q.status_key : null,
-      reporter_id: typeof q.reporter_id === 'string' ? q.reporter_id : null,
-      follower_id: typeof q.follower_id === 'string' ? q.follower_id : null,
-      plan_version_id: typeof q.plan_version_id === 'string' ? q.plan_version_id : null,
-      found_version_id: typeof q.found_version_id === 'string' ? q.found_version_id : null,
-      requirement_id: typeof q.requirement_id === 'string' ? q.requirement_id : null,
-      plan_id: typeof q.plan_id === 'string' ? q.plan_id : null,
+      status_keys: resolveStatusKeysFromRouteQuery(
+        q.status_key,
+        q.exclude_status_key,
+        statuses.value.map((s) => s.key)
+      ),
+      reporter_ids: decodeFilterQuery(q.reporter_id),
+      follower_ids: decodeFilterQuery(q.follower_id),
+      plan_version_ids: decodeFilterQuery(q.plan_version_id),
+      found_version_ids: decodeFilterQuery(q.found_version_id),
+      requirement_ids: decodeFilterQuery(q.requirement_id),
+      plan_ids: decodeFilterQuery(q.plan_id),
       q: typeof q.q === 'string' ? q.q : '',
       custom,
     },
@@ -534,6 +563,9 @@ onMounted(async () => {
   await loadMeta();
   applyRouteQuery();
   expandVisibleFromActiveFilters();
+  if (route.query.exclude_status_key) {
+    syncQueryToRoute();
+  }
   paginationReady.value = true;
   await load();
 });
@@ -556,13 +588,18 @@ watch(
     route.query.follower_id,
     route.query.reporter_id,
     route.query.status_key,
+    route.query.exclude_status_key,
     route.query.assignee_id,
     route.query.plan_id,
     route.query.requirement_id,
+    route.query.plan_version_id,
   ],
   async () => {
     applyRouteQuery();
     expandVisibleFromActiveFilters();
+    if (route.query.exclude_status_key) {
+      syncQueryToRoute();
+    }
     await load();
   }
 );

@@ -35,11 +35,13 @@
               <n-input v-model:value="model.q" placeholder="关键字" clearable />
             </n-form-item>
 
-            <n-form-item v-else-if="def.key === 'priority'" :label="def.label" class="filter-item">
+            <n-form-item v-else-if="def.key === 'priority'" :label="def.label" class="filter-item filter-item--wide">
               <n-select
-                v-model:value="caseModel.priority"
+                v-model:value="caseModel.priorities"
                 :options="priorityFilterOptions"
                 clearable
+                multiple
+                max-tag-count="responsive"
                 placeholder="全部"
               />
             </n-form-item>
@@ -47,12 +49,14 @@
             <n-form-item
               v-else-if="def.key === 'status' && scene === 'bug'"
               :label="def.label"
-              class="filter-item"
+              class="filter-item filter-item--wide"
             >
               <n-select
-                v-model:value="bugModel.status_key"
+                v-model:value="bugModel.status_keys"
                 :options="statusOptions"
                 clearable
+                multiple
+                max-tag-count="responsive"
                 placeholder="全部"
               />
             </n-form-item>
@@ -60,13 +64,15 @@
             <n-form-item
               v-else-if="def.key === 'reporter' && scene === 'bug'"
               :label="def.label"
-              class="filter-item"
+              class="filter-item filter-item--wide"
             >
               <n-select
-                v-model:value="bugModel.reporter_id"
-                :options="memberOptions"
+                v-model:value="bugModel.reporter_ids"
+                :options="memberNameFilterOptions"
                 clearable
                 filterable
+                multiple
+                max-tag-count="responsive"
                 placeholder="全部"
               />
             </n-form-item>
@@ -74,13 +80,15 @@
             <n-form-item
               v-else-if="def.key === 'follower' && scene === 'bug'"
               :label="def.label"
-              class="filter-item"
+              class="filter-item filter-item--wide"
             >
               <n-select
-                v-model:value="bugModel.follower_id"
-                :options="memberFilterOptions"
+                v-model:value="bugModel.follower_ids"
+                :options="memberNameFilterOptions"
                 clearable
                 filterable
+                multiple
+                max-tag-count="responsive"
                 placeholder="全部"
               />
             </n-form-item>
@@ -88,12 +96,11 @@
             <n-form-item
               v-else-if="def.key === 'plan_version' && scene === 'bug'"
               :label="def.label"
-              class="filter-item"
+              class="filter-item filter-item--wide"
             >
-              <VersionSelect
-                v-model="bugModel.plan_version_id"
+              <VersionMultiSelect
+                v-model="bugModel.plan_version_ids"
                 :project-id="projectId"
-                allow-empty-filter
                 placeholder="全部"
               />
             </n-form-item>
@@ -101,32 +108,35 @@
             <n-form-item
               v-else-if="def.key === 'found_version' && scene === 'bug'"
               :label="def.label"
-              class="filter-item"
+              class="filter-item filter-item--wide"
             >
-              <VersionSelect
-                v-model="bugModel.found_version_id"
+              <VersionMultiSelect
+                v-model="bugModel.found_version_ids"
                 :project-id="projectId"
-                allow-empty-filter
                 placeholder="全部"
               />
             </n-form-item>
 
-            <n-form-item v-else-if="def.key === 'requirement'" :label="def.label" class="filter-item">
+            <n-form-item v-else-if="def.key === 'requirement'" :label="def.label" class="filter-item filter-item--wide">
               <n-select
-                v-model:value="model.requirement_id"
+                v-model:value="requirementIds"
                 :options="requirementFilterOptions"
                 clearable
                 filterable
+                multiple
+                max-tag-count="responsive"
                 placeholder="全部"
               />
             </n-form-item>
 
-            <n-form-item v-else-if="def.key === 'plan' && scene === 'bug'" :label="def.label" class="filter-item">
+            <n-form-item v-else-if="def.key === 'plan' && scene === 'bug'" :label="def.label" class="filter-item filter-item--wide">
               <n-select
-                v-model:value="bugModel.plan_id"
+                v-model:value="bugModel.plan_ids"
                 :options="planFilterOptions"
                 clearable
                 filterable
+                multiple
+                max-tag-count="responsive"
                 placeholder="全部"
               />
             </n-form-item>
@@ -136,7 +146,7 @@
               :label="def.label"
               :class="[
                 'filter-item',
-                { 'filter-item--wide': isTextLikeTemplateFilter(def.field.type) },
+                isTextLikeTemplateFilter(def.field.type) ? 'filter-item--wide' : 'filter-item--wide',
               ]"
             >
               <n-select
@@ -144,6 +154,8 @@
                 v-model:value="model.custom[def.field.id]"
                 :options="templateFieldFilterOptions(def.field)"
                 clearable
+                multiple
+                max-tag-count="responsive"
                 :placeholder="templateFieldFilterPlaceholder(def.field)"
               />
               <n-select
@@ -152,6 +164,8 @@
                 :options="memberFilterOptions"
                 clearable
                 filterable
+                multiple
+                max-tag-count="responsive"
                 placeholder="全部"
               />
               <n-select
@@ -159,6 +173,8 @@
                 v-model:value="model.custom[def.field.id]"
                 :options="templateFieldFilterOptions(def.field)"
                 clearable
+                multiple
+                max-tag-count="responsive"
                 placeholder="全部"
               />
               <n-date-picker
@@ -227,7 +243,7 @@ import {
   NTreeSelect,
 } from 'naive-ui';
 import type { TreeSelectOption } from 'naive-ui';
-import VersionSelect from '@/components/VersionSelect.vue';
+import VersionMultiSelect from '@/components/VersionMultiSelect.vue';
 import {
   CASE_PRIORITY_FILTER_OPTIONS,
   templateFieldFilterOptions,
@@ -249,6 +265,7 @@ const props = withDefaults(
     visibleKeys: string[];
     statusOptions?: { label: string; value: string }[];
     memberOptions?: { label: string; value: string }[];
+    memberNameOptions?: { label: string; value: string }[];
     requirementOptions: { label: string; value: string }[];
     planOptions?: { label: string; value: string }[];
     moduleTreeOptions?: TreeSelectOption[];
@@ -269,6 +286,16 @@ const priorityFilterOptions = computed(() =>
     ? withEmptyFilterOption(CASE_PRIORITY_FILTER_OPTIONS)
     : []
 );
+
+const requirementIds = computed({
+  get() {
+    return props.scene === 'bug' ? bugModel.value.requirement_ids : caseModel.value.requirement_ids;
+  },
+  set(values: string[]) {
+    if (props.scene === 'bug') bugModel.value.requirement_ids = values;
+    else caseModel.value.requirement_ids = values;
+  },
+});
 
 const emit = defineEmits<{
   apply: [];
@@ -297,6 +324,9 @@ const visibleDefs = computed(() =>
 );
 
 const memberFilterOptions = computed(() => withEmptyFilterOption(props.memberOptions ?? []));
+const memberNameFilterOptions = computed(() =>
+  withEmptyFilterOption(props.memberNameOptions ?? props.memberOptions ?? [])
+);
 const requirementFilterOptions = computed(() => withEmptyFilterOption(props.requirementOptions));
 const planFilterOptions = computed(() => withEmptyFilterOption(props.planOptions));
 
@@ -313,12 +343,12 @@ function isTextLikeTemplateFilter(type: string): boolean {
 
 function customFilterText(fieldId: string): string {
   const v = props.model.custom[fieldId];
-  return v == null ? '' : String(v);
+  return v?.[0] ?? '';
 }
 
 function setCustomFilterText(fieldId: string, value: string | null) {
   const trimmed = value?.trim() ?? '';
-  props.model.custom[fieldId] = trimmed ? trimmed : null;
+  props.model.custom[fieldId] = trimmed ? [trimmed] : [];
 }
 
 function textFilterPlaceholder(type: string): string {
@@ -354,7 +384,7 @@ function textFilterPlaceholder(type: string): string {
 }
 
 .filter-item--wide {
-  width: 200px;
+  width: 220px;
 }
 
 .filter-item--module {

@@ -592,6 +592,7 @@ async def _bugs_query(
     reporter_user_id: str | None = None,
     status_keys: tuple[str, ...] | None = None,
     limit: int = _TODO_LIST_LIMIT,
+    sort_by_plan_version: bool = False,
 ) -> list[BugOut]:
     stmt = select(Bug).where(Bug.project_id == project_id)
     if status_keys:
@@ -604,9 +605,31 @@ async def _bugs_query(
         )
     if reporter_user_id:
         stmt = stmt.where(Bug.reporter_id == reporter_user_id)
-    stmt = stmt.order_by(Bug.updated_at.desc()).limit(limit)
+    if sort_by_plan_version:
+        stmt = stmt.outerjoin(ProjectVersion, Bug.plan_version_id == ProjectVersion.id)
+        # MySQL 不支持 NULLS LAST：无规划版本 (plan_version_id IS NULL) 排最后
+        stmt = stmt.order_by(
+            Bug.plan_version_id.is_(None),
+            ProjectVersion.num.asc(),
+            Bug.updated_at.desc(),
+        )
+    else:
+        stmt = stmt.order_by(Bug.updated_at.desc())
+    stmt = stmt.limit(limit)
     result = await db.execute(stmt)
-    return [bug_out_todo(b) for b in result.scalars().all()]
+    bugs = list(result.scalars().all())
+    version_ids = {b.plan_version_id for b in bugs if b.plan_version_id}
+    versions_map: dict[str, VersionBrief] = {}
+    if version_ids:
+        ver_rows = await db.execute(select(ProjectVersion).where(ProjectVersion.id.in_(version_ids)))
+        versions_map = {v.id: _version_brief(v) for v in ver_rows.scalars().all()}
+    return [
+        bug_out_todo(
+            b,
+            plan_version=versions_map.get(b.plan_version_id) if b.plan_version_id else None,
+        )
+        for b in bugs
+    ]
 
 
 def _role_key(role: ProjectRole | None, is_system_admin: bool) -> str:
@@ -698,6 +721,7 @@ async def _bugs_query_session(
     follower_user_id: str | None = None,
     status_keys: tuple[str, ...] | None = None,
     limit: int = _TODO_LIST_LIMIT,
+    sort_by_plan_version: bool = False,
 ) -> list[BugOut]:
     async with async_session_factory() as db:
         return await _bugs_query(
@@ -706,6 +730,7 @@ async def _bugs_query_session(
             follower_user_id=follower_user_id,
             status_keys=status_keys,
             limit=limit,
+            sort_by_plan_version=sort_by_plan_version,
         )
 
 
@@ -737,6 +762,7 @@ async def _build_todo_member(project_id: str, user_id: str) -> DashboardTodo:
         project_id,
         follower_user_id=user_id,
         status_keys=MEMBER_FOLLOWER_TODO_STATUS_KEYS,
+        sort_by_plan_version=True,
     )
     return DashboardTodo(follower_todo_bugs=follower_todo_bugs)
 

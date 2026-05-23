@@ -4,22 +4,22 @@ export interface CaseListFilterState {
   module_id: string | null;
   include_submodules: boolean;
   q: string;
-  priority: string | null;
-  requirement_id: string | null;
-  custom: Record<string, string | null>;
+  priorities: string[];
+  requirement_ids: string[];
+  custom: Record<string, string[]>;
 }
 
 export function emptyCaseListFilters(templateFields: TemplateField[] = []): CaseListFilterState {
-  const custom: Record<string, string | null> = {};
+  const custom: Record<string, string[]> = {};
   for (const f of templateFields) {
-    custom[f.id] = null;
+    custom[f.id] = [];
   }
   return {
     module_id: null,
     include_submodules: false,
     q: '',
-    priority: null,
-    requirement_id: null,
+    priorities: [],
+    requirement_ids: [],
     custom,
   };
 }
@@ -30,7 +30,7 @@ export function syncCustomFilterKeys(
 ): CaseListFilterState {
   const next = { ...state.custom };
   for (const f of templateFields) {
-    if (!(f.id in next)) next[f.id] = null;
+    if (!(f.id in next)) next[f.id] = [];
   }
   for (const id of Object.keys(next)) {
     if (!templateFields.some((f) => f.id === id)) delete next[id];

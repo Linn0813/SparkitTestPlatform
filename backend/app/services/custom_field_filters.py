@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import Optional, Union
 
 from sqlalchemy import func, or_
 from sqlalchemy.sql import ColumnElement
 
 FILTER_EMPTY = "__empty__"
+
+FilterValues = Union[str, list[str]]
 
 
 def _like_pattern(value: str) -> str:
@@ -55,7 +57,27 @@ def custom_field_match_clause(
     return unquoted == value
 
 
-def parse_custom_filters(raw: Optional[str]) -> dict[str, str]:
+def normalize_filter_values(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        seen: set[str] = set()
+        out: list[str] = []
+        for item in value:
+            s = str(item).strip()
+            if s and s not in seen:
+                seen.add(s)
+                out.append(s)
+        return out
+    if isinstance(value, str):
+        from app.services.list_filter_utils import parse_csv_filter
+
+        return parse_csv_filter(value)
+    s = str(value).strip()
+    return [s] if s else []
+
+
+def parse_custom_filters(raw: Optional[str]) -> dict[str, list[str]]:
     if not raw or not raw.strip():
         return {}
     try:
@@ -64,13 +86,13 @@ def parse_custom_filters(raw: Optional[str]) -> dict[str, str]:
         raise ValueError("invalid custom_filters JSON") from exc
     if not isinstance(data, dict):
         raise ValueError("custom_filters must be a JSON object")
-    out: dict[str, str] = {}
+    out: dict[str, list[str]] = {}
     for k, v in data.items():
         if not isinstance(k, str) or not k:
             continue
-        if v is None:
-            continue
-        out[k] = str(v)
+        values = normalize_filter_values(v)
+        if values:
+            out[k] = values
     return out
 
 
@@ -79,20 +101,27 @@ def apply_custom_field_filters(
     *,
     custom_fields_col,
     template_fields: list[dict],
-    custom_filters: Optional[dict[str, str]] = None,
+    custom_filters: Optional[dict[str, list[str]]] = None,
 ):
     if not custom_filters or not template_fields:
         return stmt
     field_by_id = {f["id"]: f for f in template_fields}
-    for field_id, raw_value in custom_filters.items():
+    for field_id, values in custom_filters.items():
         field = field_by_id.get(field_id)
-        if not field:
+        if not field or not values:
             continue
         ftype = field.get("type") or "text"
-        if raw_value == FILTER_EMPTY:
-            stmt = stmt.where(custom_field_empty_clause(custom_fields_col, field_id, ftype))
+        has_empty = FILTER_EMPTY in values
+        rest = [v for v in values if v != FILTER_EMPTY]
+        clauses: list[ColumnElement] = []
+        if has_empty:
+            clauses.append(custom_field_empty_clause(custom_fields_col, field_id, ftype))
+        for val in rest:
+            clauses.append(custom_field_match_clause(custom_fields_col, field_id, ftype, val))
+        if not clauses:
+            continue
+        if len(clauses) == 1:
+            stmt = stmt.where(clauses[0])
         else:
-            stmt = stmt.where(
-                custom_field_match_clause(custom_fields_col, field_id, ftype, raw_value)
-            )
+            stmt = stmt.where(or_(*clauses))
     return stmt

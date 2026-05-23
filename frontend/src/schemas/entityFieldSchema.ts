@@ -251,29 +251,29 @@ export function clearBugFilterValue(state: BugListFilterState, key: string): Bug
       next.q = '';
       break;
     case 'status':
-      next.status_key = null;
+      next.status_keys = [];
       break;
     case 'reporter':
-      next.reporter_id = null;
+      next.reporter_ids = [];
       break;
     case 'follower':
-      next.follower_id = null;
+      next.follower_ids = [];
       break;
     case 'plan_version':
-      next.plan_version_id = null;
+      next.plan_version_ids = [];
       break;
     case 'found_version':
-      next.found_version_id = null;
+      next.found_version_ids = [];
       break;
     case 'requirement':
-      next.requirement_id = null;
+      next.requirement_ids = [];
       break;
     case 'plan':
-      next.plan_id = null;
+      next.plan_ids = [];
       break;
     default: {
       const fieldId = parseTemplateFilterKey(key);
-      if (fieldId) next.custom[fieldId] = null;
+      if (fieldId) next.custom[fieldId] = [];
     }
   }
   return next;
@@ -290,14 +290,14 @@ export function clearCaseFilterValue(state: CaseListFilterState, key: string): C
       next.q = '';
       break;
     case 'priority':
-      next.priority = null;
+      next.priorities = [];
       break;
     case 'requirement':
-      next.requirement_id = null;
+      next.requirement_ids = [];
       break;
     default: {
       const fieldId = parseTemplateFilterKey(key);
-      if (fieldId) next.custom[fieldId] = null;
+      if (fieldId) next.custom[fieldId] = [];
     }
   }
   return next;

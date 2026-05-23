@@ -39,6 +39,7 @@ from app.services.links import (
 )
 from app.services.case_filters import apply_case_list_filters
 from app.services.custom_field_filters import parse_custom_filters
+from app.services.list_filter_utils import parse_csv_filter, split_empty_values
 from app.services.project_setup import ensure_project_defaults
 from app.services.serializers import case_out
 
@@ -231,11 +232,11 @@ async def import_cases(
 async def list_cases(
     module_id: Optional[str] = None,
     include_submodules: bool = False,
-    requirement_id: Optional[str] = None,
-    priority: Optional[str] = None,
+    requirement_id: Optional[str] = Query(None, description="关联需求 ID，逗号分隔；含 __empty__ 表示未关联"),
+    priority: Optional[str] = Query(None, description="优先级，逗号分隔多值 OR 匹配"),
     q: Optional[str] = None,
     custom_filters: Optional[str] = Query(
-        None, description="JSON: { fieldId: value | __empty__ }"
+        None, description="JSON: { fieldId: value | [values] | __empty__ }，同字段多值 OR"
     ),
     page: int = Query(1, ge=1),
     page_size: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE),
@@ -252,7 +253,7 @@ async def list_cases(
     template_row = tpl.scalar_one_or_none()
     template_fields: list = template_row.fields if template_row else []
 
-    parsed_custom: dict[str, str] = {}
+    parsed_custom: dict[str, list[str]] = {}
     if custom_filters:
         try:
             parsed_custom = parse_custom_filters(custom_filters)
@@ -271,10 +272,12 @@ async def list_cases(
             stmt = stmt.where(TestCase.module_id.in_(filter_ids))
         else:
             stmt = stmt.where(TestCase.module_id == module_id)
-    if requirement_id and requirement_id != "__empty__":
-        req = await db.get(Requirement, requirement_id)
-        if not req or req.project_id != ctx.project_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid requirement")
+    if requirement_id:
+        _, req_ids = split_empty_values(parse_csv_filter(requirement_id))
+        for rid in req_ids:
+            req = await db.get(Requirement, rid)
+            if not req or req.project_id != ctx.project_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid requirement")
     stmt = apply_case_list_filters(
         stmt,
         q=q,

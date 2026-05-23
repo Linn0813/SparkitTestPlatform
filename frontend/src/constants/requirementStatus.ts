@@ -1,3 +1,5 @@
+import type { TagProps } from 'naive-ui';
+
 export const REQUIREMENT_STATUS_OPTIONS = [
   { label: '未转测', value: 'not_tested' },
   { label: '测试中', value: 'testing' },
@@ -6,4 +8,10 @@ export const REQUIREMENT_STATUS_OPTIONS = [
 
 export function requirementStatusLabel(key: string): string {
   return REQUIREMENT_STATUS_OPTIONS.find((o) => o.value === key)?.label ?? key;
+}
+
+export function requirementStatusTagType(key: string): TagProps['type'] {
+  if (key === 'testing') return 'info';
+  if (key === 'accepted') return 'success';
+  return 'warning';
 }

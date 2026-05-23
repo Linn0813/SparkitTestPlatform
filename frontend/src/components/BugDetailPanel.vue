@@ -128,6 +128,7 @@
       :template-fields="templateUiFields"
       :status-options="statusOptions"
       :member-options="memberOptions"
+      :member-name-options="memberNameOptions"
       :requirement-options="requirementOptions"
       :plan-options="planOptions"
     >
@@ -224,7 +225,6 @@ import {
   NDescriptionsItem,
   NDropdown,
   NEmpty,
-  NFormItem,
   NImage,
   NSpace,
   NSpin,
@@ -328,7 +328,8 @@ const editForm = ref<BugFormModel>({
 
 const schemaProjectId = computed(() => bug.value?.project_id ?? ctx.projectId);
 const projectIdRef = computed(() => bug.value?.project_id ?? ctx.projectId);
-const { options: memberOptions } = useProjectMemberOptions(projectIdRef);
+const { options: memberOptions, nameOptions: memberNameOptions, nameByUserId } =
+  useProjectMemberOptions(projectIdRef);
 const fieldSchema = useProjectFieldSchema('bug', schemaProjectId);
 const templateUiFields = computed(() => fieldSchema.templateFieldsForUi.value);
 
@@ -399,7 +400,7 @@ function formatFileSize(bytes: number): string {
 
 function memberName(userId: string | null | undefined): string {
   if (!userId) return '—';
-  return memberOptions.value.find((o) => o.value === userId)?.label ?? userId;
+  return nameByUserId.value.get(userId) ?? userId;
 }
 
 const templateFieldCtx = computed(() => ({ memberLabel: memberName }));
@@ -413,9 +414,12 @@ function activityActorLabel(a: BugActivity): string {
   return displayUserLabel(a.actor, id, id ? memberName(id) : null) || '系统';
 }
 
-const reporterLabel = computed(() =>
-  displayUserLabel(bug.value?.reporter, bug.value?.reporter_id, memberName(bug.value?.reporter_id))
-);
+const reporterLabel = computed(() => {
+  if (!bug.value) return '—';
+  const name = bug.value.reporter?.name?.trim();
+  if (name) return name;
+  return memberName(bug.value.reporter_id);
+});
 
 const followersLabel = computed(() => {
   if (!bug.value) return '—';

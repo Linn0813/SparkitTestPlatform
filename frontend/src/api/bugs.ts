@@ -9,16 +9,26 @@ export interface BugListPage {
 }
 
 export interface ListBugsParams {
+  /** 逗号分隔多值，同字段 OR 匹配；兼容单值 */
   status_key?: string;
+  /** 逗号分隔多值，排除对应状态 */
+  exclude_status_key?: string;
   assignee_id?: string;
+  /** 逗号分隔多值，同字段 OR 匹配 */
   reporter_id?: string;
+  /** 逗号分隔多值，同字段 OR 匹配；含 __empty__ 表示无跟进人 */
   follower_id?: string;
+  /** 逗号分隔多值，同字段 OR 匹配；含 __empty__ 表示未设置版本 */
   plan_version_id?: string;
   found_version_id?: string;
+  /** 逗号分隔多值，同字段 OR 匹配；含 __empty__ 表示未关联需求 */
   requirement_id?: string;
+  /** 逗号分隔多值，同字段 OR 匹配；含 __empty__ 表示未关联计划 */
   plan_id?: string;
   q?: string;
-  /** JSON: { fieldId: value | __empty__ } */
+  /** 创建日期 YYYY-MM-DD，按 UTC+8 日历日筛选 */
+  created_date?: string;
+  /** JSON: { fieldId: value | value[] | __empty__ }，多值 OR 匹配 */
   custom_filters?: string;
   page?: number;
   page_size?: number;

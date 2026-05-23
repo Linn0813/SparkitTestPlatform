@@ -26,99 +26,139 @@
           </n-tab-pane>
 
           <n-tab-pane name="todo" tab="我的待办">
-            <n-space v-if="isTesterSide" vertical size="large">
-              <TodoSection
-                title="未开始计划"
-                :count="data?.todo.draft_plans?.length ?? 0"
-                :empty="!data?.todo.draft_plans?.length"
-                :view-all-to="{ name: 'plans', query: { status: 'draft' } }"
-              >
-                <n-list-item v-for="p in data?.todo.draft_plans" :key="p.id">
-                  <router-link class="todo-link" :to="{ name: 'plan-detail', params: { id: p.id } }">
-                    {{ p.name }}
-                  </router-link>
-                  <n-text depth="3"> · {{ planProgressText(p) }}</n-text>
-                </n-list-item>
-              </TodoSection>
+            <n-grid v-if="isTesterSide" class="tester-todo-grid" :cols="2" :x-gap="16" :y-gap="16">
+              <n-gi class="tester-todo-grid__pair-cell">
+                <TodoSection
+                  stretch
+                  title="计划"
+                  :count="planTodoCount"
+                  :empty="!planTodoCount"
+                  :view-all-to="{ name: 'plans' }"
+                >
+                  <div v-for="p in data?.todo.draft_plans" :key="`draft-${p.id}`" class="todo-item">
+                    <WorkbenchTodoRow
+                      :to="{ name: 'plan-detail', params: { id: p.id } }"
+                      :label="p.name"
+                      :meta="planProgressText(p)"
+                      :tag="planStatusLabel('draft')"
+                      :tag-type="planStatusTagType('draft')"
+                    />
+                  </div>
+                  <div v-for="p in data?.todo.active_plans_todo" :key="`active-${p.id}`" class="todo-item">
+                    <WorkbenchTodoRow
+                      :to="{ name: 'plan-detail', params: { id: p.id } }"
+                      :label="p.name"
+                      :meta="planProgressText(p)"
+                      :tag="planStatusLabel('active')"
+                      :tag-type="planStatusTagType('active')"
+                    />
+                  </div>
+                </TodoSection>
+              </n-gi>
 
-              <TodoSection
-                title="进行中计划"
-                :count="data?.todo.active_plans_todo?.length ?? 0"
-                :empty="!data?.todo.active_plans_todo?.length"
-                :view-all-to="{ name: 'plans', query: { status: 'active' } }"
-              >
-                <n-list-item v-for="p in data?.todo.active_plans_todo" :key="p.id">
-                  <router-link class="todo-link" :to="{ name: 'plan-detail', params: { id: p.id } }">
-                    {{ p.name }}
-                  </router-link>
-                  <n-text depth="3"> · {{ planProgressText(p) }}</n-text>
-                </n-list-item>
-              </TodoSection>
+              <n-gi class="tester-todo-grid__pair-cell">
+                <TodoSection
+                  stretch
+                  title="需求"
+                  :count="requirementTodoCount"
+                  :empty="!requirementTodoCount"
+                  :view-all-to="{ name: 'requirements' }"
+                >
+                  <div
+                    v-for="r in data?.todo.not_tested_requirements"
+                    :key="`not-tested-${r.id}`"
+                    class="todo-item"
+                  >
+                    <WorkbenchTodoRow
+                      :to="{ name: 'requirements' }"
+                      :label="requirementTodoLabel(r)"
+                      :columns="requirementTodoColumns(r)"
+                    />
+                  </div>
+                  <div v-for="r in data?.todo.testing_requirements" :key="`testing-${r.id}`" class="todo-item">
+                    <WorkbenchTodoRow
+                      :to="{ name: 'requirements' }"
+                      :label="requirementTodoLabel(r)"
+                      :columns="requirementTodoColumns(r)"
+                    />
+                  </div>
+                </TodoSection>
+              </n-gi>
 
-              <TodoSection
-                title="未转测需求"
-                :count="data?.todo.not_tested_requirements?.length ?? 0"
-                :empty="!data?.todo.not_tested_requirements?.length"
-                :view-all-to="{ name: 'requirements', query: { status: 'not_tested' } }"
-              >
-                <n-list-item v-for="r in data?.todo.not_tested_requirements" :key="r.id">
-                  <router-link class="todo-link" :to="{ name: 'requirements' }">
-                    {{ requirementTodoLabel(r) }}
-                  </router-link>
-                </n-list-item>
-              </TodoSection>
+              <n-gi :span="2">
+                <TodoSection
+                  title="已修复缺陷"
+                  :count="data?.todo.fixed_bugs?.length ?? 0"
+                  :empty="!data?.todo.fixed_bugs?.length"
+                  :view-all-to="{ name: 'bugs', query: { status_key: 'fixed' } }"
+                >
+                  <div v-for="b in data?.todo.fixed_bugs" :key="b.id" class="todo-item">
+                    <WorkbenchTodoRow
+                      mode="action"
+                      :label="b.title"
+                      :columns="bugFollowerTodoColumns(b)"
+                      :tag="bugStatusLabel(b.status_key)"
+                      :tag-type="bugStatusTagTypeForKey(b.status_key)"
+                      @click="openTodoBug(b.id, data?.todo.fixed_bugs ?? [], 'fixed')"
+                    />
+                  </div>
+                </TodoSection>
+              </n-gi>
+            </n-grid>
 
-              <TodoSection
-                title="测试中需求"
-                :count="data?.todo.testing_requirements?.length ?? 0"
-                :empty="!data?.todo.testing_requirements?.length"
-                :view-all-to="{ name: 'requirements', query: { status: 'testing' } }"
-              >
-                <n-list-item v-for="r in data?.todo.testing_requirements" :key="r.id">
-                  <router-link class="todo-link" :to="{ name: 'requirements' }">
-                    {{ requirementTodoLabel(r) }}
-                  </router-link>
-                </n-list-item>
-              </TodoSection>
+            <TodoSection
+              v-else
+              title="我跟进的缺陷"
+              :count="data?.todo.follower_todo_bugs?.length ?? 0"
+              :empty="!data?.todo.follower_todo_bugs?.length"
+              :view-all-to="bugsFollowerLink"
+            >
+              <div v-for="b in data?.todo.follower_todo_bugs" :key="b.id" class="todo-item">
+                <WorkbenchTodoRow
+                  mode="action"
+                  :label="b.title"
+                  :columns="bugFollowerTodoColumns(b)"
+                  :tag="bugStatusLabel(b.status_key)"
+                  :tag-type="bugStatusTagTypeForKey(b.status_key)"
+                  @click="openTodoBug(b.id, data?.todo.follower_todo_bugs ?? [], 'follower')"
+                />
+              </div>
+            </TodoSection>
+          </n-tab-pane>
 
-              <TodoSection
-                title="已修复缺陷"
-                :count="data?.todo.fixed_bugs?.length ?? 0"
-                :empty="!data?.todo.fixed_bugs?.length"
-                :view-all-to="{ name: 'bugs', query: { status_key: 'fixed' } }"
-              >
-                <n-list-item v-for="b in data?.todo.fixed_bugs" :key="b.id">
-                  <n-space align="center" :size="8">
-                    <router-link class="todo-link" :to="{ name: 'bugs', query: { bugId: b.id } }">
-                      {{ formatNumWithTitle(b.num, b.title) }}
-                    </router-link>
-                    <n-tag size="small" :bordered="false">{{ bugStatusLabel(b.status_key) }}</n-tag>
-                  </n-space>
-                </n-list-item>
-              </TodoSection>
-            </n-space>
-
-            <n-space v-else vertical size="large">
-              <TodoSection
-                title="我跟进的缺陷"
-                :count="data?.todo.follower_todo_bugs?.length ?? 0"
-                :empty="!data?.todo.follower_todo_bugs?.length"
-                :view-all-to="bugsFollowerLink"
-              >
-                <n-list-item v-for="b in data?.todo.follower_todo_bugs" :key="b.id">
-                  <n-space align="center" :size="8">
-                    <router-link class="todo-link" :to="{ name: 'bugs', query: { bugId: b.id } }">
-                      {{ formatNumWithTitle(b.num, b.title) }}
-                    </router-link>
-                    <n-tag size="small" :bordered="false">{{ bugStatusLabel(b.status_key) }}</n-tag>
-                  </n-space>
-                </n-list-item>
-              </TodoSection>
-            </n-space>
+          <n-tab-pane name="schedule" tab="缺陷排期">
+            <WorkbenchBugSchedule
+              ref="scheduleRef"
+              :project-id="ctx.projectId"
+              :bug-status-label="bugStatusLabel"
+              :bug-status-tag-type="bugStatusTagTypeForKey"
+            />
           </n-tab-pane>
         </n-tabs>
       </template>
     </n-space>
+
+    <n-drawer
+      v-model:show="bugDrawerVisible"
+      :width="'50%'"
+      placement="right"
+      :trap-focus="false"
+      @update:show="onBugDrawerShowChange"
+    >
+      <n-drawer-content :closable="false" body-content-style="padding: 0">
+        <BugDetailPanel
+          v-if="activeBugId"
+          :bug-id="activeBugId"
+          :has-prev="activeBugIndex > 0"
+          :has-next="activeBugIndex >= 0 && activeBugIndex < activeBugList.length - 1"
+          @prev="goPrevBug"
+          @next="goNextBug"
+          @close="closeBugDrawer"
+          @deleted="onWorkbenchBugDeleted"
+          @updated="onWorkbenchBugUpdated"
+        />
+      </n-drawer-content>
+    </n-drawer>
   </n-spin>
 </template>
 
@@ -126,34 +166,58 @@
 import {
   NAlert,
   NButton,
-  NListItem,
+  NDrawer,
+  NDrawerContent,
+  NGi,
+  NGrid,
   NSpace,
   NSpin,
   NTabPane,
   NTabs,
-  NTag,
   NText,
 } from 'naive-ui';
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
 import { type RouteLocationRaw } from 'vue-router';
 import { fetchWorkbench } from '@/api/dashboard';
 import { listBugStatuses } from '@/api/templates';
+import BugDetailPanel from '@/components/BugDetailPanel.vue';
+import {
+  WORKBENCH_BUG_DRAWER_KEY,
+  type WorkbenchBugListSource,
+} from '@/composables/useWorkbenchBugDrawer';
 import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
 import type {
   ActivePlanBrief,
+  BugItem,
   BugStatusDef,
   DashboardWorkbench,
   RequirementTodoBrief,
 } from '@/types/business';
-import { formatNumWithTitle, formatNum } from '@/utils/entityNum';
+import { bugStatusTagType } from '@/constants/bugStatus';
+import { planStatusLabel, planStatusTagType } from '@/constants/planStatus';
+import {
+  requirementStatusLabel,
+  requirementStatusTagType,
+} from '@/constants/requirementStatus';
+import { bugFollowerTodoColumns } from '@/utils/bugListLabels';
+import type { BugListColumn } from '@/utils/bugListLabels';
+import { formatVersionDisplay } from '@/utils/versionLabel';
+import { pickAdjacentItemId } from '@/utils/listNavigation';
 import TodoSection from './components/TodoSection.vue';
+import WorkbenchBugSchedule from './components/WorkbenchBugSchedule.vue';
 import WorkbenchStatCards from './components/WorkbenchStatCards.vue';
 import WorkbenchBugFocus from './components/WorkbenchBugFocus.vue';
 import WorkbenchPlanFocus from './components/WorkbenchPlanFocus.vue';
+import WorkbenchTodoRow from './components/WorkbenchTodoRow.vue';
 import WorkbenchVersionFocus from './components/WorkbenchVersionFocus.vue';
 
 type ChartExpose = { resize?: () => void };
+type ScheduleExpose = {
+  load?: () => Promise<void>;
+  dailyBugs?: BugItem[];
+  unplannedBugs?: BugItem[];
+};
 
 const TESTER_ROLES = new Set(['tester', 'project_admin', 'system_admin']);
 
@@ -162,12 +226,97 @@ const auth = useAuthStore();
 
 const data = ref<DashboardWorkbench | null>(null);
 const loading = ref(false);
-const activeTab = ref<'overview' | 'todo'>('overview');
+const activeTab = ref<'overview' | 'todo' | 'schedule'>('overview');
 const bugStatuses = ref<BugStatusDef[]>([]);
 const selectedVersionId = ref<string | null>(null);
 const versionFocusRef = ref<ChartExpose | null>(null);
 const bugFocusRef = ref<ChartExpose | null>(null);
 const planFocusRef = ref<ChartExpose | null>(null);
+const scheduleRef = ref<ScheduleExpose | null>(null);
+
+const bugDrawerVisible = ref(false);
+const activeBugId = ref<string | null>(null);
+const activeBugList = ref<BugItem[]>([]);
+const activeBugListSource = ref<WorkbenchBugListSource | null>(null);
+
+const activeBugIndex = computed(() =>
+  activeBugId.value ? activeBugList.value.findIndex((b) => b.id === activeBugId.value) : -1
+);
+
+function openBugDrawer(id: string, list: BugItem[], source: WorkbenchBugListSource) {
+  activeBugListSource.value = source;
+  activeBugList.value = list;
+  activeBugId.value = id;
+  bugDrawerVisible.value = true;
+}
+
+function openTodoBug(id: string, list: BugItem[], source: WorkbenchBugListSource) {
+  openBugDrawer(id, list, source);
+}
+
+provide(WORKBENCH_BUG_DRAWER_KEY, { open: openBugDrawer });
+
+function closeBugDrawer() {
+  bugDrawerVisible.value = false;
+  activeBugId.value = null;
+  activeBugListSource.value = null;
+  activeBugList.value = [];
+}
+
+function onBugDrawerShowChange(show: boolean) {
+  if (!show) closeBugDrawer();
+}
+
+function goPrevBug() {
+  const idx = activeBugIndex.value;
+  if (idx > 0) activeBugId.value = activeBugList.value[idx - 1].id;
+}
+
+function goNextBug() {
+  const idx = activeBugIndex.value;
+  if (idx >= 0 && idx < activeBugList.value.length - 1) {
+    activeBugId.value = activeBugList.value[idx + 1].id;
+  }
+}
+
+function getBugListBySource(source: WorkbenchBugListSource): BugItem[] {
+  switch (source) {
+    case 'daily':
+      return scheduleRef.value?.dailyBugs ?? [];
+    case 'unplanned':
+      return scheduleRef.value?.unplannedBugs ?? [];
+    case 'fixed':
+      return data.value?.todo.fixed_bugs ?? [];
+    case 'follower':
+      return data.value?.todo.follower_todo_bugs ?? [];
+  }
+}
+
+async function syncActiveBugListAfterRefresh() {
+  const source = activeBugListSource.value;
+  if (!bugDrawerVisible.value || !source) return;
+  const prevIndex = activeBugIndex.value;
+  const list = getBugListBySource(source);
+  activeBugList.value = list;
+  if (!list.length) {
+    closeBugDrawer();
+    return;
+  }
+  if (activeBugId.value && list.some((b) => b.id === activeBugId.value)) return;
+  const nextId = pickAdjacentItemId(list, prevIndex);
+  if (nextId) activeBugId.value = nextId;
+  else closeBugDrawer();
+}
+
+async function onWorkbenchBugUpdated() {
+  await refreshCurrentTabData();
+  await syncActiveBugListAfterRefresh();
+}
+
+async function onWorkbenchBugDeleted() {
+  await refreshCurrentTabData();
+  await syncActiveBugListAfterRefresh();
+}
 
 function resizeOverviewCharts() {
   versionFocusRef.value?.resize?.();
@@ -186,6 +335,17 @@ const isTesterSide = computed(() => {
   return role ? TESTER_ROLES.has(role) : false;
 });
 
+const planTodoCount = computed(
+  () =>
+    (data.value?.todo.draft_plans?.length ?? 0) + (data.value?.todo.active_plans_todo?.length ?? 0)
+);
+
+const requirementTodoCount = computed(
+  () =>
+    (data.value?.todo.not_tested_requirements?.length ?? 0) +
+    (data.value?.todo.testing_requirements?.length ?? 0)
+);
+
 const bugStatusMap = computed(() => {
   const m = new Map<string, string>();
   for (const s of bugStatuses.value) m.set(s.key, s.label);
@@ -196,14 +356,43 @@ function bugStatusLabel(key: string) {
   return bugStatusMap.value.get(key) ?? key;
 }
 
-const bugsFollowerLink = computed<RouteLocationRaw>(() => ({
-  name: 'bugs',
-  query: auth.user?.id ? { follower_id: auth.user.id } : {},
-}));
+function bugStatusTagTypeForKey(key: string) {
+  return bugStatusTagType(key, bugStatuses.value);
+}
+
+const FOLLOWER_TODO_STATUS_KEYS = 'pending_confirm,in_progress,suspended';
+
+const bugsFollowerLink = computed<RouteLocationRaw | undefined>(() => {
+  if (!auth.user?.id) return undefined;
+  return {
+    name: 'bugs',
+    query: {
+      follower_id: auth.user.id,
+      status_key: FOLLOWER_TODO_STATUS_KEYS,
+    },
+  };
+});
 
 function requirementTodoLabel(r: RequirementTodoBrief) {
-  const ver = r.version ? ` · ${r.version.name}` : '';
-  return `${formatNum(r.num)} ${r.title}${ver}`;
+  return r.title;
+}
+
+function requirementTodoColumns(r: RequirementTodoBrief): BugListColumn[] {
+  const cols: BugListColumn[] = [
+    {
+      label: '状态',
+      value: requirementStatusLabel(r.status),
+      type: requirementStatusTagType(r.status),
+    },
+  ];
+  if (r.version) {
+    cols.push({
+      label: '版本',
+      value: formatVersionDisplay(r.version),
+      type: 'info',
+    });
+  }
+  return cols;
 }
 
 function planProgressText(p: ActivePlanBrief) {
@@ -212,26 +401,47 @@ function planProgressText(p: ActivePlanBrief) {
   return `用例 ${p.case_total}，未执行 ${p.not_run}${rate}`;
 }
 
+async function loadDashboardData() {
+  const projectId = ctx.projectId!;
+  const [workbenchRes] = await Promise.all([
+    fetchWorkbench(selectedVersionId.value),
+    listBugStatuses(projectId).then(({ data: statuses }) => {
+      bugStatuses.value = statuses;
+    }),
+  ]);
+  const d = workbenchRes.data;
+  data.value = d;
+  if (!selectedVersionId.value && d.overview.version_focus.version) {
+    selectedVersionId.value = d.overview.version_focus.version.id;
+  }
+  if (activeTab.value === 'overview') {
+    await nextTick();
+    resizeOverviewCharts();
+  }
+}
+
+async function refreshCurrentTabData() {
+  if (!ctx.projectId) return;
+  if (activeTab.value === 'schedule') {
+    await scheduleRef.value?.load?.();
+    return;
+  }
+  await loadDashboardData();
+}
+
 async function load() {
   if (!ctx.projectId) return;
   loading.value = true;
   try {
-    const projectId = ctx.projectId;
-    const [workbenchRes] = await Promise.all([
-      fetchWorkbench(selectedVersionId.value),
-      listBugStatuses(projectId).then(({ data: statuses }) => {
+    if (activeTab.value === 'schedule') {
+      if (!bugStatuses.value.length) {
+        const { data: statuses } = await listBugStatuses(ctx.projectId);
         bugStatuses.value = statuses;
-      }),
-    ]);
-    const d = workbenchRes.data;
-    data.value = d;
-    if (!selectedVersionId.value && d.overview.version_focus.version) {
-      selectedVersionId.value = d.overview.version_focus.version.id;
+      }
+      await scheduleRef.value?.load?.();
+      return;
     }
-    if (activeTab.value === 'overview') {
-      await nextTick();
-      resizeOverviewCharts();
-    }
+    await loadDashboardData();
   } finally {
     loading.value = false;
   }
@@ -246,6 +456,9 @@ watch(activeTab, async (tab) => {
   if (tab === 'overview') {
     await nextTick();
     resizeOverviewCharts();
+  } else if (tab === 'schedule') {
+    await nextTick();
+    await load();
   }
 });
 
@@ -253,22 +466,23 @@ watch(
   () => ctx.projectId,
   () => {
     selectedVersionId.value = null;
+    closeBugDrawer();
     load();
   }
 );
 
 onMounted(load);
+
+onBeforeUnmount(() => {
+  closeBugDrawer();
+});
 </script>
 
 <style scoped>
 .workbench-header {
   margin-bottom: 4px;
 }
-.todo-link {
-  color: var(--n-primary-color);
-  text-decoration: none;
-}
-.todo-link:hover {
-  text-decoration: underline;
+.tester-todo-grid :deep(.tester-todo-grid__pair-cell) {
+  display: flex;
 }
 </style>

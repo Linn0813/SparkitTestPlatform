@@ -46,6 +46,7 @@ from app.services.bug_import import generate_bug_template_bytes, parse_bug_impor
 from app.services.bug_activity import list_bug_activities_merged, log_bug_activity
 from app.services.bug_delete import delete_bug_cascade
 from app.services.bug_filters import apply_bug_list_filters, parse_custom_filters
+from app.services.list_filter_utils import parse_created_date_bounds
 from app.services.field_validator import load_project_member_user_ids, validate_custom_fields
 from app.services.file_cleanup import cleanup_after_bug_content_change, cleanup_after_bug_deleted
 from app.services.file_refs import file_keys_from_bug
@@ -108,17 +109,23 @@ async def _record_status_history(
 
 @router.get("", response_model=BugListPageOut)
 async def list_bugs(
-    status_key: Optional[str] = None,
-    assignee_id: Optional[str] = None,
-    reporter_id: Optional[str] = None,
-    follower_id: Optional[str] = None,
-    plan_version_id: Optional[str] = None,
-    found_version_id: Optional[str] = None,
-    requirement_id: Optional[str] = None,
-    plan_id: Optional[str] = None,
+    status_key: Optional[str] = Query(None, description="状态 key，逗号分隔多值 OR 匹配"),
+    exclude_status_key: Optional[str] = Query(
+        None, description="排除的状态 key，逗号分隔多值 NOT IN 匹配"
+    ),
+    assignee_id: Optional[str] = Query(None, description="经办人 ID，逗号分隔；含 __empty__ 表示未指定"),
+    reporter_id: Optional[str] = Query(None, description="提出人 ID，逗号分隔多值 OR 匹配"),
+    follower_id: Optional[str] = Query(None, description="跟进人 ID，逗号分隔；含 __empty__ 表示无跟进人"),
+    plan_version_id: Optional[str] = Query(None, description="规划版本 ID，逗号分隔；含 __empty__ 表示未关联"),
+    found_version_id: Optional[str] = Query(None, description="发现版本 ID，逗号分隔；含 __empty__ 表示未关联"),
+    requirement_id: Optional[str] = Query(None, description="关联需求 ID，逗号分隔；含 __empty__ 表示未关联"),
+    plan_id: Optional[str] = Query(None, description="关联计划 ID，逗号分隔；含 __empty__ 表示未关联"),
     q: Optional[str] = None,
     custom_filters: Optional[str] = Query(
-        None, description="JSON: { fieldId: value | __empty__ }"
+        None, description="JSON: { fieldId: value | [values] | __empty__ }，同字段多值 OR"
+    ),
+    created_date: Optional[str] = Query(
+        None, description="创建日期 YYYY-MM-DD，按 UTC+8 日历日筛选"
     ),
     page: int = Query(1, ge=1),
     page_size: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE),
@@ -135,10 +142,16 @@ async def list_bugs(
     template_row = tpl.scalar_one_or_none()
     template_fields: list = template_row.fields if template_row else []
 
-    parsed_custom: dict[str, str] = {}
+    parsed_custom: dict[str, list[str]] = {}
     if custom_filters:
         try:
             parsed_custom = parse_custom_filters(custom_filters)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if created_date:
+        try:
+            parse_created_date_bounds(created_date)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -146,6 +159,7 @@ async def list_bugs(
     stmt = apply_bug_list_filters(
         stmt,
         status_key=status_key,
+        exclude_status_key=exclude_status_key,
         assignee_id=assignee_id,
         reporter_id=reporter_id,
         follower_id=follower_id,
@@ -154,6 +168,7 @@ async def list_bugs(
         requirement_id=requirement_id,
         plan_id=plan_id,
         q=q,
+        created_date=created_date,
         template_fields=template_fields,
         custom_filters=parsed_custom or None,
     )
@@ -161,8 +176,9 @@ async def list_bugs(
     total = count_result.scalar_one()
 
     offset = (page - 1) * page_size
+    order_by = Bug.created_at.desc() if created_date else Bug.num.desc()
     result = await db.execute(
-        stmt.order_by(Bug.num.desc()).offset(offset).limit(page_size)
+        stmt.order_by(order_by).offset(offset).limit(page_size)
     )
     bugs = list(result.scalars().all())
     items = await bug_out_list_batch(bugs, db)
