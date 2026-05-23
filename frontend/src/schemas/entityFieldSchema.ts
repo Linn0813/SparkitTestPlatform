@@ -163,9 +163,19 @@ export function filterableTemplateFields(scene: EntityScene, fields: TemplateFie
   return list;
 }
 
+const BUG_LIST_TABLE_EXCLUDED_FIELD_IDS = new Set(['field_source']);
+
+function isBugListTableExcludedField(field: TemplateField): boolean {
+  if (BUG_LIST_TABLE_EXCLUDED_FIELD_IDS.has(field.id)) return true;
+  if (field.name.includes('平台')) return true;
+  if (field.name === '来源') return true;
+  return false;
+}
+
 export function listTableTemplateFields(scene: EntityScene, fields: TemplateField[]): TemplateField[] {
-  const list = dedupeTemplateFields(scene, fields).filter((f) => isOptionFieldType(f.type));
+  let list = dedupeTemplateFields(scene, fields).filter((f) => isOptionFieldType(f.type));
   if (scene === 'bug') {
+    list = list.filter((f) => !isBugListTableExcludedField(f));
     const severityIdx = list.findIndex((f) => f.name.includes('严重'));
     if (severityIdx > 0) {
       const [severity] = list.splice(severityIdx, 1);

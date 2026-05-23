@@ -271,13 +271,6 @@ const columns = computed<DataTableColumns<BugItem>>(() => {
   },
   ...customCols,
   {
-    title: '提出人',
-    key: 'reporter',
-    width: 100,
-    ellipsis: { tooltip: true },
-    render: (row) => row.reporter?.name ?? '—',
-  },
-  {
     title: '跟进人',
     key: 'followers',
     width: 120,
