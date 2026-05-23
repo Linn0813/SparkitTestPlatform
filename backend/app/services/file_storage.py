@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import mimetypes
 import time
 import uuid
 from typing import Optional
@@ -30,20 +31,33 @@ def _sanitize_filename_token(name: str) -> str:
 
 def build_content_disposition(filename: str, disposition: str = "inline") -> str:
     """Build Content-Disposition header value safe for latin-1 HTTP headers (RFC 5987)."""
+    if disposition == "inline":
+        # 浏览器内联预览时不带 filename，避免中文名 latin-1 报错，也避免部分浏览器误触发下载。
+        return "inline"
+
     safe_name = _sanitize_filename_token(filename)
     if filename.isascii():
-        return f'{disposition}; filename="{safe_name}"'
+        return f'attachment; filename="{safe_name}"'
 
     ascii_fallback = _sanitize_filename_token(filename.encode("ascii", "ignore").decode())
     if not ascii_fallback and "." in filename:
         ext = filename.rsplit(".", 1)[-1]
         if ext.isascii() and 0 < len(ext) <= 16:
-            ascii_fallback = f"download.{ext}"
+            ascii_fallback = f"file.{ext}"
     if not ascii_fallback:
-        ascii_fallback = "download"
+        ascii_fallback = "file"
 
     encoded = quote(filename, safe="")
-    return f'{disposition}; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
+    return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
+
+
+def resolve_content_type(filename: str, stored_type: str | None) -> str:
+    """Prefer stored MIME; fall back to extension guess instead of octet-stream."""
+    stored = (stored_type or "").strip()
+    if stored and stored != "application/octet-stream":
+        return stored
+    guessed, _ = mimetypes.guess_type(filename)
+    return guessed or stored or "application/octet-stream"
 
 
 def _sign_download(object_key: str, expires_seconds: int) -> tuple[int, str]:

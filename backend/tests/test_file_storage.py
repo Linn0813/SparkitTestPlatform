@@ -1,4 +1,9 @@
-from app.services.file_storage import build_content_disposition, build_file_download_url, verify_download_signature
+from app.services.file_storage import (
+    build_content_disposition,
+    build_file_download_url,
+    resolve_content_type,
+    verify_download_signature,
+)
 
 
 def test_build_file_download_url_uses_api_proxy(monkeypatch):
@@ -32,14 +37,21 @@ def test_download_signature_roundtrip(monkeypatch):
 
 
 def test_build_content_disposition_ascii():
-    header = build_content_disposition("report.pdf", "inline")
-    assert header == 'inline; filename="report.pdf"'
+    assert build_content_disposition("report.pdf", "inline") == "inline"
+    header = build_content_disposition("report.pdf", "attachment")
+    assert header == 'attachment; filename="report.pdf"'
     header.encode("latin-1")
 
 
 def test_build_content_disposition_unicode():
-    header = build_content_disposition("截图和说明.png", "inline")
-    assert header.startswith('inline; filename="')
+    assert build_content_disposition("截图和说明.png", "inline") == "inline"
+    header = build_content_disposition("截图和说明.png", "attachment")
+    assert header.startswith('attachment; filename="')
     assert "filename*=UTF-8''" in header
     assert "%E6%88%AA" in header
     header.encode("latin-1")
+
+
+def test_resolve_content_type_from_extension():
+    assert resolve_content_type("截图.png", "application/octet-stream") == "image/png"
+    assert resolve_content_type("doc.pdf", None) == "application/pdf"
