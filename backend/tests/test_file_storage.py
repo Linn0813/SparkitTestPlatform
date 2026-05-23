@@ -1,4 +1,4 @@
-from app.services.file_storage import build_file_download_url, verify_download_signature
+from app.services.file_storage import build_content_disposition, build_file_download_url, verify_download_signature
 
 
 def test_build_file_download_url_uses_api_proxy(monkeypatch):
@@ -29,3 +29,17 @@ def test_download_signature_roundtrip(monkeypatch):
     sig = url.split("signature=")[1]
     exp = int(url.split("expires=")[1].split("&")[0])
     assert verify_download_signature(key, exp, sig)
+
+
+def test_build_content_disposition_ascii():
+    header = build_content_disposition("report.pdf", "inline")
+    assert header == 'inline; filename="report.pdf"'
+    header.encode("latin-1")
+
+
+def test_build_content_disposition_unicode():
+    header = build_content_disposition("截图和说明.png", "inline")
+    assert header.startswith('inline; filename="')
+    assert "filename*=UTF-8''" in header
+    assert "%E6%88%AA" in header
+    header.encode("latin-1")

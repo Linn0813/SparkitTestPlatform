@@ -5,7 +5,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.services.file_storage import get_file_by_key, read_file_bytes, verify_download_signature
+from app.services.file_storage import get_file_by_key, read_file_bytes, verify_download_signature, build_content_disposition
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -30,7 +30,7 @@ async def download_file_raw(
         content=body,
         media_type=row.content_type or "application/octet-stream",
         headers={
-            "Content-Disposition": f'inline; filename="{row.filename}"',
+            "Content-Disposition": build_content_disposition(row.filename, "inline"),
             "Cache-Control": "private, max-age=3600",
         },
     )

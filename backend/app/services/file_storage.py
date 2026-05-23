@@ -24,6 +24,28 @@ def _object_key(prefix: str, filename: str) -> str:
     return f"{prefix}/{uuid.uuid4()}.{ext}"
 
 
+def _sanitize_filename_token(name: str) -> str:
+    return name.replace("\\", "_").replace('"', "_")
+
+
+def build_content_disposition(filename: str, disposition: str = "inline") -> str:
+    """Build Content-Disposition header value safe for latin-1 HTTP headers (RFC 5987)."""
+    safe_name = _sanitize_filename_token(filename)
+    if filename.isascii():
+        return f'{disposition}; filename="{safe_name}"'
+
+    ascii_fallback = _sanitize_filename_token(filename.encode("ascii", "ignore").decode())
+    if not ascii_fallback and "." in filename:
+        ext = filename.rsplit(".", 1)[-1]
+        if ext.isascii() and 0 < len(ext) <= 16:
+            ascii_fallback = f"download.{ext}"
+    if not ascii_fallback:
+        ascii_fallback = "download"
+
+    encoded = quote(filename, safe="")
+    return f'{disposition}; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
+
+
 def _sign_download(object_key: str, expires_seconds: int) -> tuple[int, str]:
     expires = int(time.time()) + expires_seconds
     signature = hmac.new(
