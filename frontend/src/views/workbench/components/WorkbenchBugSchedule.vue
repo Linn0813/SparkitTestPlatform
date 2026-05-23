@@ -171,6 +171,7 @@ async function loadUnplanned(withLoading = false) {
     const { data } = await listBugs({
       plan_version_id: FILTER_EMPTY_VALUE,
       exclude_status_key: UNPLANNED_BUG_EXCLUDED_STATUS_QUERY,
+      sort_by: 'severity',
       page: unplannedPage.value,
       page_size: pageSize,
     });

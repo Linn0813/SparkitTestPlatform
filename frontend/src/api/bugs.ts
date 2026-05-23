@@ -28,6 +28,8 @@ export interface ListBugsParams {
   q?: string;
   /** 创建日期 YYYY-MM-DD，按 UTC+8 日历日筛选 */
   created_date?: string;
+  /** severity=按严重程度（致命优先） */
+  sort_by?: 'severity';
   /** JSON: { fieldId: value | value[] | __empty__ }，多值 OR 匹配 */
   custom_filters?: string;
   page?: number;

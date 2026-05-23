@@ -46,6 +46,7 @@ from app.services.bug_import import generate_bug_template_bytes, parse_bug_impor
 from app.services.bug_activity import list_bug_activities_merged, log_bug_activity
 from app.services.bug_delete import delete_bug_cascade
 from app.services.bug_filters import apply_bug_list_filters, parse_custom_filters
+from app.services.bug_sort import bug_severity_rank_column
 from app.services.list_filter_utils import parse_created_date_bounds
 from app.services.field_validator import load_project_member_user_ids, validate_custom_fields
 from app.services.file_cleanup import cleanup_after_bug_content_change, cleanup_after_bug_deleted
@@ -127,6 +128,9 @@ async def list_bugs(
     created_date: Optional[str] = Query(
         None, description="创建日期 YYYY-MM-DD，按 UTC+8 日历日筛选"
     ),
+    sort_by: Optional[str] = Query(
+        None, description="排序：severity=按严重程度（致命优先）"
+    ),
     page: int = Query(1, ge=1),
     page_size: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE),
     ctx: ProjectContext = Depends(require_project_context),
@@ -176,9 +180,17 @@ async def list_bugs(
     total = count_result.scalar_one()
 
     offset = (page - 1) * page_size
-    order_by = Bug.created_at.desc() if created_date else Bug.num.desc()
+    if sort_by == "severity":
+        order_by = (
+            bug_severity_rank_column(Bug.custom_fields).asc(),
+            Bug.num.desc(),
+        )
+    elif created_date:
+        order_by = (Bug.created_at.desc(),)
+    else:
+        order_by = (Bug.num.desc(),)
     result = await db.execute(
-        stmt.order_by(order_by).offset(offset).limit(page_size)
+        stmt.order_by(*order_by).offset(offset).limit(page_size)
     )
     bugs = list(result.scalars().all())
     items = await bug_out_list_batch(bugs, db)
