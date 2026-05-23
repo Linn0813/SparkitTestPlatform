@@ -81,17 +81,37 @@
       <n-text depth="3" class="section-label">附件</n-text>
       <div v-if="attachments.length" class="attachment-list">
         <div v-for="att in attachments" :key="att.id" class="attachment-item">
-          <a :href="att.url" target="_blank" rel="noopener noreferrer" class="attachment-link">
-            {{ att.filename }}
-          </a>
+          <n-space align="center" :size="8" wrap>
+            <n-text>{{ att.filename }}</n-text>
+            <a
+              v-if="!isPreviewableAttachment(att.filename)"
+              :href="att.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="attachment-link"
+            >
+              查看
+            </a>
+            <a :href="attachmentDownloadUrl(att.url)" class="attachment-link attachment-link--muted">
+              下载
+            </a>
+          </n-space>
           <n-text depth="3" class="attachment-meta">
             {{ formatFileSize(att.size) }} · {{ formatTime(att.created_at) }}
           </n-text>
-          <img
+          <n-image
             v-if="isImageAttachment(att.filename)"
             :src="att.url"
             :alt="att.filename"
+            object-fit="contain"
             class="attachment-thumb"
+          />
+          <video
+            v-else-if="isVideoAttachment(att.filename)"
+            :src="att.url"
+            controls
+            preload="metadata"
+            class="attachment-video"
           />
         </div>
       </div>
@@ -120,9 +140,21 @@
             <div v-for="att in attachments" :key="att.id" class="attachment-item attachment-item--compact">
               <n-space align="center" justify="space-between" style="width: 100%">
                 <div class="attachment-item-main">
-                  <a :href="att.url" target="_blank" rel="noopener noreferrer" class="attachment-link">
-                    {{ att.filename }}
-                  </a>
+                  <n-space align="center" :size="8" wrap>
+                    <n-text>{{ att.filename }}</n-text>
+                    <a
+                      v-if="!isPreviewableAttachment(att.filename)"
+                      :href="att.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="attachment-link"
+                    >
+                      查看
+                    </a>
+                    <a :href="attachmentDownloadUrl(att.url)" class="attachment-link attachment-link--muted">
+                      下载
+                    </a>
+                  </n-space>
                   <n-text depth="3" class="attachment-meta">
                     {{ formatFileSize(att.size) }} · {{ formatTime(att.created_at) }}
                   </n-text>
@@ -131,11 +163,19 @@
                   删除
                 </n-button>
               </n-space>
-              <img
+              <n-image
                 v-if="isImageAttachment(att.filename)"
                 :src="att.url"
                 :alt="att.filename"
+                object-fit="contain"
                 class="attachment-thumb attachment-thumb--compact"
+              />
+              <video
+                v-else-if="isVideoAttachment(att.filename)"
+                :src="att.url"
+                controls
+                preload="metadata"
+                class="attachment-video attachment-video--compact"
               />
             </div>
           </div>
@@ -185,6 +225,7 @@ import {
   NDropdown,
   NEmpty,
   NFormItem,
+  NImage,
   NSpace,
   NSpin,
   NTabPane,
@@ -227,6 +268,12 @@ import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
 import { mergeCustomFields, validateCustomFields } from '@/constants/fieldTypes';
+import {
+  attachmentDownloadUrl,
+  isImageAttachment,
+  isPreviewableAttachment,
+  isVideoAttachment,
+} from '@/utils/attachmentPreview';
 import type { BugActivity, BugAttachment, BugComment, BugItem, BugStatusDef, Requirement, TestPlan } from '@/types/business';
 import { displayUserLabel } from '@/utils/displayUser';
 import { formatNumWithTitle } from '@/utils/entityNum';
@@ -348,10 +395,6 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function isImageAttachment(filename: string): boolean {
-  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(filename);
 }
 
 function memberName(userId: string | null | undefined): string {
@@ -709,6 +752,10 @@ watch(
   text-decoration: underline;
 }
 
+.attachment-link--muted {
+  font-size: 12px;
+}
+
 .attachment-meta {
   display: block;
   margin-top: 4px;
@@ -721,7 +768,15 @@ watch(
   max-width: 100%;
   max-height: 200px;
   border-radius: 4px;
-  object-fit: contain;
+}
+
+.attachment-video {
+  display: block;
+  margin-top: 8px;
+  max-width: 100%;
+  max-height: 360px;
+  border-radius: 4px;
+  background: #000;
 }
 
 .attachment-list--compact {
@@ -734,6 +789,10 @@ watch(
 
 .attachment-thumb--compact {
   max-height: 120px;
+}
+
+.attachment-video--compact {
+  max-height: 240px;
   margin-top: 6px;
 }
 </style>

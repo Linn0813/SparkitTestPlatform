@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 
 _FILE_KEY_PREFIXES = ("bugs/", "projects/")
 
+# mimetypes 在部分环境对视频扩展名识别不完整
+_EXTRA_MIME_BY_EXT: dict[str, str] = {
+    ".mov": "video/quicktime",
+    ".m4v": "video/x-m4v",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".ogg": "video/ogg",
+}
+
 
 def _object_key(prefix: str, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
@@ -56,6 +65,9 @@ def resolve_content_type(filename: str, stored_type: str | None) -> str:
     stored = (stored_type or "").strip()
     if stored and stored != "application/octet-stream":
         return stored
+    ext = f".{filename.rsplit('.', 1)[-1].lower()}" if "." in filename else ""
+    if ext in _EXTRA_MIME_BY_EXT:
+        return _EXTRA_MIME_BY_EXT[ext]
     guessed, _ = mimetypes.guess_type(filename)
     return guessed or stored or "application/octet-stream"
 

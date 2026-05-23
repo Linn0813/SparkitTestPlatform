@@ -34,11 +34,11 @@ async def download_file_raw(
     if body is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
     disposition = "attachment" if download else "inline"
+    headers: dict[str, str] = {"Cache-Control": "private, max-age=3600"}
+    if download:
+        headers["Content-Disposition"] = build_content_disposition(row.filename, disposition)
     return Response(
         content=body,
         media_type=resolve_content_type(row.filename, row.content_type),
-        headers={
-            "Content-Disposition": build_content_disposition(row.filename, disposition),
-            "Cache-Control": "private, max-age=3600",
-        },
+        headers=headers,
     )
