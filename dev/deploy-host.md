@@ -37,6 +37,24 @@ cp .env.compose.example .env.compose
 
 然后重启 `./dev/run-backend.sh`。附件与描述内图片经后端 `/api/v1/files/raw` 代理，**浏览器无需访问 MinIO 9000 端口**。
 
+## Tailscale 远程（家里访问 / 笔记本连远程库）
+
+详见 [TAILSCALE.md](TAILSCALE.md)。当前部署机 **multi-mediamac-mini** Tailscale IP：`100.122.228.39`
+
+**部署机**（仅在公司 Mac 上执行一次）：
+
+```bash
+./dev/configure-deploy-host-env.sh 100.122.228.39
+```
+
+**开发机**（笔记本，本地跑代码连远程库）：
+
+```bash
+./dev/link-dev-to-deploy.sh 100.122.228.39
+```
+
+只打开网页：http://100.122.228.39:5174
+
 ## 控制台
 
 - MinIO：http://\<部署机IP\>:9001（默认 `minioadmin` / `minioadmin`）
