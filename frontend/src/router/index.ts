@@ -41,6 +41,11 @@ const router = createRouter({
           component: () => import('@/views/requirement/RequirementListView.vue'),
         },
         {
+          path: 'member-schedule',
+          name: 'member-schedule',
+          component: () => import('@/views/schedule/MemberScheduleView.vue'),
+        },
+        {
           path: 'versions',
           name: 'versions',
           component: () => import('@/views/version/VersionListView.vue'),

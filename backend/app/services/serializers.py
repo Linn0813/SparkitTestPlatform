@@ -11,7 +11,7 @@ from app.models.case import TestCase
 from app.models.project_version import ProjectVersion
 from app.models.requirement import BugPlanLink, BugRequirementLink
 from app.models.user import User
-from app.schemas.bug import BugOut
+from app.schemas.bug import BugFollowerScheduleOut, BugOut
 from app.schemas.case import TestCaseOut
 from app.schemas.user import UserOut
 from app.schemas.version import VersionBrief
@@ -92,14 +92,22 @@ async def bug_out_list_batch(bugs: list[Bug], db: AsyncSession) -> list[BugOut]:
         plan_by_bug[bug_id].append(plan_id)
 
     follower_by_bug: dict[str, list[str]] = defaultdict(list)
+    follower_schedules_by_bug: dict[str, list[BugFollowerScheduleOut]] = defaultdict(list)
     follower_rows = await db.execute(
-        select(BugFollowerLink.bug_id, BugFollowerLink.user_id).where(
-            BugFollowerLink.bug_id.in_(bug_ids)
-        )
+        select(BugFollowerLink).where(BugFollowerLink.bug_id.in_(bug_ids))
     )
-    for bug_id, user_id in follower_rows.all():
-        follower_by_bug[bug_id].append(user_id)
-        user_ids.add(user_id)
+    for link in follower_rows.scalars().all():
+        follower_by_bug[link.bug_id].append(link.user_id)
+        user_ids.add(link.user_id)
+        follower_schedules_by_bug[link.bug_id].append(
+            BugFollowerScheduleOut(
+                link_id=link.id,
+                user_id=link.user_id,
+                fix_estimate_points=link.fix_estimate_points,
+                scheduled_start=link.scheduled_start,
+                scheduled_end=link.scheduled_end,
+            )
+        )
 
     users_map: dict[str, User] = {}
     if user_ids:
@@ -141,6 +149,7 @@ async def bug_out_list_batch(bugs: list[Bug], db: AsyncSession) -> list[BugOut]:
                 plan_version=versions_map.get(b.plan_version_id) if b.plan_version_id else None,
                 found_version=versions_map.get(b.found_version_id) if b.found_version_id else None,
                 follower_ids=follower_ids,
+                follower_schedules=follower_schedules_by_bug.get(b.id, []),
                 created_at=b.created_at,
                 updated_at=b.updated_at,
                 assignee=UserOut.model_validate(assignee) if assignee else None,

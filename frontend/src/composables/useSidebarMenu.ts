@@ -47,6 +47,7 @@ export function useSidebarMenu() {
     switch (key) {
       case 'workbench':
       case 'requirements':
+      case 'member-schedule':
       case 'versions':
         return isSystemAdmin.value || isProjectMember(projectId);
       case 'case-modules':

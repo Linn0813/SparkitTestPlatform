@@ -116,10 +116,21 @@
         </div>
       </div>
       <n-text v-else depth="3">—</n-text>
+
+      <n-text depth="3" class="section-label">跟进排期</n-text>
+      <BugFollowerScheduleTable
+        :rows="followerScheduleRows"
+        :can-edit-row="canEditFollowerScheduleRow"
+        :saving-user-id="scheduleSavingUserId"
+        :estimate-drafts="scheduleEstimateDrafts"
+        @estimate-input="onFollowerEstimateInput"
+        @estimate-blur="onFollowerEstimateBlur"
+        @schedule-change="onFollowerScheduleChange"
+      />
     </template>
 
-    <BugFormFields
-      v-else
+    <template v-else>
+      <BugFormFields
       v-model="editForm"
       v-model:custom-fields="customFields"
       mode="edit"
@@ -184,6 +195,18 @@
       </template>
     </BugFormFields>
 
+      <n-text depth="3" class="section-label">跟进排期</n-text>
+      <BugFollowerScheduleTable
+        :rows="editFollowerScheduleRows"
+        :can-edit-row="canEditFollowerScheduleRow"
+        :saving-user-id="scheduleSavingUserId"
+        :estimate-drafts="scheduleEstimateDrafts"
+        @estimate-input="onFollowerEstimateInput"
+        @estimate-blur="onFollowerEstimateBlur"
+        @schedule-change="onFollowerScheduleChange"
+      />
+    </template>
+
     <n-tabs v-if="!editMode" type="line" class="tabs-block">
       <n-tab-pane name="comments" tab="评论">
         <n-space vertical style="width: 100%">
@@ -247,6 +270,7 @@ import {
   listBugActivities,
   listBugAttachments,
   listBugComments,
+  patchBugFollowerSchedule,
   updateBug,
   uploadAttachment,
 } from '@/api/bugs';
@@ -254,6 +278,9 @@ import { listPlans } from '@/api/plans';
 import { listRequirements } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import BugFormFields, { type BugFormModel } from '@/components/BugFormFields.vue';
+import BugFollowerScheduleTable, {
+  type FollowerScheduleRow,
+} from '@/components/BugFollowerScheduleTable.vue';
 import InlineMarkdownContent from '@/components/InlineMarkdownContent.vue';
 import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
 import {
@@ -266,6 +293,7 @@ import { ensureContextForProject } from '@/composables/useProjectTemplate';
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { usePermissions } from '@/composables/usePermissions';
+import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
 import { mergeCustomFields, validateCustomFields } from '@/constants/fieldTypes';
 import {
@@ -296,6 +324,7 @@ const emit = defineEmits<{
 
 const message = useMessage();
 const dialog = useDialog();
+const auth = useAuthStore();
 const { canManageBugs, canChangeBugStatus, canCommentBug } = usePermissions();
 
 const bug = ref<BugItem | null>(null);
@@ -304,6 +333,8 @@ const editMode = ref(false);
 const saving = ref(false);
 const statusSaving = ref(false);
 const viewStatusKey = ref<string | null>(null);
+const scheduleSavingUserId = ref<string | null>(null);
+const scheduleEstimateDrafts = ref<Record<string, number | null>>({});
 
 const statuses = ref<BugStatusDef[]>([]);
 const customFields = ref<Record<string, unknown>>({});
@@ -432,6 +463,81 @@ const followersLabel = computed(() => {
   }
   return '—';
 });
+
+function buildFollowerScheduleRows(followerIds: string[]): FollowerScheduleRow[] {
+  const schedules = bug.value?.follower_schedules ?? [];
+  const scheduleByUser = new Map(schedules.map((s) => [s.user_id, s]));
+  return followerIds.map((userId) => {
+    const schedule = scheduleByUser.get(userId);
+    const follower = bug.value?.followers?.find((f) => f.id === userId);
+    return {
+      user_id: userId,
+      name: follower?.name?.trim() || memberName(userId),
+      fix_estimate_points: schedule?.fix_estimate_points ?? null,
+      scheduled_start: schedule?.scheduled_start ?? null,
+      scheduled_end: schedule?.scheduled_end ?? null,
+    };
+  });
+}
+
+const followerScheduleRows = computed(() => buildFollowerScheduleRows(bug.value?.follower_ids ?? []));
+
+const editFollowerScheduleRows = computed(() =>
+  buildFollowerScheduleRows(editForm.value.follower_ids ?? [])
+);
+
+function canEditFollowerScheduleRow(userId: string): boolean {
+  if (canEdit.value) return true;
+  const followerIds = editMode.value
+    ? (editForm.value.follower_ids ?? [])
+    : (bug.value?.follower_ids ?? []);
+  return auth.user?.id === userId && followerIds.includes(userId);
+}
+
+function onFollowerEstimateInput(userId: string, value: number | null) {
+  scheduleEstimateDrafts.value[userId] = value;
+}
+
+async function patchFollowerSchedule(
+  userId: string,
+  patch: {
+    fix_estimate_points?: number | null;
+    scheduled_start?: string | null;
+    scheduled_end?: string | null;
+  }
+) {
+  scheduleSavingUserId.value = userId;
+  try {
+    const { data } = await patchBugFollowerSchedule(props.bugId, userId, patch);
+    bug.value = data;
+    delete scheduleEstimateDrafts.value[userId];
+    emit('updated');
+  } catch (e: unknown) {
+    message.error(
+      (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '保存排期失败'
+    );
+  } finally {
+    scheduleSavingUserId.value = null;
+  }
+}
+
+async function onFollowerEstimateBlur(row: FollowerScheduleRow) {
+  if (!canEditFollowerScheduleRow(row.user_id)) return;
+  if (!(row.user_id in scheduleEstimateDrafts.value)) return;
+  const draft = scheduleEstimateDrafts.value[row.user_id];
+  delete scheduleEstimateDrafts.value[row.user_id];
+  const current = row.fix_estimate_points ?? null;
+  if (draft === current) return;
+  await patchFollowerSchedule(row.user_id, { fix_estimate_points: draft });
+}
+
+async function onFollowerScheduleChange(row: FollowerScheduleRow, range: [string, string] | null) {
+  if (!canEditFollowerScheduleRow(row.user_id)) return;
+  await patchFollowerSchedule(row.user_id, {
+    scheduled_start: range?.[0] ?? null,
+    scheduled_end: range?.[1] ?? null,
+  });
+}
 
 const planVersionLabel = computed(() => formatVersionWithRelease(bug.value?.plan_version));
 const foundVersionLabel = computed(() => formatVersionWithRelease(bug.value?.found_version));

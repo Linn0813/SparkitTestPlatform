@@ -56,7 +56,9 @@ from app.schemas.dashboard import (
     StatusCountItem,
     VersionFocus,
 )
+from app.schemas.member_schedule import MemberScheduleOut
 from app.schemas.version import VersionBrief
+from app.services.member_schedule import build_member_schedule
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -825,6 +827,16 @@ async def _build_todo_member(project_id: str, user_id: str) -> DashboardTodo:
         sort_by_plan_version=True,
     )
     return DashboardTodo(follower_todo_bugs=follower_todo_bugs)
+
+
+@router.get("/member-schedule", response_model=MemberScheduleOut)
+async def member_schedule(
+    start: date = Query(..., description="Range start (inclusive)"),
+    end: date = Query(..., description="Range end (inclusive)"),
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    return await build_member_schedule(db, ctx.project_id, start, end)
 
 
 @router.get("", response_model=DashboardWorkbench)

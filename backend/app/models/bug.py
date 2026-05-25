@@ -1,10 +1,10 @@
 from __future__ import annotations  # noqa: I001
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -42,6 +42,9 @@ class BugFollowerLink(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     bug_id: Mapped[str] = mapped_column(String(36), ForeignKey("bugs.id"), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    fix_estimate_points: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    scheduled_start: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    scheduled_end: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
 
 class BugCaseLink(Base):

@@ -59,9 +59,20 @@ async def validate_requirement_ids(db: AsyncSession, project_id: str, ids: list[
 
 
 async def set_bug_followers(db: AsyncSession, bug_id: str, user_ids: list[str]) -> None:
-    await db.execute(delete(BugFollowerLink).where(BugFollowerLink.bug_id == bug_id))
-    for uid in user_ids:
-        db.add(BugFollowerLink(bug_id=bug_id, user_id=uid))
+    desired = list(dict.fromkeys(user_ids))
+    result = await db.execute(
+        select(BugFollowerLink).where(BugFollowerLink.bug_id == bug_id)
+    )
+    existing = {link.user_id: link for link in result.scalars().all()}
+    desired_set = set(desired)
+
+    for uid, link in existing.items():
+        if uid not in desired_set:
+            await db.delete(link)
+
+    for uid in desired:
+        if uid not in existing:
+            db.add(BugFollowerLink(bug_id=bug_id, user_id=uid))
 
 
 async def get_bug_follower_ids(db: AsyncSession, bug_id: str) -> list[str]:

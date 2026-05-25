@@ -324,6 +324,15 @@ export interface BugItem {
   assignee?: { id: string; name: string; email: string };
   reporter?: { id: string; name: string; email: string };
   followers?: { id: string; name: string; email: string }[];
+  follower_schedules?: BugFollowerSchedule[];
+}
+
+export interface BugFollowerSchedule {
+  link_id: string;
+  user_id: string;
+  fix_estimate_points: number | null;
+  scheduled_start: string | null;
+  scheduled_end: string | null;
 }
 
 export interface BugComment {
@@ -471,4 +480,41 @@ export interface DashboardWorkbench {
   overview: DashboardOverview;
   todo: DashboardTodo;
   project_roles: string[];
+}
+
+export type MemberScheduleItemType = 'requirement_node_task' | 'bug';
+
+export interface MemberScheduleItem {
+  item_type: MemberScheduleItemType;
+  id: string;
+  title: string;
+  assignee_id: string;
+  estimate_points: number | null;
+  scheduled_start: string | null;
+  scheduled_end: string | null;
+  requirement_id?: string | null;
+  requirement_num?: number | null;
+  requirement_title?: string | null;
+  node_key?: string | null;
+  node_label?: string | null;
+  role_key?: string | null;
+  bug_id?: string | null;
+  bug_num?: number | null;
+  bug_title?: string | null;
+}
+
+export interface MemberScheduleRow {
+  user_id: string;
+  name: string;
+  scheduled_count: number;
+  total_estimate_points: number;
+  unscheduled_count: number;
+  scheduled_items: MemberScheduleItem[];
+  unscheduled_items: MemberScheduleItem[];
+}
+
+export interface MemberSchedule {
+  range_start: string;
+  range_end: string;
+  members: MemberScheduleRow[];
 }

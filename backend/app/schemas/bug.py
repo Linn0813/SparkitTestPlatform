@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -6,6 +6,20 @@ from pydantic import BaseModel, Field
 from app.schemas.common import ORMBase
 from app.schemas.user import UserOut
 from app.schemas.version import VersionBrief
+
+
+class BugFollowerScheduleOut(BaseModel):
+    link_id: str
+    user_id: str
+    fix_estimate_points: Optional[float] = None
+    scheduled_start: Optional[date] = None
+    scheduled_end: Optional[date] = None
+
+
+class BugFollowerScheduleUpdate(BaseModel):
+    fix_estimate_points: Optional[float] = Field(default=None, ge=0)
+    scheduled_start: Optional[date] = None
+    scheduled_end: Optional[date] = None
 
 
 class BugOut(ORMBase):
@@ -25,6 +39,7 @@ class BugOut(ORMBase):
     plan_version: Optional[VersionBrief] = None
     found_version: Optional[VersionBrief] = None
     follower_ids: list[str] = []
+    follower_schedules: list[BugFollowerScheduleOut] = []
     created_at: datetime
     updated_at: datetime
     assignee: Optional[UserOut] = None

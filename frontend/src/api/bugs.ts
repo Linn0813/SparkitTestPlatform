@@ -133,3 +133,15 @@ export function listBugAttachments(bugId: string) {
 export function deleteBugAttachment(bugId: string, attachmentId: string) {
   return http.delete(`/bugs/${bugId}/attachments/${attachmentId}`);
 }
+
+export function patchBugFollowerSchedule(
+  bugId: string,
+  userId: string,
+  data: Partial<{
+    fix_estimate_points: number | null;
+    scheduled_start: string | null;
+    scheduled_end: string | null;
+  }>
+) {
+  return http.patch<BugItem>(`/bugs/${bugId}/follower-schedules/${userId}`, data);
+}

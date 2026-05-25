@@ -1,0 +1,15 @@
+.member-schedule {
+  --schedule-sidebar-bg: #ffffff;
+  --schedule-header-bg: #f5f6f8;
+  --schedule-row-bg: #ffffff;
+  --schedule-row-alt-bg: #fafbfc;
+  --schedule-weekend-bg: #f3f4f6;
+  --schedule-today-bg: #eef5ff;
+  --schedule-today-line: #2080f0;
+  --schedule-border: #e5e6eb;
+  --schedule-bar-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --schedule-bar-shadow-hover: 0 2px 8px rgba(15, 23, 42, 0.12);
+  --schedule-col-min-width: 100px;
+  --schedule-sidebar-width: 220px;
+  --schedule-brand: #18a058;
+}

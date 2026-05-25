@@ -8,8 +8,9 @@ export interface SidebarMenuItem {
 /** 侧栏：日常测试工作流（扁平，无分组标题） */
 export const SIDEBAR_MAIN_ITEMS: SidebarMenuItem[] = [
   { label: '工作台', key: 'workbench' },
-  { label: '需求', key: 'requirements' },
-  { label: '版本', key: 'versions', activeAliases: ['version-detail'] },
+  { label: '需求管理', key: 'requirements' },
+  { label: '人员排期', key: 'member-schedule' },
+  { label: '版本管理', key: 'versions', activeAliases: ['version-detail'] },
   { label: '模块管理', key: 'case-modules' },
   { label: '测试用例', key: 'cases' },
   { label: '测试计划', key: 'plans', activeAliases: ['plan-detail'] },

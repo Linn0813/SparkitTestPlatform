@@ -36,11 +36,17 @@ from app.schemas.bug import (
     BugCommentCreate,
     BugCommentOut,
     BugCreate,
+    BugFollowerScheduleUpdate,
     BugImportErrorOut,
     BugImportResultOut,
     BugListPageOut,
     BugOut,
     BugUpdate,
+)
+from app.services.bug_follower_schedule import (
+    BugFollowerScheduleError,
+    get_bug_follower_link_or_raise,
+    update_bug_follower_schedule,
 )
 from app.services.bug_import import generate_bug_template_bytes, parse_bug_import_workbook
 from app.services.bug_activity import list_bug_activities_merged, log_bug_activity
@@ -331,6 +337,55 @@ async def get_bug(
     bug = await db.get(Bug, bug_id)
     if not bug or bug.project_id != ctx.project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    return await bug_out(bug, db)
+
+
+@router.patch("/{bug_id}/follower-schedules/{user_id}", response_model=BugOut)
+async def patch_bug_follower_schedule(
+    bug_id: str,
+    user_id: str,
+    body: BugFollowerScheduleUpdate,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    bug = await db.get(Bug, bug_id)
+    if not bug or bug.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    can_full_edit = await user_can_full_edit_project(ctx.user, ctx.project_id, db)
+    if ctx.user.id != user_id and not can_full_edit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the follower or testers may update this schedule",
+        )
+    try:
+        link = await get_bug_follower_link_or_raise(db, bug_id, user_id)
+        data = body.model_dump(exclude_unset=True)
+        await update_bug_follower_schedule(
+            db,
+            link,
+            fix_estimate_points=data.get("fix_estimate_points"),
+            clear_estimate="fix_estimate_points" in data and data["fix_estimate_points"] is None,
+            scheduled_start=data.get("scheduled_start"),
+            scheduled_end=data.get("scheduled_end"),
+            clear_schedule=(
+                "scheduled_start" in data
+                and data["scheduled_start"] is None
+                and "scheduled_end" in data
+                and data["scheduled_end"] is None
+            ),
+            fields_set=set(data.keys()),
+        )
+    except BugFollowerScheduleError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await log_bug_activity(
+        db,
+        bug_id=bug.id,
+        actor_id=ctx.user.id,
+        action_type="field_update",
+        summary="更新了跟进排期",
+        detail={"field": "follower_schedule", "user_id": user_id},
+    )
+    await db.refresh(bug)
     return await bug_out(bug, db)
 
 
