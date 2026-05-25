@@ -1,7 +1,10 @@
 <template>
   <n-card title="系统用户管理">
+    <n-alert v-if="!canManage" type="info" :bordered="false" style="margin-bottom: 12px">
+      仅系统管理员可新建或编辑用户，当前为只读浏览。
+    </n-alert>
     <template #header-extra>
-      <n-button type="primary" @click="openCreate">新建用户</n-button>
+      <n-button v-if="canManage" type="primary" @click="openCreate">新建用户</n-button>
     </template>
     <n-data-table :columns="columns" :data="users" :loading="loading" />
     <n-modal
@@ -29,8 +32,9 @@
 </template>
 
 <script setup lang="ts">
-import { h, onMounted, ref } from 'vue';
+import { computed, h, onMounted, ref } from 'vue';
 import {
+  NAlert,
   NButton,
   NCard,
   NDataTable,
@@ -44,8 +48,12 @@ import {
   type DataTableColumns,
 } from 'naive-ui';
 import { createUser, listUsers, updateUser } from '@/api/users';
+import { usePermissions } from '@/composables/usePermissions';
 import type { User } from '@/types';
 import { apiErrorMessage } from '@/utils/apiError';
+
+const { isSystemAdmin } = usePermissions();
+const canManage = computed(() => isSystemAdmin.value);
 
 const message = useMessage();
 const users = ref<User[]>([]);
@@ -60,26 +68,31 @@ const form = ref({
   is_system_admin: false,
 });
 
-const columns: DataTableColumns<User> = [
-  { title: '邮箱', key: 'email' },
-  { title: '姓名', key: 'name' },
-  {
-    title: '状态',
-    key: 'is_active',
-    render: (row) => h(NTag, { type: row.is_active ? 'success' : 'error' }, () => (row.is_active ? '启用' : '禁用')),
-  },
-  {
-    title: '系统管理员',
-    key: 'is_system_admin',
-    render: (row) => (row.is_system_admin ? '是' : '否'),
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    render: (row) =>
-      h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, () => '编辑'),
-  },
-];
+const columns = computed<DataTableColumns<User>>(() => {
+  const base: DataTableColumns<User> = [
+    { title: '邮箱', key: 'email' },
+    { title: '姓名', key: 'name' },
+    {
+      title: '状态',
+      key: 'is_active',
+      render: (row) => h(NTag, { type: row.is_active ? 'success' : 'error' }, () => (row.is_active ? '启用' : '禁用')),
+    },
+    {
+      title: '系统管理员',
+      key: 'is_system_admin',
+      render: (row) => (row.is_system_admin ? '是' : '否'),
+    },
+  ];
+  if (canManage.value) {
+    base.push({
+      title: '操作',
+      key: 'actions',
+      render: (row) =>
+        h(NButton, { size: 'small', quaternary: true, type: 'primary', onClick: () => openEdit(row) }, () => '编辑'),
+    });
+  }
+  return base;
+});
 
 function openCreate() {
   editingId.value = null;

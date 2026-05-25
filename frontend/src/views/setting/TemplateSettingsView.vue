@@ -5,7 +5,11 @@
     :content-style="embedded ? 'padding: 0' : undefined"
   >
     <n-alert v-if="!ctx.projectId" type="info" style="margin-bottom: 12px">请先在顶栏选择项目</n-alert>
-    <n-tabs v-else v-model:value="tab" type="line">
+    <template v-else>
+      <n-alert v-if="!canEdit" type="info" :bordered="false" style="margin-bottom: 12px">
+        仅项目管理员可修改项目设置，当前为只读浏览。
+      </n-alert>
+      <n-tabs v-model:value="tab" type="line">
       <n-tab-pane name="case" tab="用例字段">
         <div class="template-editor-layout">
           <TemplateFieldPanel
@@ -13,6 +17,7 @@
             scene="case"
             :fields="caseFields"
             :saving="saving"
+            :read-only="readOnly"
             @update:fields="caseFields = $event"
             @add="openFieldEdit('case', null)"
             @edit="(i) => openFieldEdit('case', i)"
@@ -32,6 +37,7 @@
           :bug-fields="bugFields"
           :statuses="statuses"
           :saving="saving"
+          :read-only="readOnly"
           @update:bug-fields="bugFields = $event"
           @add-field="openFieldEdit('bug', null)"
           @edit-field="(i) => openFieldEdit('bug', i)"
@@ -39,36 +45,38 @@
         />
       </n-tab-pane>
       <n-tab-pane name="req-roles" tab="需求角色">
-        <RequirementRoleSettingsTab :project-id="ctx.projectId" />
+        <RequirementRoleSettingsTab :project-id="ctx.projectId" :read-only="readOnly" />
       </n-tab-pane>
       <n-tab-pane name="req-fields" tab="需求字段">
         <RequirementFieldSettingsTab
           :project-id="ctx.projectId"
           :req-fields="reqFields"
           :saving="saving"
+          :read-only="readOnly"
           @update:req-fields="reqFields = $event"
           @add-field="openFieldEdit('requirement', null)"
           @edit-field="(i) => openFieldEdit('requirement', i)"
         />
       </n-tab-pane>
       <n-tab-pane name="req-workflow" tab="需求工作流">
-        <RequirementWorkflowSettingsTab :project-id="ctx.projectId" />
+        <RequirementWorkflowSettingsTab :project-id="ctx.projectId" :read-only="readOnly" />
       </n-tab-pane>
       <n-tab-pane name="wecom" tab="企微通知">
         <n-form label-placement="top" style="max-width: 960px">
           <n-divider title-placement="left">基础配置</n-divider>
-          <n-form-item label="启用"><n-switch v-model:value="wecom.wecom_enabled" /></n-form-item>
+          <n-form-item label="启用"><n-switch v-model:value="wecom.wecom_enabled" :disabled="readOnly" /></n-form-item>
           <n-form-item label="Webhook URL">
-            <n-input v-model:value="wecom.wecom_webhook_url" type="textarea" :rows="2" />
+            <n-input v-model:value="wecom.wecom_webhook_url" type="textarea" :rows="2" :disabled="readOnly" />
           </n-form-item>
           <n-form-item label="站点访问地址">
             <n-input
               v-model:value="wecom.app_public_url"
               placeholder="如 http://172.19.3.69:5174（企微通知 {link} 用，勿填 localhost）"
               clearable
+              :disabled="readOnly"
             />
           </n-form-item>
-          <n-space>
+          <n-space v-if="canEdit">
             <n-button type="primary" @click="saveWecomWebhook">保存 Webhook</n-button>
             <n-button @click="onTestWecom">发送测试</n-button>
           </n-space>
@@ -80,10 +88,11 @@
             @ 提醒需通知对象本人在右上角「我的资料」填写企微 userid 或绑定手机号；未绑定则只发群消息、不会 @ 任何人。
           </n-alert>
           <n-data-table :columns="wecomRuleColumns" :data="sortedWecomRules" size="small" />
-          <n-button size="small" style="margin-top: 8px" @click="openRuleModal()">添加规则</n-button>
+          <n-button v-if="canEdit" size="small" style="margin-top: 8px" @click="openRuleModal()">添加规则</n-button>
         </n-form>
       </n-tab-pane>
     </n-tabs>
+    </template>
 
     <n-drawer v-model:show="showFieldDrawer" :width="720" placement="right">
       <n-drawer-content :title="fieldEditIndex === null ? '添加字段' : '编辑字段'">
@@ -232,6 +241,7 @@ import {
   type FieldTypeValue,
 } from '@/constants/fieldTypes';
 import { invalidateProjectFieldSchemaCache } from '@/composables/useProjectFieldSchema';
+import { usePermissions } from '@/composables/usePermissions';
 import { validateTemplateFieldNames } from '@/schemas/entityFieldSchema';
 import { apiErrorMessage } from '@/utils/apiError';
 import { useContextStore } from '@/stores/context';
@@ -246,8 +256,12 @@ const DEFAULT_TRANSITION_TEMPLATE =
   '【缺陷 {num}】{title}\n项目：{project}\n提出人：{reporter}\n跟进人：{followers}\n状态：{from_status} → {to_status}\n{link}';
 
 const ctx = useContextStore();
+const { canManageProjectConfig } = usePermissions();
 const message = useMessage();
 const dialog = useDialog();
+
+const canEdit = computed(() => canManageProjectConfig(ctx.projectId));
+const readOnly = computed(() => !canEdit.value);
 
 const tab = ref('case');
 const saving = ref(false);
@@ -361,7 +375,8 @@ const draftPreviewFields = computed<TemplateField[]>(() => {
   return normalizeFieldSort(base);
 });
 
-const wecomRuleColumns: DataTableColumns<WecomNotifyRule> = [
+const wecomRuleColumns = computed<DataTableColumns<WecomNotifyRule>>(() => {
+  const cols: DataTableColumns<WecomNotifyRule> = [
   {
     title: '触发',
     key: 'kind',
@@ -392,21 +407,26 @@ const wecomRuleColumns: DataTableColumns<WecomNotifyRule> = [
     width: 70,
     render: (r) => h(NTag, { type: r.enabled ? 'success' : 'default', size: 'small' }, () => (r.enabled ? '是' : '否')),
   },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 140,
-    render: (row) =>
-      h(NSpace, { size: 4 }, () => [
-        h(NButton, { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openRuleModal(row) }, () => '编辑'),
-        row.kind === 'transition'
-          ? h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeRule(row) }, () => '删除')
-          : null,
-      ]),
-  },
-];
+  ];
+  if (canEdit.value) {
+    cols.push({
+      title: '操作',
+      key: 'actions',
+      width: 140,
+      render: (row) =>
+        h(NSpace, { size: 4 }, () => [
+          h(NButton, { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openRuleModal(row) }, () => '编辑'),
+          row.kind === 'transition'
+            ? h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeRule(row) }, () => '删除')
+            : null,
+        ]),
+    });
+  }
+  return cols;
+});
 
 function openFieldEdit(kind: 'case' | 'bug' | 'requirement', index: number | null) {
+  if (readOnly.value) return;
   fieldEditKind.value = kind;
   fieldEditIndex.value = index;
   const list =
@@ -487,6 +507,7 @@ function ruleStatusKeys(row: WecomNotifyRule, side: 'from' | 'to'): string[] {
 }
 
 function openRuleModal(row?: WecomNotifyRule) {
+  if (readOnly.value) return;
   editingRule.value = row ?? null;
   if (row) {
     ruleForm.value = {

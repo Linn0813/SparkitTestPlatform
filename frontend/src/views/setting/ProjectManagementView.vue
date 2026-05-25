@@ -9,7 +9,7 @@
       <n-button v-if="canCreateProject()" type="primary" @click="showCreate = true">新建项目</n-button>
     </template>
     <n-text v-if="!canCreateProject()" depth="3" style="display: block; margin-bottom: 12px">
-      仅系统管理员可新建项目
+      仅系统管理员可新建、编辑或删除项目；您可浏览项目列表并切换当前项目。
     </n-text>
     <n-data-table :columns="columns" :data="projects" :loading="loading" />
 

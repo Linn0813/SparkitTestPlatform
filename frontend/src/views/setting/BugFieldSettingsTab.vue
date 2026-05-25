@@ -9,6 +9,7 @@
         scene="bug"
         :fields="bugFields"
         :saving="saving"
+        :read-only="readOnly"
         :option-counts="optionCounts"
         @update:fields="bugFields = $event"
         @add="emit('add-field')"
@@ -28,7 +29,7 @@
     <n-drawer v-model:show="showStatusDrawer" :width="520" placement="right">
       <n-drawer-content title="编辑状态选项" closable>
         <n-data-table :columns="statusColumns" :data="statuses" size="small" />
-        <n-button size="small" style="margin-top: 8px" @click="openStatusModal()">添加状态</n-button>
+        <n-button v-if="!readOnly" size="small" style="margin-top: 8px" @click="openStatusModal()">添加状态</n-button>
       </n-drawer-content>
     </n-drawer>
 
@@ -96,6 +97,7 @@ const props = defineProps<{
   bugFields: TemplateField[];
   statuses: BugStatusDef[];
   saving?: boolean;
+  readOnly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -125,7 +127,8 @@ const optionCounts = computed(() => ({
   bug_status: props.statuses.length,
 }));
 
-const statusColumns = computed<DataTableColumns<BugStatusDef>>(() => [
+const statusColumns = computed<DataTableColumns<BugStatusDef>>(() => {
+  const cols: DataTableColumns<BugStatusDef> = [
   { title: '标识', key: 'key', width: 120 },
   { title: '名称', key: 'label' },
   {
@@ -134,7 +137,9 @@ const statusColumns = computed<DataTableColumns<BugStatusDef>>(() => [
     width: 70,
     render: (r) => (r.is_terminal ? '是' : '否'),
   },
-  {
+  ];
+  if (props.readOnly) return cols;
+  cols.push({
     title: '操作',
     key: 'actions',
     width: 200,
@@ -158,11 +163,12 @@ const statusColumns = computed<DataTableColumns<BugStatusDef>>(() => [
         h(NButton, { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openStatusModal(row) }, () => '编辑'),
         h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeStatus(row) }, () => '删除'),
       ]),
-  },
-]);
+  });
+  return cols;
+});
 
 function openStatusDrawer(category: SystemOptionCategory) {
-  if (category !== 'bug_status') return;
+  if (props.readOnly || category !== 'bug_status') return;
   showStatusDrawer.value = true;
 }
 

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from unittest.mock import AsyncMock
 
-from app.api.v1.dashboard import _role_keys
+import pytest
+
+from app.api.v1.dashboard import _build_todo_for_roles, _role_keys
 from app.constants.dashboard_todo import (
     MEMBER_FOLLOWER_TODO_STATUS_KEYS,
     TESTER_FIXED_BUG_STATUS_KEY,
@@ -12,7 +15,13 @@ from app.constants.dashboard_todo import (
 )
 from app.models.project import ProjectRole
 from app.models.project_version import ProjectVersion
-from app.schemas.dashboard import DashboardOverview, DashboardTodo, DashboardWorkbench
+from app.schemas.dashboard import (
+    ActivePlanBrief,
+    DashboardOverview,
+    DashboardTodo,
+    DashboardWorkbench,
+    RequirementTodoBrief,
+)
 from app.services.dashboard_version import pick_default_version
 
 
@@ -38,6 +47,54 @@ def _version(
 def test_role_keys_mapping():
     assert _role_keys([], True) == ["system_admin"]
     assert _role_keys([ProjectRole.tester, ProjectRole.product], False) == ["tester", "product"]
+
+
+@pytest.mark.asyncio
+async def test_build_todo_for_roles_returns_all_sections_for_member(monkeypatch):
+    from app.api.v1 import dashboard as dashboard_module
+
+    tester_todo = DashboardTodo(
+        draft_plans=[
+            ActivePlanBrief(
+                id="p1",
+                name="Plan",
+                status="draft",
+                case_total=1,
+                not_run=1,
+                pass_rate=None,
+            )
+        ],
+        active_plans_todo=[],
+        fixed_bugs=[],
+        not_tested_requirements=[
+            RequirementTodoBrief(id="r1", num=1, title="Req", status="developing", version=None)
+        ],
+        testing_requirements=[],
+    )
+    dev_todo = DashboardTodo(follower_todo_bugs=[])
+
+    monkeypatch.setattr(
+        dashboard_module,
+        "_build_todo_tester",
+        AsyncMock(return_value=tester_todo),
+    )
+    monkeypatch.setattr(
+        dashboard_module,
+        "_build_todo_member",
+        AsyncMock(return_value=dev_todo),
+    )
+
+    merged = await _build_todo_for_roles(
+        "proj-1",
+        "user-1",
+        {ProjectRole.member},
+        is_system_admin=False,
+    )
+    assert len(merged.draft_plans) == 1
+    assert len(merged.not_tested_requirements) == 1
+    assert merged.follower_todo_bugs == []
+    dashboard_module._build_todo_tester.assert_awaited_once_with("proj-1")
+    dashboard_module._build_todo_member.assert_awaited_once_with("proj-1", "user-1")
 
 
 def test_todo_status_constants():

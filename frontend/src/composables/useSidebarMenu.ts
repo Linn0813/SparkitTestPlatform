@@ -29,7 +29,6 @@ export function useSidebarMenu() {
     isProjectMember,
     canAccessCasesModule,
     canAccessBugsModule,
-    canManageProjectConfig,
   } = usePermissions();
 
   const activeKey = computed(
@@ -57,7 +56,7 @@ export function useSidebarMenu() {
       case 'bugs':
         return canAccessBugsModule(projectId);
       case 'setting-project-config':
-        return canManageProjectConfig(projectId);
+        return isSystemAdmin.value || isProjectMember(projectId);
       default:
         return true;
     }

@@ -1,7 +1,7 @@
 <template>
   <n-card title="字段配置" size="small" :bordered="false" class="field-config-card">
     <template #header-extra>
-      <n-space :size="8">
+      <n-space v-if="!readOnly" :size="8">
         <n-button size="small" @click="$emit('add')">添加可配置字段</n-button>
         <n-button type="primary" size="small" :loading="saving" @click="$emit('save')">保存模板</n-button>
       </n-space>
@@ -38,10 +38,12 @@ const props = withDefaults(
     scene: 'case' | 'bug' | 'requirement';
     fields: TemplateField[];
     saving?: boolean;
+    readOnly?: boolean;
     optionCounts?: Partial<Record<SystemOptionCategory, number>>;
   }>(),
   {
     optionCounts: () => ({}),
+    readOnly: false,
   }
 );
 
@@ -78,7 +80,8 @@ function typeCellLabel(row: FieldConfigRow): string {
   return row.typeLabel;
 }
 
-const columns = computed<DataTableColumns<FieldConfigRow>>(() => [
+const columns = computed<DataTableColumns<FieldConfigRow>>(() => {
+  const cols: DataTableColumns<FieldConfigRow> = [
   {
     title: '来源',
     key: 'source',
@@ -93,7 +96,9 @@ const columns = computed<DataTableColumns<FieldConfigRow>>(() => [
   { title: '名称', key: 'name', ellipsis: { tooltip: true } },
   { title: '类型', key: 'typeLabel', width: 120, render: (r) => typeCellLabel(r) },
   { title: '必填', key: 'required', width: 56, render: (r) => (r.required ? '是' : '否') },
-  {
+  ];
+  if (props.readOnly) return cols;
+  cols.push({
     title: '操作',
     key: 'actions',
     width: 140,
@@ -141,8 +146,9 @@ const columns = computed<DataTableColumns<FieldConfigRow>>(() => [
         h(NButton, { size: 'tiny', type: 'error', secondary: true, onClick: () => remove(realIndex) }, () => '删'),
       ]);
     },
-  },
-]);
+  });
+  return cols;
+});
 
 function move(fieldId: string, delta: number) {
   const sorted = sortTemplateFields(props.fields);

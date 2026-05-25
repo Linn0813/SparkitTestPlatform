@@ -9,7 +9,7 @@
           <div class="wf-settings-config">
             <n-space justify="space-between" align="center" style="margin-bottom: 8px">
               <n-text strong>节点列表</n-text>
-              <n-button size="small" type="primary" @click="openCreate">添加节点</n-button>
+              <n-button v-if="!readOnly" size="small" type="primary" @click="openCreate">添加节点</n-button>
             </n-space>
             <n-data-table size="small" :columns="columns" :data="defs" :loading="loading" />
           </div>
@@ -20,7 +20,7 @@
         </div>
       </n-tab-pane>
       <n-tab-pane name="status-rules" tab="状态与节点映射">
-        <RequirementStatusRulesSettings :project-id="projectId" :workflow-nodes="defs" />
+        <RequirementStatusRulesSettings :project-id="projectId" :workflow-nodes="defs" :read-only="readOnly" />
       </n-tab-pane>
     </n-tabs>
 
@@ -94,7 +94,7 @@ import { useRequirementProjectConfig } from '@/composables/useRequirementProject
 import type { RequirementWorkflowNodeDef } from '@/types/business';
 import { expandWorkflowCanvasNodes, type WorkflowNodeSource } from '@/utils/requirementWorkflowLayout';
 
-const props = defineProps<{ projectId: string | null }>();
+const props = defineProps<{ projectId: string | null; readOnly?: boolean }>();
 
 const message = useMessage();
 const dialog = useDialog();
@@ -144,7 +144,8 @@ const previewNodes = computed(() =>
   )
 );
 
-const columns = computed<DataTableColumns<RequirementWorkflowNodeDef>>(() => [
+const columns = computed<DataTableColumns<RequirementWorkflowNodeDef>>(() => {
+  const cols: DataTableColumns<RequirementWorkflowNodeDef> = [
   { title: '名称', key: 'label', width: 120 },
   {
     title: '角色',
@@ -165,7 +166,9 @@ const columns = computed<DataTableColumns<RequirementWorkflowNodeDef>>(() => [
     render: (r) => (r.blocks_lane_gate ? '是' : '否'),
   },
   { title: '排序', key: 'sort_in_lane', width: 60 },
-  {
+  ];
+  if (props.readOnly) return cols;
+  cols.push({
     title: '操作',
     key: 'a',
     width: 140,
@@ -174,8 +177,9 @@ const columns = computed<DataTableColumns<RequirementWorkflowNodeDef>>(() => [
         h(NButton, { size: 'tiny', quaternary: true, onClick: () => openEdit(row) }, () => '编辑'),
         h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => onRemove(row) }, () => '删除'),
       ]),
-  },
-]);
+  });
+  return cols;
+});
 
 async function load() {
   if (!props.projectId) {

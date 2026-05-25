@@ -9,6 +9,7 @@
         scene="requirement"
         :fields="reqFields"
         :saving="saving"
+        :read-only="readOnly"
         :option-counts="optionCounts"
         @update:fields="reqFields = $event"
         @add="emit('add-field')"
@@ -34,7 +35,7 @@
           :loading="loading"
           size="small"
         />
-        <n-button size="small" style="margin-top: 8px" @click="openOptionModal()">添加选项</n-button>
+        <n-button v-if="!readOnly" size="small" style="margin-top: 8px" @click="openOptionModal()">添加选项</n-button>
       </n-drawer-content>
     </n-drawer>
 
@@ -100,6 +101,7 @@ const props = defineProps<{
   projectId: string | null;
   reqFields: TemplateField[];
   saving?: boolean;
+  readOnly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -137,10 +139,13 @@ const optionsDrawerTitle = computed(() =>
   optionCategory.value === 'priority' ? '编辑优先级选项' : '编辑需求类型选项'
 );
 
-const drawerOptionColumns = computed<DataTableColumns<RequirementOptionDef>>(() => [
+const drawerOptionColumns = computed<DataTableColumns<RequirementOptionDef>>(() => {
+  const cols: DataTableColumns<RequirementOptionDef> = [
   { title: '标识', key: 'option_key', width: 120 },
   { title: '名称', key: 'label' },
-  {
+  ];
+  if (props.readOnly) return cols;
+  cols.push({
     title: '操作',
     key: 'actions',
     width: 200,
@@ -169,11 +174,12 @@ const drawerOptionColumns = computed<DataTableColumns<RequirementOptionDef>>(() 
         h(NButton, { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openOptionModal(row) }, () => '编辑'),
         h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeOption(row) }, () => '删除'),
       ]),
-  },
-]);
+  });
+  return cols;
+});
 
 function openOptionsDrawer(category: SystemOptionCategory) {
-  if (category === 'bug_status') return;
+  if (props.readOnly || category === 'bug_status') return;
   optionCategory.value = category;
   showOptionsDrawer.value = true;
 }

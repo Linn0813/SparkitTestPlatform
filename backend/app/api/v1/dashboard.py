@@ -670,28 +670,19 @@ async def _build_todo_requirements(project_id: str) -> tuple[list, list]:
 async def _build_todo_for_roles(
     project_id: str, user_id: str, role_set: set[ProjectRole], *, is_system_admin: bool
 ) -> DashboardTodo:
-    if is_system_admin:
-        role_set = {ProjectRole.tester, ProjectRole.product, ProjectRole.developer}
-
-    merged = DashboardTodo()
-
-    if ProjectRole.tester in role_set:
-        tester_todo = await _build_todo_tester(project_id)
-        merged.draft_plans = tester_todo.draft_plans
-        merged.active_plans_todo = tester_todo.active_plans_todo
-        merged.fixed_bugs = tester_todo.fixed_bugs
-        merged.not_tested_requirements = tester_todo.not_tested_requirements
-        merged.testing_requirements = tester_todo.testing_requirements
-    elif ProjectRole.product in role_set:
-        not_tested, testing = await _build_todo_requirements(project_id)
-        merged.not_tested_requirements = not_tested
-        merged.testing_requirements = testing
-
-    if ProjectRole.developer in role_set:
-        dev_todo = await _build_todo_member(project_id, user_id)
-        merged.follower_todo_bugs = dev_todo.follower_todo_bugs
-
-    return merged
+    """Return all todo sections for every project member."""
+    _ = role_set
+    _ = is_system_admin
+    tester_todo = await _build_todo_tester(project_id)
+    dev_todo = await _build_todo_member(project_id, user_id)
+    return DashboardTodo(
+        draft_plans=tester_todo.draft_plans,
+        active_plans_todo=tester_todo.active_plans_todo,
+        fixed_bugs=tester_todo.fixed_bugs,
+        not_tested_requirements=tester_todo.not_tested_requirements,
+        testing_requirements=tester_todo.testing_requirements,
+        follower_todo_bugs=dev_todo.follower_todo_bugs,
+    )
 
 
 async def _summary_counts_session(project_id: str) -> DashboardSummary:

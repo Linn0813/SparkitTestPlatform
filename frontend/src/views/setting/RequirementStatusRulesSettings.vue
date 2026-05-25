@@ -8,7 +8,7 @@
           草稿请只关联 PRD 输出、设计中只关联需求设计（优先级：草稿 &lt; 设计中）；发版未完成用待发版规则。
         </n-text>
       </div>
-      <n-space :size="8">
+      <n-space v-if="!readOnly" :size="8">
         <n-button size="small" @click="addRule">添加规则</n-button>
         <n-button size="small" type="primary" :loading="saving" :disabled="!projectId" @click="onSave">
           保存映射
@@ -44,6 +44,7 @@ import type { RequirementStatus, RequirementStatusRule, RequirementWorkflowNodeD
 const props = defineProps<{
   projectId: string | null;
   workflowNodes: RequirementWorkflowNodeDef[];
+  readOnly?: boolean;
 }>();
 
 const message = useMessage();
@@ -154,79 +155,97 @@ async function onSave() {
   }
 }
 
-const columns = computed<DataTableColumns<DraftRule>>(() => [
+const columns = computed<DataTableColumns<DraftRule>>(() => {
+  const readOnly = props.readOnly;
+  const cols: DataTableColumns<DraftRule> = [
   {
     title: '优先级',
     key: 'sort',
     width: 88,
     render: (row) =>
-      h(NInputNumber, {
-        size: 'small',
-        min: 0,
-        max: 99,
-        value: row.sort,
-        onUpdateValue: (v: number | null) => {
-          row.sort = v ?? 0;
-        },
-      }),
+      readOnly
+        ? String(row.sort)
+        : h(NInputNumber, {
+            size: 'small',
+            min: 0,
+            max: 99,
+            value: row.sort,
+            onUpdateValue: (v: number | null) => {
+              row.sort = v ?? 0;
+            },
+          }),
   },
   {
     title: '触发方式',
     key: 'trigger_type',
     width: 120,
     render: (row) =>
-      h(NSelect, {
-        size: 'small',
-        value: row.trigger_type,
-        options: TRIGGER_OPTIONS,
-        onUpdateValue: (v: StatusRuleTrigger) => {
-          row.trigger_type = v;
-          if (v === 'status_hold') {
-            row.node_keys = [];
-          }
-        },
-      }),
+      readOnly
+        ? TRIGGER_OPTIONS.find((o) => o.value === row.trigger_type)?.label ?? row.trigger_type
+        : h(NSelect, {
+            size: 'small',
+            value: row.trigger_type,
+            options: TRIGGER_OPTIONS,
+            onUpdateValue: (v: StatusRuleTrigger) => {
+              row.trigger_type = v;
+              if (v === 'status_hold') {
+                row.node_keys = [];
+              }
+            },
+          }),
   },
   {
     title: '需求状态',
     key: 'status',
     width: 110,
     render: (row) =>
-      h(NSelect, {
-        size: 'small',
-        value: row.status,
-        options: statusOptions.value,
-        onUpdateValue: (v: RequirementStatus) => {
-          row.status = v;
-        },
-      }),
+      readOnly
+        ? String(statusOptions.value.find((o) => o.value === row.status)?.label ?? row.status)
+        : h(NSelect, {
+            size: 'small',
+            value: row.status,
+            options: statusOptions.value,
+            onUpdateValue: (v: RequirementStatus) => {
+              row.status = v;
+            },
+          }),
   },
   {
     title: '关联节点',
     key: 'node_keys',
     minWidth: 200,
     render: (row) =>
-      h(NSelect, {
-        size: 'small',
-        multiple: true,
-        filterable: true,
-        disabled: row.trigger_type === 'status_hold',
-        value: row.node_keys,
-        options: nodeOptions.value,
-        placeholder: row.trigger_type === 'status_hold' ? '—' : '选择节点',
-        onUpdateValue: (v: string[]) => {
-          row.node_keys = v ?? [];
-        },
-      }),
+      readOnly
+        ? row.trigger_type === 'status_hold'
+          ? '—'
+          : row.node_keys
+              .map((k) => nodeOptions.value.find((o) => o.value === k)?.label ?? k)
+              .join('、') || '—'
+        : h(NSelect, {
+            size: 'small',
+            multiple: true,
+            filterable: true,
+            disabled: row.trigger_type === 'status_hold',
+            value: row.node_keys,
+            options: nodeOptions.value,
+            placeholder: row.trigger_type === 'status_hold' ? '—' : '选择节点',
+            onUpdateValue: (v: string[]) => {
+              row.node_keys = v ?? [];
+            },
+          }),
   },
-  {
-    title: '操作',
-    key: 'a',
-    width: 64,
-    render: (row) =>
-      h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeRule(row) }, () => '删除'),
-  },
-]);
+  ];
+  if (!readOnly) {
+    cols.push({
+      title: '操作',
+      key: 'a',
+      width: 64,
+      render: (row) =>
+        h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeRule(row) }, () => '删除'),
+    });
+  }
+  return cols;
+});
 
 onMounted(load);
 watch(() => props.projectId, load);

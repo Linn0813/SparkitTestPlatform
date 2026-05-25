@@ -7,7 +7,7 @@
       工作流节点「关联角色」、需求「编辑需求」中的人员选项均来自此列表。
     </n-alert>
     <n-data-table :columns="columns" :data="roles" :loading="loading" size="small" />
-    <n-button size="small" style="margin-top: 8px" @click="openModal()">添加角色</n-button>
+    <n-button v-if="!readOnly" size="small" style="margin-top: 8px" @click="openModal()">添加角色</n-button>
 
     <n-modal
       v-model:show="showModal"
@@ -58,7 +58,7 @@ import { invalidateRequirementProjectConfig } from '@/composables/useRequirement
 import { loadRequirementRoles } from '@/composables/useRequirementProjectConfig';
 import { apiErrorMessage } from '@/utils/apiError';
 
-const props = defineProps<{ projectId: string | null }>();
+const props = defineProps<{ projectId: string | null; readOnly?: boolean }>();
 
 const message = useMessage();
 const dialog = useDialog();
@@ -68,10 +68,13 @@ const showModal = ref(false);
 const editing = ref<RequirementRoleDef | null>(null);
 const form = ref({ role_key: '', label: '' });
 
-const columns = computed<DataTableColumns<RequirementRoleDef>>(() => [
+const columns = computed<DataTableColumns<RequirementRoleDef>>(() => {
+  const cols: DataTableColumns<RequirementRoleDef> = [
   { title: '标识', key: 'role_key', width: 140 },
   { title: '显示名', key: 'label' },
-  {
+  ];
+  if (props.readOnly) return cols;
+  cols.push({
     title: '操作',
     key: 'actions',
     width: 200,
@@ -95,8 +98,9 @@ const columns = computed<DataTableColumns<RequirementRoleDef>>(() => [
         h(NButton, { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openModal(row) }, () => '编辑'),
         h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeRole(row) }, () => '删除'),
       ]),
-  },
-]);
+  });
+  return cols;
+});
 
 async function load() {
   if (!props.projectId) {

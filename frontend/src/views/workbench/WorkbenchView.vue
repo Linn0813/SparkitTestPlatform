@@ -26,7 +26,25 @@
           </n-tab-pane>
 
           <n-tab-pane name="todo" tab="我的待办">
-            <n-alert v-if="!hasAnyTodo" type="info">暂无待办</n-alert>
+            <n-space align="center" justify="space-between" style="width: 100%; margin-bottom: 12px">
+              <n-text depth="3" style="font-size: 13px">选择要显示的待办区块</n-text>
+              <n-popover trigger="click" placement="bottom-end">
+                <template #trigger>
+                  <n-button size="small" quaternary>显示设置</n-button>
+                </template>
+                <n-space vertical :size="8" style="min-width: 160px">
+                  <n-checkbox
+                    v-for="key in TODO_SECTION_KEYS"
+                    :key="key"
+                    :checked="visibleSections[key]"
+                    @update:checked="(v) => setSectionVisible(key, v)"
+                  >
+                    {{ TODO_SECTION_LABELS[key] }}
+                  </n-checkbox>
+                </n-space>
+              </n-popover>
+            </n-space>
+            <n-alert v-if="!hasVisibleSection" type="info">已隐藏全部待办区块，可通过「显示设置」恢复</n-alert>
             <n-grid v-else class="tester-todo-grid" :cols="todoGridCols" :x-gap="16" :y-gap="16">
               <n-gi v-if="showPlanTodo" class="tester-todo-grid__pair-cell">
                 <TodoSection
@@ -168,17 +186,19 @@
 import {
   NAlert,
   NButton,
+  NCheckbox,
   NDrawer,
   NDrawerContent,
   NGi,
   NGrid,
+  NPopover,
   NSpace,
   NSpin,
   NTabPane,
   NTabs,
   NText,
 } from 'naive-ui';
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, toRef, watch } from 'vue';
 import { type RouteLocationRaw } from 'vue-router';
 import { fetchWorkbench } from '@/api/dashboard';
 import { listBugStatuses } from '@/api/templates';
@@ -187,6 +207,11 @@ import {
   WORKBENCH_BUG_DRAWER_KEY,
   type WorkbenchBugListSource,
 } from '@/composables/useWorkbenchBugDrawer';
+import {
+  TODO_SECTION_KEYS,
+  TODO_SECTION_LABELS,
+  useWorkbenchTodoVisibility,
+} from '@/composables/useWorkbenchTodoVisibility';
 import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
 import type {
@@ -235,31 +260,15 @@ const bugFocusRef = ref<ChartExpose | null>(null);
 const planFocusRef = ref<ChartExpose | null>(null);
 const scheduleRef = ref<ScheduleExpose | null>(null);
 
-const projectRoles = computed(() => data.value?.project_roles ?? []);
-
-const showPlanTodo = computed(
-  () => projectRoles.value.includes('system_admin') || projectRoles.value.includes('tester')
-);
-const showReqTodo = computed(
-  () =>
-    projectRoles.value.includes('system_admin') ||
-    projectRoles.value.includes('tester') ||
-    projectRoles.value.includes('product')
-);
-const showFixedBugTodo = computed(
-  () => projectRoles.value.includes('system_admin') || projectRoles.value.includes('tester')
-);
-const showFollowerBugTodo = computed(
-  () => projectRoles.value.includes('system_admin') || projectRoles.value.includes('developer')
-);
-
-const hasAnyTodo = computed(
-  () =>
-    showPlanTodo.value ||
-    showReqTodo.value ||
-    showFixedBugTodo.value ||
-    showFollowerBugTodo.value
-);
+const {
+  visibleSections,
+  showPlanTodo,
+  showReqTodo,
+  showFixedBugTodo,
+  showFollowerBugTodo,
+  hasVisibleSection,
+  setSectionVisible,
+} = useWorkbenchTodoVisibility(toRef(ctx, 'projectId'));
 
 const todoGridCols = computed(() => {
   const topCount = (showPlanTodo.value ? 1 : 0) + (showReqTodo.value ? 1 : 0);

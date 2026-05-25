@@ -1,7 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import { usePermissions } from '@/composables/usePermissions';
 import { useAuthStore } from '@/stores/auth';
-import { useContextStore } from '@/stores/context';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -73,13 +71,12 @@ const router = createRouter({
           path: 'setting/users',
           name: 'setting-users',
           component: () => import('@/views/setting/SystemUsersView.vue'),
-          meta: { systemAdmin: true, hideContextSwitcher: true },
+          meta: { hideContextSwitcher: true },
         },
         {
           path: 'setting/project-config',
           name: 'setting-project-config',
           component: () => import('@/views/setting/ProjectConfigView.vue'),
-          meta: { projectAdmin: true },
         },
         {
           path: 'setting/project-members',
@@ -93,7 +90,7 @@ const router = createRouter({
           path: 'setting/projects-manage',
           name: 'setting-projects-manage',
           component: () => import('@/views/setting/ProjectManagementView.vue'),
-          meta: { hideContextSwitcher: true, systemAdmin: true },
+          meta: { hideContextSwitcher: true },
         },
         {
           path: 'profile',
@@ -119,16 +116,6 @@ router.beforeEach(async (to) => {
     } catch {
       auth.logout();
       return { name: 'login' };
-    }
-  }
-  if (to.meta.systemAdmin && !auth.user?.is_system_admin) {
-    return { name: 'workbench' };
-  }
-  if (to.meta.projectAdmin) {
-    const { isSystemAdmin, isProjectAdmin } = usePermissions();
-    const ctx = useContextStore();
-    if (!isSystemAdmin.value && !isProjectAdmin(ctx.projectId)) {
-      return { name: 'workbench' };
     }
   }
   return true;
