@@ -147,7 +147,7 @@ def _match_status_rule(
     require_completed, require_incomplete = lane_match_requirements(rule.status, rule.node_keys)
     if require_incomplete and not any(_node_incomplete(nodes, k) for k in require_incomplete):
         return False
-    if require_completed and not all(_node_completed(nodes, k) for k in require_completed):
+    if require_completed and not all(_is_done(nodes.get(k)) for k in require_completed):
         return False
 
     return True
@@ -265,6 +265,44 @@ def auto_start_ready_nodes(
             node.operator_id = actor_id
         started.append(key)
     return started
+
+
+def _revert_stale_in_progress_nodes(
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+) -> list[str]:
+    """前置 gate 失效时，将误保留的进行中节点回退为未开始。"""
+    reverted: list[str] = []
+    for d in defs:
+        key = d.node_key
+        node = nodes.get(key)
+        if not node or not node.enabled:
+            continue
+        if _node_state(node) != RequirementNodeState.in_progress:
+            continue
+        try:
+            _assert_previous_lane_gate(nodes, defs, key)
+        except RequirementNodeError:
+            node.state = RequirementNodeState.pending
+            node.started_at = None
+            reverted.append(key)
+    return reverted
+
+
+def reconcile_workflow_nodes(
+    req: Requirement,
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+    *,
+    rules: list[StatusRuleLike] | None = None,
+    actor_id: str | None = None,
+) -> tuple[RequirementStatus, list[str], list[str]]:
+    """回收非法进行中 → 自动进行中 → 重算需求状态。"""
+    reverted = _revert_stale_in_progress_nodes(nodes, defs)
+    started = auto_start_ready_nodes(req, nodes, defs, actor_id=actor_id)
+    new_status = derive_requirement_status(req, nodes, defs, rules=rules)
+    req.status = new_status
+    return new_status, started, reverted
 
 
 def _can_complete_node(
@@ -534,8 +572,9 @@ async def update_requirement_enabled_nodes(
 
     await db.flush()
     rules = await load_status_rules_for_derive(db, req.project_id)
-    new_status = derive_requirement_status(req, nodes, defs, rules=rules)
-    req.status = new_status
+    new_status, _, _ = reconcile_workflow_nodes(
+        req, nodes, defs, rules=rules, actor_id=actor_id
+    )
     await log_requirement_activity(
         db,
         requirement_id=req.id,
@@ -557,12 +596,10 @@ async def ensure_requirement_nodes_auto_started(
 
     defs = await load_project_workflow_defs(db, req.project_id)
     nodes = await load_node_map(db, req.id)
-    started = auto_start_ready_nodes(req, nodes, defs, actor_id=actor_id)
-    if not started:
-        return []
-    await db.flush()
     rules = await load_status_rules_for_derive(db, req.project_id)
-    req.status = derive_requirement_status(req, nodes, defs, rules=rules)
+    _, started, _ = reconcile_workflow_nodes(
+        req, nodes, defs, rules=rules, actor_id=actor_id
+    )
     await db.flush()
     return started
 
@@ -578,11 +615,11 @@ async def sync_requirement_status_from_workflow(
 
     nodes = await load_node_map(db, req.id)
     defs = await load_project_workflow_defs(db, req.project_id)
-    auto_start_ready_nodes(req, nodes, defs, actor_id=actor_id)
-    await db.flush()
     rules = await load_status_rules_for_derive(db, req.project_id)
     old_status = req.status
-    new_status = derive_requirement_status(req, nodes, defs, rules=rules)
+    new_status, _, _ = reconcile_workflow_nodes(
+        req, nodes, defs, rules=rules, actor_id=actor_id
+    )
     if new_status == old_status:
         return new_status, False
 

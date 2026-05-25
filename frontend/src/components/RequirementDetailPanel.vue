@@ -627,11 +627,17 @@ async function saveWorkflow() {
   if (!req.value) return;
   workflowSaving.value = true;
   try {
-    const { data: wf } = await updateRequirementWorkflowEnabled(req.value.id, enabledDraft.value);
-    req.value = { ...req.value, nodes: wf.nodes };
+    await updateRequirementWorkflowEnabled(req.value.id, enabledDraft.value);
+    const { data: synced } = await syncRequirementStatus(req.value.id);
+    req.value = synced;
     workflowEditMode.value = false;
+    syncEnabledDraft();
+    const selected = req.value.nodes.find((n) => n.node_key === selectedNodeKey.value);
+    if (!selected?.enabled) {
+      selectedNodeKey.value = null;
+    }
     message.success('工作流已保存');
-    emit('updated', req.value);
+    emit('updated', synced);
   } catch (e: unknown) {
     const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
     message.error(typeof detail === 'string' ? detail : '保存失败');

@@ -601,6 +601,85 @@ async def test_apply_complete_in_progress_succeeds():
     assert nodes["req_review"].state == RequirementNodeState.completed
 
 
+@pytest.mark.asyncio
+async def test_disable_frontend_auto_starts_integration():
+    req = _make_req(status=RequirementStatus.developing)
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.completed,
+            "frontend_dev": RequirementNodeState.completed,
+            "backend_dev": RequirementNodeState.completed,
+            "integration": RequirementNodeState.pending,
+        },
+        defs=defs,
+    )
+    db = AsyncMock()
+    with patch(
+        "app.services.requirement_nodes.load_status_rules_for_derive",
+        new=AsyncMock(return_value=default_status_rule_likes()),
+    ):
+        await update_requirement_enabled_nodes(
+            db,
+            req,
+            nodes,
+            defs,
+            {"frontend_dev": False},
+            actor_id="user-1",
+        )
+    assert nodes["frontend_dev"].enabled is False
+    assert nodes["frontend_dev"].state == RequirementNodeState.skipped
+    assert nodes["integration"].state == RequirementNodeState.in_progress
+
+
+@pytest.mark.asyncio
+async def test_disable_dev_node_reverts_downstream_in_progress():
+    req = _make_req(status=RequirementStatus.developing)
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.completed,
+            "frontend_dev": RequirementNodeState.in_progress,
+            "backend_dev": RequirementNodeState.completed,
+            "integration": RequirementNodeState.in_progress,
+        },
+        defs=defs,
+    )
+    db = AsyncMock()
+    with patch(
+        "app.services.requirement_nodes.load_status_rules_for_derive",
+        new=AsyncMock(return_value=default_status_rule_likes()),
+    ):
+        await update_requirement_enabled_nodes(
+            db,
+            req,
+            nodes,
+            defs,
+            {"backend_dev": False},
+            actor_id="user-1",
+        )
+    assert nodes["integration"].state == RequirementNodeState.pending
+
+
+def test_derive_designing_when_prd_disabled():
+    req = _make_req()
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.skipped,
+            "req_design": RequirementNodeState.in_progress,
+        },
+        enabled={"prd_output": False},
+        defs=defs,
+    )
+    status = derive_requirement_status(req, nodes, defs, rules=default_status_rule_likes())
+    assert status == RequirementStatus.designing
+
+
 def test_lane_without_blocking_nodes_auto_passes_gate():
     req = _make_req()
     defs = _default_defs(
