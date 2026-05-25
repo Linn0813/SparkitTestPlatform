@@ -602,6 +602,76 @@ async def test_apply_complete_in_progress_succeeds():
 
 
 @pytest.mark.asyncio
+async def test_complete_backend_dev_auto_starts_integration():
+    req = _make_req(status=RequirementStatus.developing)
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.completed,
+            "frontend_dev": RequirementNodeState.completed,
+            "backend_dev": RequirementNodeState.in_progress,
+            "integration": RequirementNodeState.pending,
+        },
+        defs=defs,
+    )
+    db = AsyncMock()
+    with patch(
+        "app.services.requirement_nodes.load_status_rules_for_derive",
+        new=AsyncMock(return_value=default_status_rule_likes()),
+    ), patch("app.services.requirement_nodes.log_requirement_activity", new=AsyncMock()):
+        await apply_node_action(
+            db,
+            req,
+            nodes,
+            defs,
+            node_key="backend_dev",
+            action="complete",
+            actor_id="user-1",
+        )
+    assert nodes["backend_dev"].state == RequirementNodeState.completed
+    assert nodes["integration"].state == RequirementNodeState.in_progress
+
+
+@pytest.mark.asyncio
+async def test_complete_req_test_auto_starts_released():
+    req = _make_req(status=RequirementStatus.pending_release)
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.completed,
+            "frontend_dev": RequirementNodeState.completed,
+            "backend_dev": RequirementNodeState.completed,
+            "integration": RequirementNodeState.completed,
+            "req_test": RequirementNodeState.in_progress,
+            "product_experience": RequirementNodeState.completed,
+            "ui_restoration": RequirementNodeState.completed,
+            "released": RequirementNodeState.pending,
+        },
+        defs=defs,
+    )
+    db = AsyncMock()
+    with patch(
+        "app.services.requirement_nodes.load_status_rules_for_derive",
+        new=AsyncMock(return_value=default_status_rule_likes()),
+    ), patch("app.services.requirement_nodes.log_requirement_activity", new=AsyncMock()):
+        await apply_node_action(
+            db,
+            req,
+            nodes,
+            defs,
+            node_key="req_test",
+            action="complete",
+            actor_id="user-1",
+        )
+    assert nodes["req_test"].state == RequirementNodeState.completed
+    assert nodes["released"].state == RequirementNodeState.in_progress
+
+
+@pytest.mark.asyncio
 async def test_disable_frontend_auto_starts_integration():
     req = _make_req(status=RequirementStatus.developing)
     defs = _default_defs()
@@ -678,6 +748,69 @@ def test_derive_designing_when_prd_disabled():
     )
     status = derive_requirement_status(req, nodes, defs, rules=default_status_rule_likes())
     assert status == RequirementStatus.designing
+
+
+def test_sync_role_assignees_sets_legacy_id_fields():
+    from app.api.v1.requirements import _sync_role_id_fields_from_assignees
+
+    data: dict = {"role_assignee_ids": {"pm": ["user-pm"], "qa": ["user-qa-1", "user-qa-2"]}}
+    _sync_role_id_fields_from_assignees(data)
+    assert data["pm_id"] == "user-pm"
+    assert data["qa_id"] == "user-qa-1"
+
+
+def test_resolve_node_enabled_from_map_and_req_type():
+    from app.models.requirement import RequirementType
+    from app.services.requirement_workflow import resolve_node_enabled
+
+    assert resolve_node_enabled("req_design", RequirementType.tech_optimization, None) is False
+    assert resolve_node_enabled("prd_output", RequirementType.tech_optimization, None) is True
+    assert (
+        resolve_node_enabled("frontend_dev", RequirementType.feature, {"frontend_dev": False})
+        is False
+    )
+    assert (
+        resolve_node_enabled("frontend_dev", RequirementType.feature, {"frontend_dev": True})
+        is True
+    )
+
+
+@pytest.mark.asyncio
+async def test_init_progress_respects_enabled_map():
+    from app.models.requirement import Requirement
+    from app.services.requirement_workflow import init_requirement_progress_from_defs
+
+    req = Requirement(
+        id="req-1",
+        project_id="proj-1",
+        num=1,
+        title="T",
+        status=RequirementStatus.draft,
+        priority=RequirementPriority.p1,
+        req_type=RequirementType.feature,
+        created_by="user-1",
+    )
+    defs = _default_defs()
+    db = AsyncMock()
+    progress_rows: list[RequirementNodeProgress] = []
+
+    def add(row):
+        progress_rows.append(row)
+
+    db.add = MagicMock(side_effect=add)
+    db.flush = AsyncMock()
+
+    await init_requirement_progress_from_defs(
+        db,
+        req,
+        defs,
+        enabled_map={"frontend_dev": False, "backend_dev": True, "released": True},
+    )
+    by_key = {r.node_key: r for r in progress_rows}
+    assert by_key["frontend_dev"].enabled is False
+    assert by_key["frontend_dev"].state == RequirementNodeState.skipped
+    assert by_key["backend_dev"].enabled is True
+    assert by_key["backend_dev"].state == RequirementNodeState.pending
 
 
 def test_lane_without_blocking_nodes_auto_passes_gate():

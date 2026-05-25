@@ -176,27 +176,23 @@ async def create_requirement(
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        create_data = body.model_dump()
+        _sync_role_id_fields_from_assignees(create_data)
         await validate_version_id(db, ctx.project_id, body.version_id)
         await validate_requirement_option(db, ctx.project_id, "priority", body.priority)
         await validate_requirement_option(db, ctx.project_id, "req_type", body.req_type)
         await validate_requirement_role_user_ids(
             db,
             ctx.project_id,
-            [
-                body.frontend_rd_id,
-                body.backend_rd_id,
-                body.pm_id,
-                body.tech_owner_id,
-                body.qa_id,
-                body.designer_id,
-            ],
+            _role_ids_from_body(create_data),
         )
-        create_data = body.model_dump()
         await _validate_requirement_fields(db, ctx.project_id, create_data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
     defs = await ensure_project_workflow_defs(db, ctx.project_id)
+    enabled_map = create_data.get("enabled")
+    assignees = create_data.get("role_assignee_ids")
     row = Requirement(
         project_id=ctx.project_id,
         num=await _next_req_num(ctx.project_id, db),
@@ -213,14 +209,23 @@ async def create_requirement(
         tech_owner_id=create_data.get("tech_owner_id"),
         qa_id=create_data.get("qa_id"),
         designer_id=create_data.get("designer_id"),
+        role_assignee_ids=assignees if isinstance(assignees, dict) else {},
         created_by=ctx.user.id,
     )
     db.add(row)
     await db.flush()
-    await init_requirement_progress_from_defs(db, row, defs)
+    await init_requirement_progress_from_defs(db, row, defs, enabled_map=enabled_map)
     from app.services.requirement_workflow import init_requirement_tasks_from_defs
 
-    await init_requirement_tasks_from_defs(db, row, defs)
+    await init_requirement_tasks_from_defs(db, row, defs, enabled_map=enabled_map)
+
+    from app.services.requirement_nodes import load_node_map, reconcile_workflow_nodes
+    from app.services.requirement_status_rules import load_status_rules_for_derive
+
+    nodes = await load_node_map(db, row.id)
+    rules = await load_status_rules_for_derive(db, ctx.project_id)
+    reconcile_workflow_nodes(row, nodes, defs, rules=rules, actor_id=ctx.user.id)
+    await db.flush()
     await log_requirement_activity(
         db,
         requirement_id=row.id,
@@ -352,6 +357,9 @@ async def requirement_node_action(
         )
     except RequirementNodeError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    from app.services.requirement_nodes import ensure_requirement_nodes_auto_started
+
+    await ensure_requirement_nodes_auto_started(db, row, actor_id=ctx.user.id)
     await db.refresh(row)
     return await requirement_out(row, db)
 

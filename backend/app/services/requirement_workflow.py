@@ -74,13 +74,25 @@ def default_enabled_for_node(node_key: str, req_type: RequirementType) -> bool:
     return True
 
 
+def resolve_node_enabled(
+    node_key: str,
+    req_type: RequirementType,
+    enabled_map: dict[str, bool] | None,
+) -> bool:
+    if enabled_map is not None and node_key in enabled_map:
+        return bool(enabled_map[node_key])
+    return default_enabled_for_node(node_key, req_type)
+
+
 async def init_requirement_progress_from_defs(
     db: AsyncSession,
     req: Requirement,
     defs: list[RequirementWorkflowNodeDef],
+    *,
+    enabled_map: dict[str, bool] | None = None,
 ) -> None:
     for d in defs:
-        enabled = default_enabled_for_node(d.node_key, req.req_type)
+        enabled = resolve_node_enabled(d.node_key, req.req_type, enabled_map)
         state = RequirementNodeState.skipped if not enabled else RequirementNodeState.pending
         db.add(
             RequirementNodeProgress(
@@ -97,10 +109,17 @@ async def init_requirement_tasks_from_defs(
     db: AsyncSession,
     req: Requirement,
     defs: list[RequirementWorkflowNodeDef],
+    *,
+    enabled_map: dict[str, bool] | None = None,
 ) -> None:
     from app.services.requirement_node_tasks import seed_default_tasks_from_defs
 
-    await seed_default_tasks_from_defs(db, req, defs)
+    active = [
+        d
+        for d in defs
+        if resolve_node_enabled(d.node_key, req.req_type, enabled_map)
+    ]
+    await seed_default_tasks_from_defs(db, req, active)
 
 
 async def sync_progress_for_new_def(

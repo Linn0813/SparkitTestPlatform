@@ -359,8 +359,6 @@ async def apply_node_action(
     now = _utcnow()
     old_status = req.status
 
-    auto_start_ready_nodes(req, nodes, defs, actor_id=actor_id)
-
     if action == "start":
         _can_start_node(req, nodes, defs, node_key)
         node.state = RequirementNodeState.in_progress
@@ -416,8 +414,9 @@ async def apply_node_action(
 
     await db.flush()
     rules = await load_status_rules_for_derive(db, req.project_id)
-    new_status = derive_requirement_status(req, nodes, defs, rules=rules)
-    req.status = new_status
+    new_status, _, _ = reconcile_workflow_nodes(
+        req, nodes, defs, rules=rules, actor_id=actor_id
+    )
 
     await log_requirement_activity(
         db,

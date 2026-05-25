@@ -523,7 +523,11 @@ async function loadCases() {
     }
     cases.value = data.items;
     if (data.page_size !== pageSize.value) pageSize.value = data.page_size;
-    if (activeCaseId.value && !data.items.some((c) => c.id === activeCaseId.value)) {
+    if (
+      activeCaseId.value &&
+      !data.items.some((c) => c.id === activeCaseId.value) &&
+      prevIndex >= 0
+    ) {
       const nextId = pickAdjacentItemId(data.items, prevIndex);
       if (nextId) openCaseDetail(nextId);
       else closeDetailDrawer();

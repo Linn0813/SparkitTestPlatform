@@ -39,8 +39,10 @@ export function createRequirement(data: {
   pm_id?: string | null;
   tech_owner_id?: string | null;
   qa_id?: string | null;
-    designer_id?: string | null;
-    custom_fields?: Record<string, unknown>;
+  designer_id?: string | null;
+  role_assignee_ids?: Record<string, string[]>;
+  enabled?: Record<string, boolean>;
+  custom_fields?: Record<string, unknown>;
 }) {
   return http.post<Requirement>('/requirements', data);
 }

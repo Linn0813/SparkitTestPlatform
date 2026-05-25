@@ -214,6 +214,8 @@ class RequirementCreate(BaseModel):
     tech_owner_id: Optional[str] = None
     qa_id: Optional[str] = None
     designer_id: Optional[str] = None
+    role_assignee_ids: Optional[dict[str, list[str]]] = None
+    enabled: Optional[dict[str, bool]] = None
     custom_fields: dict = Field(default_factory=dict)
 
 

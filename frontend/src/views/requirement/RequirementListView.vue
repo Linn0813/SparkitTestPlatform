@@ -5,7 +5,7 @@
         v-if="canCatalog"
         type="primary"
         :disabled="!ctx.projectId"
-        @click="openCreateModal()"
+        @click="openCreateDrawer()"
       >
         新建需求
       </n-button>
@@ -21,50 +21,60 @@
       :row-props="rowProps"
       style="margin-top: 8px"
     />
+
     <n-modal
-      v-model:show="showModal"
+      v-model:show="showEditModal"
       preset="dialog"
-      :title="editing ? '编辑需求' : '新建需求'"
+      title="编辑需求"
       positive-text="保存"
-      @positive-click="onSave"
+      class="requirement-form-modal"
+      @positive-click="onSaveEdit"
     >
       <n-form label-placement="top">
         <n-form-item label="标题" required>
-          <n-input v-model:value="form.title" placeholder="需求标题" />
+          <n-input v-model:value="editForm.title" placeholder="需求标题" />
         </n-form-item>
         <n-grid :cols="2" :x-gap="12">
           <n-gi>
             <n-form-item label="优先级">
-              <n-select v-model:value="form.priority" :options="prioritySelectOptions" />
+              <n-select v-model:value="editForm.priority" :options="prioritySelectOptions" />
             </n-form-item>
           </n-gi>
           <n-gi>
             <n-form-item label="需求类型">
-              <n-select v-model:value="form.req_type" :options="typeSelectOptions" />
+              <n-select v-model:value="editForm.req_type" :options="typeSelectOptions" />
             </n-form-item>
           </n-gi>
         </n-grid>
-        <n-form-item label="PRD / 外部链接">
-          <n-input v-model:value="form.external_url" placeholder="可选，粘贴禅道/Jira/PRD 链接" />
+        <n-form-item label="PRD 链接">
+          <n-input v-model:value="editForm.external_url" placeholder="可选" />
         </n-form-item>
         <n-form-item label="关联版本">
-          <VersionSelect v-model="form.version_id" :project-id="ctx.projectId" />
+          <VersionSelect v-model="editForm.version_id" :project-id="ctx.projectId" />
         </n-form-item>
-        <n-grid :cols="2" :x-gap="12">
-          <n-gi v-for="role in createRoleFields" :key="role.key">
-            <n-form-item :label="role.label">
-              <n-select
-                v-model:value="form[role.idField]"
-                :options="memberOptions"
-                clearable
-                filterable
-                placeholder="选择负责人"
-              />
-            </n-form-item>
-          </n-gi>
-        </n-grid>
       </n-form>
     </n-modal>
+
+    <n-drawer
+      v-model:show="createDrawerVisible"
+      :width="'min(720px, 92vw)'"
+      placement="right"
+      :trap-focus="false"
+    >
+      <n-drawer-content title="新建需求" closable body-content-style="padding: 12px 16px">
+        <RequirementCreateForm
+          v-if="ctx.projectId && createDrawerVisible"
+          ref="createFormRef"
+          :project-id="ctx.projectId"
+        />
+        <template #footer>
+          <n-space justify="end">
+            <n-button @click="createDrawerVisible = false">取消</n-button>
+            <n-button type="primary" :loading="creating" @click="onCreate">创建</n-button>
+          </n-space>
+        </template>
+      </n-drawer-content>
+    </n-drawer>
 
     <n-drawer
       v-model:show="drawerVisible"
@@ -91,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue';
+import { computed, h, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   NButton,
@@ -120,11 +130,11 @@ import {
   listRequirements,
   updateRequirement,
 } from '@/api/requirements';
+import RequirementCreateForm from '@/components/RequirementCreateForm.vue';
+import type { ComponentPublicInstance } from 'vue';
 import RequirementDetailPanel from '@/components/RequirementDetailPanel.vue';
 import VersionSelect from '@/components/VersionSelect.vue';
-import { LEGACY_ROLE_ID_FIELDS } from '@/constants/requirementNodes';
 import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
-import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
 import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
@@ -134,7 +144,6 @@ import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
 const ctx = useContextStore();
 const { canManageCatalog } = usePermissions();
 const canCatalog = computed(() => canManageCatalog(ctx.projectId));
-const { options: memberOptions } = useProjectMemberOptions(computed(() => ctx.projectId));
 const projectConfig = useRequirementProjectConfig(() => ctx.projectId);
 
 const prioritySelectOptions = computed(() =>
@@ -143,38 +152,32 @@ const prioritySelectOptions = computed(() =>
 const typeSelectOptions = computed(() =>
   projectConfig.typeOptions.value.map((o) => ({ label: o.label, value: o.option_key }))
 );
-const createRoleFields = computed(() =>
-  projectConfig.roles.value
-    .filter((r) => LEGACY_ROLE_ID_FIELDS[r.role_key])
-    .map((r) => ({
-      key: r.role_key,
-      label: r.label,
-      idField: LEGACY_ROLE_ID_FIELDS[r.role_key] as keyof typeof form.value,
-    }))
-);
 const route = useRoute();
 const router = useRouter();
 const message = useMessage();
 const dialog = useDialog();
 const rows = ref<Requirement[]>([]);
 const loading = ref(false);
-const showModal = ref(false);
+const showEditModal = ref(false);
+const createDrawerVisible = ref(false);
+const creating = ref(false);
 const editing = ref<Requirement | null>(null);
 const drawerVisible = ref(false);
 const activeReqId = ref<string | null>(null);
 
-const form = ref({
+const createFormRef = ref<ComponentPublicInstance<{
+  reset: () => void;
+  validate: () => string | null;
+  getPayload: () => import('@/components/RequirementCreateForm.vue').RequirementCreatePayload;
+  prepare: () => Promise<void>;
+}> | null>(null);
+
+const editForm = ref({
   title: '',
   external_url: '' as string,
   version_id: null as string | null,
   priority: 'p1' as RequirementPriority,
   req_type: 'feature' as RequirementType,
-  frontend_rd_id: null as string | null,
-  backend_rd_id: null as string | null,
-  pm_id: null as string | null,
-  tech_owner_id: null as string | null,
-  qa_id: null as string | null,
-  designer_id: null as string | null,
 });
 
 const activeIndex = computed(() =>
@@ -211,119 +214,111 @@ const filterTags = computed(() => {
 });
 
 const columns = computed<DataTableColumns<Requirement>>(() => [
-  { ...NUM_TABLE_COLUMN },
+  NUM_TABLE_COLUMN,
   {
     title: '标题',
     key: 'title',
-    width: 180,
-    minWidth: 120,
     ellipsis: { tooltip: true },
-  },
-  {
-    title: '优先级',
-    key: 'priority',
-    width: 70,
-    render: (r) => projectConfig.priorityLabel(r.priority),
-  },
-  {
-    title: '类型',
-    key: 'req_type',
-    width: 90,
-    render: (r) => projectConfig.typeLabel(r.req_type),
-  },
-  {
-    title: '关联版本',
-    key: 'version',
-    width: 120,
-    ellipsis: { tooltip: true },
-    render: (r) => (r.version ? r.version.name : '—'),
-  },
-  {
-    title: '状态',
-    key: 'status',
-    width: 90,
-    render: (r) =>
+    render: (row) =>
       h(
-        NTag,
-        { size: 'small', type: requirementStatusTagType(r.status), bordered: false },
-        () => requirementStatusLabel(r.status)
-      ),
-  },
-  {
-    title: 'PRD 链接',
-    key: 'external_url',
-    width: 160,
-    render: (r) => {
-      if (!r.external_url) return '—';
-      const url = r.external_url;
-      const label = url.length > 28 ? `${url.slice(0, 28)}…` : url;
-      return h(
         NTooltip,
-        {
-          placement: 'top-start',
-          contentStyle: { maxWidth: '400px', wordBreak: 'break-all' },
-        },
+        { trigger: 'hover' },
         {
           trigger: () =>
             h(
               'a',
               {
-                href: url,
-                target: '_blank',
-                rel: 'noopener',
                 class: 'prd-link',
-                onClick: (e: MouseEvent) => e.stopPropagation(),
+                style: { cursor: 'pointer' },
+                onClick: (e: Event) => {
+                  e.stopPropagation();
+                  openDetail(row.id);
+                },
               },
-              label
+              row.title
             ),
-          default: () => url,
+          default: () => row.title,
         }
-      );
-    },
+      ),
   },
   {
-    title: '操作',
-    key: 'a',
-    width: 200,
-    render: (row) => {
-      const actions = [
-        h(NButton, { size: 'small', quaternary: true, onClick: (e: Event) => { e.stopPropagation(); goCases(row.id); } }, () => '查看用例'),
-      ];
-      if (canCatalog.value) {
-        actions.push(
-          h(NButton, { size: 'small', quaternary: true, onClick: (e: Event) => { e.stopPropagation(); openCreateModal(row); } }, () => '编辑'),
-          h(
-            NButton,
-            {
-              size: 'small',
-              quaternary: true,
-              type: 'error',
-              onClick: (e: Event) => { e.stopPropagation(); onRemove(row); },
-            },
-            () => '删除'
-          )
-        );
-      }
-      return h(NSpace, { size: 4 }, () => actions);
-    },
+    title: '状态',
+    key: 'status',
+    width: 100,
+    render: (row) =>
+      h(NTag, { size: 'small', type: requirementStatusTagType(row.status) }, () =>
+        requirementStatusLabel(row.status)
+      ),
   },
+  {
+    title: '优先级',
+    key: 'priority',
+    width: 80,
+    render: (row) => projectConfig.priorityLabel(row.priority),
+  },
+  {
+    title: '类型',
+    key: 'req_type',
+    width: 100,
+    render: (row) => projectConfig.typeLabel(row.req_type),
+  },
+  {
+    title: '版本',
+    key: 'version',
+    width: 120,
+    render: (row) => row.version?.name ?? '—',
+  },
+  ...(canCatalog.value
+    ? [
+        {
+          title: '操作',
+          key: 'actions',
+          width: 140,
+          render: (row: Requirement) =>
+            h('div', { style: { display: 'flex', gap: '4px' } }, [
+              h(
+                NButton,
+                {
+                  size: 'small',
+                  quaternary: true,
+                  onClick: (e: Event) => {
+                    e.stopPropagation();
+                    openEditModal(row);
+                  },
+                },
+                () => '编辑'
+              ),
+              h(
+                NButton,
+                {
+                  size: 'small',
+                  quaternary: true,
+                  type: 'error',
+                  onClick: (e: Event) => {
+                    e.stopPropagation();
+                    onRemove(row);
+                  },
+                },
+                () => '删除'
+              ),
+            ]),
+        },
+      ]
+    : []),
 ]);
 
 function rowProps(row: Requirement) {
   return {
-    style: 'cursor: pointer',
-    onClick: () => openDrawer(row.id),
+    style: { cursor: 'pointer' },
+    onClick: () => openDetail(row.id),
   };
 }
 
-function goCases(requirementId: string) {
-  router.push({ name: 'cases', query: { requirement_id: requirementId } });
-}
-
-function openDrawer(id: string) {
+function openDetail(id: string) {
   activeReqId.value = id;
   drawerVisible.value = true;
-  router.replace({ name: 'requirements', query: { ...route.query, id } });
+  const q = { ...route.query, id };
+  router.replace({ name: 'requirements', query: q });
 }
 
 function closeDrawer() {
@@ -339,23 +334,23 @@ function onDrawerShowChange(show: boolean) {
 }
 
 function goPrev() {
-  const idx = activeIndex.value;
-  if (idx > 0) openDrawer(rows.value[idx - 1].id);
+  if (activeIndex.value > 0) openDetail(rows.value[activeIndex.value - 1].id);
 }
 
 function goNext() {
-  const idx = activeIndex.value;
-  if (idx >= 0 && idx < rows.value.length - 1) openDrawer(rows.value[idx + 1].id);
+  if (activeIndex.value >= 0 && activeIndex.value < rows.value.length - 1) {
+    openDetail(rows.value[activeIndex.value + 1].id);
+  }
 }
 
-async function onDetailDeleted() {
+function onDetailDeleted() {
   closeDrawer();
-  await load();
+  void load();
 }
 
-async function onDetailUpdated(updated: Requirement) {
-  const idx = rows.value.findIndex((r) => r.id === updated.id);
-  if (idx >= 0) rows.value[idx] = updated;
+function onDetailUpdated(row: Requirement) {
+  const idx = rows.value.findIndex((r) => r.id === row.id);
+  if (idx >= 0) rows.value[idx] = row;
 }
 
 async function load() {
@@ -388,70 +383,63 @@ async function load() {
   }
 }
 
-function resetForm() {
-  form.value = {
-    title: '',
-    external_url: '',
-    version_id: null,
-    priority: 'p1',
-    req_type: 'feature',
-    frontend_rd_id: null,
-    backend_rd_id: null,
-    pm_id: null,
-    tech_owner_id: null,
-    qa_id: null,
-    designer_id: null,
+function openCreateDrawer() {
+  createDrawerVisible.value = true;
+  void nextTick(async () => {
+    await createFormRef.value?.prepare();
+    createFormRef.value?.reset();
+  });
+}
+
+function openEditModal(row: Requirement) {
+  editing.value = row;
+  editForm.value = {
+    title: row.title,
+    external_url: row.external_url ?? '',
+    version_id: row.version_id,
+    priority: row.priority,
+    req_type: row.req_type,
   };
+  showEditModal.value = true;
 }
 
-function openCreateModal(row?: Requirement) {
-  editing.value = row ?? null;
-  if (row) {
-    form.value = {
-      title: row.title,
-      external_url: row.external_url ?? '',
-      version_id: row.version_id,
-      priority: row.priority,
-      req_type: row.req_type,
-      frontend_rd_id: row.frontend_rd_id,
-      backend_rd_id: row.backend_rd_id,
-      pm_id: row.pm_id,
-      tech_owner_id: row.tech_owner_id,
-      qa_id: row.qa_id,
-      designer_id: row.designer_id,
-    };
-  } else {
-    resetForm();
+async function onCreate() {
+  const form = createFormRef.value;
+  if (!form) return;
+  const err = form.validate();
+  if (err) {
+    message.warning(err);
+    return;
   }
-  showModal.value = true;
+  creating.value = true;
+  try {
+    await createRequirement(form.getPayload());
+    message.success('已创建');
+    createDrawerVisible.value = false;
+    await load();
+  } catch (e: unknown) {
+    const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+    message.error(typeof detail === 'string' ? detail : '创建失败');
+  } finally {
+    creating.value = false;
+  }
 }
 
-async function onSave() {
-  if (!form.value.title.trim()) {
+async function onSaveEdit() {
+  if (!editForm.value.title.trim()) {
     message.warning('请填写标题');
     return false;
   }
-  const payload = {
-    title: form.value.title.trim(),
-    external_url: form.value.external_url.trim() || null,
-    version_id: form.value.version_id,
-    priority: form.value.priority,
-    req_type: form.value.req_type,
-    frontend_rd_id: form.value.frontend_rd_id,
-    backend_rd_id: form.value.backend_rd_id,
-    pm_id: form.value.pm_id,
-    tech_owner_id: form.value.tech_owner_id,
-    qa_id: form.value.qa_id,
-    designer_id: form.value.designer_id,
-  };
-  if (editing.value) {
-    await updateRequirement(editing.value.id, payload);
-    message.success('已保存');
-  } else {
-    await createRequirement(payload);
-    message.success('已创建');
-  }
-  showModal.value = false;
+  if (!editing.value) return false;
+  await updateRequirement(editing.value.id, {
+    title: editForm.value.title.trim(),
+    external_url: editForm.value.external_url.trim() || null,
+    version_id: editForm.value.version_id,
+    priority: editForm.value.priority,
+    req_type: editForm.value.req_type,
+  });
+  message.success('已保存');
+  showEditModal.value = false;
   await load();
   return true;
 }
@@ -476,6 +464,10 @@ watch(() => route.query, load);
 </script>
 
 <style scoped>
+:global(.requirement-form-modal) {
+  width: min(640px, 92vw);
+}
+
 :deep(.prd-link) {
   display: inline-block;
   max-width: 100%;

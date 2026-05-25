@@ -53,6 +53,20 @@ export const REQUIREMENT_NODE_PHASES: RequirementNodeKey[][] = [
   ['released'],
 ];
 
+/** 技术优化类需求默认不启用的节点（与后端 TECH_OPTIMIZATION_DEFAULT_DISABLED_NODES 一致） */
+export const TECH_OPTIMIZATION_DEFAULT_DISABLED_NODES = new Set<RequirementNodeKey>([
+  'product_experience',
+  'ui_restoration',
+  'req_design',
+]);
+
+export function defaultWorkflowNodeEnabled(nodeKey: string, reqType: string): boolean {
+  if (reqType === 'tech_optimization' && TECH_OPTIMIZATION_DEFAULT_DISABLED_NODES.has(nodeKey as RequirementNodeKey)) {
+    return false;
+  }
+  return true;
+}
+
 export const REQUIREMENT_NODE_ROLE_KEYS: Record<RequirementNodeKey, string[]> = {
   prd_output: ['pm'],
   req_design: ['pm'],

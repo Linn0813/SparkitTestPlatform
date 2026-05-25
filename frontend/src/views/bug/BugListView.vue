@@ -501,7 +501,11 @@ async function load() {
     }
     bugs.value = data.items;
     if (data.page_size !== pageSize.value) pageSize.value = data.page_size;
-    if (activeBugId.value && !data.items.some((b) => b.id === activeBugId.value)) {
+    if (
+      activeBugId.value &&
+      !data.items.some((b) => b.id === activeBugId.value) &&
+      prevIndex >= 0
+    ) {
       const nextId = pickAdjacentItemId(data.items, prevIndex);
       if (nextId) openBug(nextId);
       else closeDrawer();
