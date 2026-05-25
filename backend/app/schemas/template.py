@@ -73,3 +73,49 @@ class WecomIntegrationUpdate(BaseModel):
 
 class WecomTestRequest(BaseModel):
     message: str = "SparkitTestPlatform 企微连通性测试"
+
+
+class RequirementRoleDefOut(BaseModel):
+    id: str
+    project_id: str
+    role_key: str
+    label: str
+    sort: int
+
+    model_config = {"from_attributes": True}
+
+
+class RequirementRoleDefCreate(BaseModel):
+    role_key: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=128)
+    sort: int = 0
+
+
+class RequirementRoleDefUpdate(BaseModel):
+    role_key: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    label: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    sort: Optional[int] = None
+
+
+class RequirementOptionDefOut(BaseModel):
+    id: str
+    project_id: str
+    category: str
+    option_key: str
+    label: str
+    sort: int
+
+    model_config = {"from_attributes": True}
+
+
+class RequirementOptionDefCreate(BaseModel):
+    category: str = Field(min_length=1, max_length=32)
+    option_key: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=128)
+    sort: int = 0
+
+
+class RequirementOptionDefUpdate(BaseModel):
+    option_key: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    label: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    sort: Optional[int] = None

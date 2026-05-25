@@ -2,6 +2,8 @@ from __future__ import annotations
 
 DEFAULT_CASE_FIELDS: list = []
 
+DEFAULT_REQUIREMENT_FIELDS: list = []
+
 DEFAULT_BUG_FIELDS: list = [
     {
         "id": "field_severity",

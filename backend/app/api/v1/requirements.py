@@ -8,34 +8,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import ProjectContext, require_project_context, require_project_context_catalog
-from app.models.project_version import ProjectVersion
-from app.models.requirement import Requirement, RequirementStatus
-from app.schemas.requirement import RequirementCreate, RequirementOut, RequirementUpdate
-from app.schemas.version import VersionBrief
+from app.models.requirement import Requirement, RequirementActivity, RequirementComment, RequirementStatus
+from app.models.template import ProjectFieldTemplate, TemplateScene
+from app.models.user import User
+from app.schemas.requirement import (
+    RequirementActivityOut,
+    RequirementCommentCreate,
+    RequirementCommentOut,
+    RequirementCreate,
+    RequirementNodeActionBody,
+    RequirementOut,
+    RequirementUpdate,
+    RequirementWorkflowEnabledUpdate,
+    RequirementWorkflowOut,
+)
+from app.schemas.user import UserOut
+from app.services.requirement_activity import log_requirement_activity
+from app.services.requirement_nodes import (
+    RequirementNodeError,
+    apply_node_action,
+    load_node_map,
+    reopen_from_rejected,
+    update_requirement_enabled_nodes,
+)
+from app.services.requirement_serializers import build_requirement_workflow_out, requirement_out, validate_requirement_role_user_ids
+from app.services.field_validator import load_project_member_user_ids, validate_custom_fields
+from app.services.project_setup import ensure_project_defaults
+from app.services.requirement_config import validate_requirement_option
+from app.services.requirement_workflow import ensure_project_workflow_defs, init_requirement_progress_from_defs, load_project_workflow_defs
+
 from app.services.versions import validate_version_id
 
 router = APIRouter(prefix="/requirements", tags=["requirements"])
 
 
-async def _requirement_out(row: Requirement, db: AsyncSession) -> RequirementOut:
-    version = None
-    if row.version_id:
-        v = await db.get(ProjectVersion, row.version_id)
-        if v:
-            version = VersionBrief(id=v.id, num=v.num, name=v.name)
-    return RequirementOut(
-        id=row.id,
-        project_id=row.project_id,
-        num=row.num,
-        title=row.title,
-        external_url=row.external_url,
-        version_id=row.version_id,
-        version=version,
-        status=row.status,
-        created_by=row.created_by,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
+async def _get_requirement_or_404(
+    requirement_id: str, project_id: str, db: AsyncSession
+) -> Requirement:
+    row = await db.get(Requirement, requirement_id)
+    if not row or row.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Requirement not found")
+    return row
 
 
 async def _next_req_num(project_id: str, db: AsyncSession) -> int:
@@ -43,10 +56,74 @@ async def _next_req_num(project_id: str, db: AsyncSession) -> int:
     return (result.scalar() or 0) + 1
 
 
+def _role_ids_from_body(data: dict) -> list[str | None]:
+    ids: list[str | None] = []
+    keys = (
+        "frontend_rd_id",
+        "backend_rd_id",
+        "pm_id",
+        "tech_owner_id",
+        "qa_id",
+        "designer_id",
+    )
+    ids.extend(data.get(k) for k in keys if k in data)
+    assignees = data.get("role_assignee_ids")
+    if isinstance(assignees, dict):
+        for role_ids in assignees.values():
+            if isinstance(role_ids, list):
+                ids.extend(uid for uid in role_ids if uid)
+    return ids
+
+
+def _sync_role_id_fields_from_assignees(data: dict) -> None:
+    from app.services.requirement_serializers import ROLE_KEY_TO_ID_FIELD
+
+    assignees = data.get("role_assignee_ids")
+    if not isinstance(assignees, dict):
+        return
+    for role_key, field in ROLE_KEY_TO_ID_FIELD.items():
+        role_ids = assignees.get(role_key) or []
+        data[field] = role_ids[0] if role_ids else None
+
+
+async def _load_requirement_template_fields(db: AsyncSession, project_id: str) -> list:
+    await ensure_project_defaults(project_id, db)
+    result = await db.execute(
+        select(ProjectFieldTemplate).where(
+            ProjectFieldTemplate.project_id == project_id,
+            ProjectFieldTemplate.scene == TemplateScene.requirement,
+        )
+    )
+    tpl = result.scalar_one_or_none()
+    return tpl.fields if tpl and tpl.fields else []
+
+
+async def _validate_requirement_fields(db: AsyncSession, project_id: str, data: dict) -> None:
+    if "priority" in data and data["priority"] is not None:
+        await validate_requirement_option(db, project_id, "priority", data["priority"])
+    if "req_type" in data and data["req_type"] is not None:
+        await validate_requirement_option(db, project_id, "req_type", data["req_type"])
+    if "custom_fields" in data and data["custom_fields"] is not None:
+        fields_schema = await _load_requirement_template_fields(db, project_id)
+        member_ids = await load_project_member_user_ids(db, project_id)
+        data["custom_fields"] = validate_custom_fields(
+            fields_schema,
+            data["custom_fields"],
+            project_id=project_id,
+            project_member_ids=member_ids,
+        )
+
+
 @router.get("", response_model=list[RequirementOut])
 async def list_requirements(
     version_id: Optional[str] = None,
     status: Optional[RequirementStatus] = None,
+    priority: Optional[str] = None,
+    req_type: Optional[str] = None,
+    frontend_rd_id: Optional[str] = None,
+    backend_rd_id: Optional[str] = None,
+    pm_id: Optional[str] = None,
+    qa_id: Optional[str] = None,
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -55,9 +132,21 @@ async def list_requirements(
         stmt = stmt.where(Requirement.version_id == version_id)
     if status is not None:
         stmt = stmt.where(Requirement.status == status)
+    if priority is not None:
+        stmt = stmt.where(Requirement.priority == priority)
+    if req_type is not None:
+        stmt = stmt.where(Requirement.req_type == req_type)
+    if frontend_rd_id is not None:
+        stmt = stmt.where(Requirement.frontend_rd_id == frontend_rd_id)
+    if backend_rd_id is not None:
+        stmt = stmt.where(Requirement.backend_rd_id == backend_rd_id)
+    if pm_id is not None:
+        stmt = stmt.where(Requirement.pm_id == pm_id)
+    if qa_id is not None:
+        stmt = stmt.where(Requirement.qa_id == qa_id)
     result = await db.execute(stmt.order_by(Requirement.num.desc()))
     rows = result.scalars().all()
-    return [await _requirement_out(r, db) for r in rows]
+    return [await requirement_out(r, db) for r in rows]
 
 
 @router.post("", response_model=RequirementOut, status_code=status.HTTP_201_CREATED)
@@ -68,21 +157,56 @@ async def create_requirement(
 ):
     try:
         await validate_version_id(db, ctx.project_id, body.version_id)
+        await validate_requirement_option(db, ctx.project_id, "priority", body.priority)
+        await validate_requirement_option(db, ctx.project_id, "req_type", body.req_type)
+        await validate_requirement_role_user_ids(
+            db,
+            ctx.project_id,
+            [
+                body.frontend_rd_id,
+                body.backend_rd_id,
+                body.pm_id,
+                body.tech_owner_id,
+                body.qa_id,
+                body.designer_id,
+            ],
+        )
+        create_data = body.model_dump()
+        await _validate_requirement_fields(db, ctx.project_id, create_data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+
+    defs = await ensure_project_workflow_defs(db, ctx.project_id)
     row = Requirement(
         project_id=ctx.project_id,
         num=await _next_req_num(ctx.project_id, db),
-        title=body.title,
-        external_url=body.external_url,
-        version_id=body.version_id,
-        status=body.status,
+        title=create_data["title"],
+        external_url=create_data.get("external_url"),
+        version_id=create_data.get("version_id"),
+        priority=create_data["priority"],
+        req_type=create_data["req_type"],
+        custom_fields=create_data.get("custom_fields") or {},
+        status=RequirementStatus.draft,
+        frontend_rd_id=create_data.get("frontend_rd_id"),
+        backend_rd_id=create_data.get("backend_rd_id"),
+        pm_id=create_data.get("pm_id"),
+        tech_owner_id=create_data.get("tech_owner_id"),
+        qa_id=create_data.get("qa_id"),
+        designer_id=create_data.get("designer_id"),
         created_by=ctx.user.id,
     )
     db.add(row)
     await db.flush()
+    await init_requirement_progress_from_defs(db, row, defs)
+    await log_requirement_activity(
+        db,
+        requirement_id=row.id,
+        actor_id=ctx.user.id,
+        action_type="create",
+        summary="创建了需求",
+    )
     await db.refresh(row)
-    return await _requirement_out(row, db)
+    return await requirement_out(row, db)
 
 
 @router.get("/{requirement_id}", response_model=RequirementOut)
@@ -91,10 +215,38 @@ async def get_requirement(
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
-    row = await db.get(Requirement, requirement_id)
-    if not row or row.project_id != ctx.project_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Requirement not found")
-    return await _requirement_out(row, db)
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    return await requirement_out(row, db)
+
+
+@router.get("/{requirement_id}/workflow", response_model=RequirementWorkflowOut)
+async def get_requirement_workflow(
+    requirement_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    return await build_requirement_workflow_out(row, db)
+
+
+@router.put("/{requirement_id}/workflow", response_model=RequirementWorkflowOut)
+async def update_requirement_workflow(
+    requirement_id: str,
+    body: RequirementWorkflowEnabledUpdate,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    defs = await load_project_workflow_defs(db, ctx.project_id)
+    nodes = await load_node_map(db, row.id)
+    try:
+        await update_requirement_enabled_nodes(
+            db, row, nodes, defs, body.enabled, actor_id=ctx.user.id
+        )
+    except RequirementNodeError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    return await build_requirement_workflow_out(row, db)
 
 
 @router.patch("/{requirement_id}", response_model=RequirementOut)
@@ -104,20 +256,22 @@ async def update_requirement(
     ctx: ProjectContext = Depends(require_project_context_catalog),
     db: AsyncSession = Depends(get_db),
 ):
-    row = await db.get(Requirement, requirement_id)
-    if not row or row.project_id != ctx.project_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Requirement not found")
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
     data = body.model_dump(exclude_unset=True)
-    if "version_id" in data:
-        try:
+    _sync_role_id_fields_from_assignees(data)
+    try:
+        if "version_id" in data:
             await validate_version_id(db, ctx.project_id, data.get("version_id"))
-        except ValueError as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        if _role_ids_from_body(data):
+            await validate_requirement_role_user_ids(db, ctx.project_id, _role_ids_from_body(data))
+        await _validate_requirement_fields(db, ctx.project_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     for k, v in data.items():
         setattr(row, k, v)
     await db.flush()
     await db.refresh(row)
-    return await _requirement_out(row, db)
+    return await requirement_out(row, db)
 
 
 @router.delete("/{requirement_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -126,7 +280,153 @@ async def delete_requirement(
     ctx: ProjectContext = Depends(require_project_context_catalog),
     db: AsyncSession = Depends(get_db),
 ):
-    row = await db.get(Requirement, requirement_id)
-    if not row or row.project_id != ctx.project_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Requirement not found")
+    from sqlalchemy import delete
+
+    from app.models.requirement import RequirementActivity, RequirementComment, RequirementNodeProgress
+
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    await db.execute(delete(RequirementComment).where(RequirementComment.requirement_id == row.id))
+    await db.execute(delete(RequirementActivity).where(RequirementActivity.requirement_id == row.id))
+    await db.execute(delete(RequirementNodeProgress).where(RequirementNodeProgress.requirement_id == row.id))
     await db.delete(row)
+
+
+@router.post("/{requirement_id}/nodes/{node_key}", response_model=RequirementOut)
+async def requirement_node_action(
+    requirement_id: str,
+    node_key: str,
+    body: RequirementNodeActionBody,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    defs = await load_project_workflow_defs(db, ctx.project_id)
+    nodes = await load_node_map(db, row.id)
+    try:
+        await apply_node_action(
+            db,
+            row,
+            nodes,
+            defs,
+            node_key=node_key,
+            action=body.action,
+            actor_id=ctx.user.id,
+        )
+    except RequirementNodeError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    return await requirement_out(row, db)
+
+
+@router.post("/{requirement_id}/reopen-rejected", response_model=RequirementOut)
+async def requirement_reopen_rejected(
+    requirement_id: str,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    defs = await load_project_workflow_defs(db, ctx.project_id)
+    nodes = await load_node_map(db, row.id)
+    try:
+        await reopen_from_rejected(db, row, nodes, defs, actor_id=ctx.user.id)
+    except RequirementNodeError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    return await requirement_out(row, db)
+
+
+@router.get("/{requirement_id}/activities", response_model=list[RequirementActivityOut])
+async def list_requirement_activities(
+    requirement_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    result = await db.execute(
+        select(RequirementActivity)
+        .where(RequirementActivity.requirement_id == requirement_id)
+        .order_by(RequirementActivity.created_at.desc())
+    )
+    items = []
+    for a in result.scalars().all():
+        actor = await db.get(User, a.actor_id)
+        items.append(
+            RequirementActivityOut(
+                id=a.id,
+                action_type=a.action_type,
+                summary=a.summary,
+                detail=a.detail,
+                actor=UserOut.model_validate(actor) if actor else None,
+                created_at=a.created_at,
+            )
+        )
+    return items
+
+
+@router.get("/{requirement_id}/comments", response_model=list[RequirementCommentOut])
+async def list_requirement_comments(
+    requirement_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    result = await db.execute(
+        select(RequirementComment)
+        .where(RequirementComment.requirement_id == requirement_id)
+        .order_by(RequirementComment.created_at.asc())
+    )
+    comments = list(result.scalars().all())
+    user_ids = {c.user_id for c in comments}
+    user_map: dict[str, User] = {}
+    if user_ids:
+        users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        user_map = {u.id: u for u in users_result.scalars().all()}
+    out: list[RequirementCommentOut] = []
+    for c in comments:
+        user = user_map.get(c.user_id)
+        out.append(
+            RequirementCommentOut(
+                id=c.id,
+                requirement_id=c.requirement_id,
+                user_id=c.user_id,
+                body=c.body,
+                created_at=c.created_at,
+                user=UserOut.model_validate(user) if user else None,
+            )
+        )
+    return out
+
+
+@router.post("/{requirement_id}/comments", response_model=RequirementCommentOut, status_code=status.HTTP_201_CREATED)
+async def create_requirement_comment(
+    requirement_id: str,
+    body: RequirementCommentCreate,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    comment = RequirementComment(
+        requirement_id=requirement_id,
+        user_id=ctx.user.id,
+        body=body.body.strip(),
+    )
+    db.add(comment)
+    await db.flush()
+    await log_requirement_activity(
+        db,
+        requirement_id=requirement_id,
+        actor_id=ctx.user.id,
+        action_type="comment",
+        summary="发表了评论",
+        detail={"comment_id": comment.id},
+    )
+    await db.refresh(comment)
+    user = await db.get(User, ctx.user.id)
+    return RequirementCommentOut(
+        id=comment.id,
+        requirement_id=comment.requirement_id,
+        user_id=comment.user_id,
+        body=comment.body,
+        created_at=comment.created_at,
+        user=UserOut.model_validate(user) if user else None,
+    )

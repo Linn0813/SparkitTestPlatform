@@ -84,7 +84,74 @@ export interface ProjectVersion {
   updated_at: string;
 }
 
-export type RequirementStatus = 'not_tested' | 'testing' | 'accepted';
+export interface UserBrief {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export type RequirementStatus =
+  | 'draft'
+  | 'pending_review'
+  | 'designing'
+  | 'developing'
+  | 'testing'
+  | 'pending_release'
+  | 'released'
+  | 'rejected';
+
+export type RequirementPriority = string;
+export type RequirementType = string;
+export type RequirementNodeState = 'pending' | 'in_progress' | 'completed' | 'skipped';
+
+export interface RequirementNodeProgress {
+  node_key: string;
+  label: string;
+  state: RequirementNodeState;
+  role_keys: string[];
+  enabled: boolean;
+  lane_index: number;
+  lane_indexes: number[];
+  blocks_lane_gate: boolean;
+  sort_in_lane: number;
+  started_at: string | null;
+  completed_at: string | null;
+  operator_id: string | null;
+}
+
+export interface RequirementRoleDef {
+  id: string;
+  project_id: string;
+  role_key: string;
+  label: string;
+  sort: number;
+}
+
+export interface RequirementOptionDef {
+  id: string;
+  project_id: string;
+  category: 'priority' | 'req_type';
+  option_key: string;
+  label: string;
+  sort: number;
+}
+
+export interface RequirementWorkflowNodeDef {
+  id: string;
+  project_id: string;
+  node_key: string;
+  label: string;
+  role_keys: string[];
+  lane_index: number;
+  lane_indexes: number[];
+  blocks_lane_gate: boolean;
+  sort_in_lane: number;
+}
+
+export interface RequirementWorkflowOut {
+  defs: RequirementWorkflowNodeDef[];
+  nodes: RequirementNodeProgress[];
+}
 
 export interface Requirement {
   id: string;
@@ -94,10 +161,45 @@ export interface Requirement {
   external_url: string | null;
   version_id: string | null;
   version?: VersionBrief | null;
+  priority: RequirementPriority;
+  req_type: RequirementType;
   status: RequirementStatus;
+  frontend_rd_id: string | null;
+  backend_rd_id: string | null;
+  pm_id: string | null;
+  tech_owner_id: string | null;
+  qa_id: string | null;
+  designer_id: string | null;
+  frontend_rd?: UserBrief | null;
+  backend_rd?: UserBrief | null;
+  pm?: UserBrief | null;
+  tech_owner?: UserBrief | null;
+  qa?: UserBrief | null;
+  designer?: UserBrief | null;
+  role_assignee_ids?: Record<string, string[]>;
+  custom_fields?: Record<string, unknown>;
+  nodes: RequirementNodeProgress[];
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface RequirementActivity {
+  id: string;
+  action_type: string;
+  summary: string;
+  detail: Record<string, unknown>;
+  actor?: UserBrief | null;
+  created_at: string;
+}
+
+export interface RequirementComment {
+  id: string;
+  requirement_id: string;
+  user_id: string;
+  body: string;
+  created_at: string;
+  user?: UserBrief | null;
 }
 
 export interface TestCase {
@@ -336,5 +438,5 @@ export interface DashboardWorkbench {
   summary: DashboardSummary;
   overview: DashboardOverview;
   todo: DashboardTodo;
-  project_role: string;
+  project_roles: string[];
 }

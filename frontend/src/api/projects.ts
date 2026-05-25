@@ -21,12 +21,23 @@ export function listProjectMembers(projectId: string) {
   return http.get<ProjectMember[]>(`/projects/${projectId}/members`);
 }
 
-export function addProjectMember(projectId: string, data: { user_id: string; role: string }) {
+export function addProjectMember(
+  projectId: string,
+  data: { user_id: string; role: string; is_project_admin: boolean }
+) {
   return http.post<ProjectMember>(`/projects/${projectId}/members`, data);
 }
 
 export function removeProjectMember(projectId: string, memberId: string) {
   return http.delete(`/projects/${projectId}/members/${memberId}`);
+}
+
+export function updateProjectMember(
+  projectId: string,
+  memberId: string,
+  data: { role?: string; is_project_admin?: boolean }
+) {
+  return http.patch<ProjectMember>(`/projects/${projectId}/members/${memberId}`, data);
 }
 
 export function uploadProjectFile(projectId: string, file: File) {

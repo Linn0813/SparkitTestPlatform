@@ -1,0 +1,435 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.constants.requirement_status import requirement_status_label
+from app.models.requirement import (
+    Requirement,
+    RequirementNodeProgress,
+    RequirementNodeState,
+    RequirementStatus,
+    RequirementType,
+)
+from app.models.template import RequirementWorkflowNodeDef
+from app.services.requirement_activity import log_requirement_activity
+from app.services.requirement_workflow import build_lanes
+
+NodeMap = dict[str, RequirementNodeProgress]
+
+
+class RequirementNodeError(ValueError):
+    pass
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _node_state(node: RequirementNodeProgress | None) -> RequirementNodeState:
+    if node is None:
+        return RequirementNodeState.pending
+    return node.state
+
+
+def _is_enabled(node: RequirementNodeProgress | None) -> bool:
+    if node is None:
+        return False
+    return bool(node.enabled)
+
+
+def _is_done(node: RequirementNodeProgress | None) -> bool:
+    if node is None:
+        return True
+    if not node.enabled:
+        return True
+    return _node_state(node) in (RequirementNodeState.completed, RequirementNodeState.skipped)
+
+
+def _enabled_nodes_in_lane(
+    lane: list[RequirementWorkflowNodeDef], nodes: NodeMap
+) -> list[RequirementWorkflowNodeDef]:
+    return [d for d in lane if _is_enabled(nodes.get(d.node_key))]
+
+
+def _lane_done(lane: list[RequirementWorkflowNodeDef], nodes: NodeMap) -> bool:
+    enabled = _enabled_nodes_in_lane(lane, nodes)
+    if not enabled:
+        return True
+    return all(_is_done(nodes.get(d.node_key)) for d in enabled)
+
+
+def _lane_gate_nodes(
+    lane: list[RequirementWorkflowNodeDef], nodes: NodeMap
+) -> list[RequirementWorkflowNodeDef]:
+    return [d for d in _enabled_nodes_in_lane(lane, nodes) if d.blocks_lane_gate]
+
+
+def _lane_gate_done(lane: list[RequirementWorkflowNodeDef], nodes: NodeMap) -> bool:
+    gate_nodes = _lane_gate_nodes(lane, nodes)
+    if not gate_nodes:
+        return True
+    return all(_is_done(nodes.get(d.node_key)) for d in gate_nodes)
+
+
+def _lane_has_in_progress(lane: list[RequirementWorkflowNodeDef], nodes: NodeMap) -> bool:
+    for d in _enabled_nodes_in_lane(lane, nodes):
+        if _node_state(nodes.get(d.node_key)) == RequirementNodeState.in_progress:
+            return True
+    return False
+
+
+def _min_lane_number(defs: list[RequirementWorkflowNodeDef], node_key: str) -> int | None:
+    from app.services.requirement_workflow import def_lane_indexes
+
+    for d in defs:
+        if d.node_key == node_key:
+            return min(def_lane_indexes(d))
+    return None
+
+
+def _find_lane_list_index(
+    lanes: list[list[RequirementWorkflowNodeDef]],
+    defs: list[RequirementWorkflowNodeDef],
+    node_key: str,
+) -> int | None:
+    min_lane = _min_lane_number(defs, node_key)
+    if min_lane is None:
+        return None
+    from app.services.requirement_workflow import def_lane_indexes
+
+    sorted_lane_nums = sorted({li for d in defs for li in def_lane_indexes(d)})
+    try:
+        return sorted_lane_nums.index(min_lane)
+    except ValueError:
+        return None
+
+
+def derive_requirement_status(
+    req: Requirement,
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+) -> RequirementStatus:
+    if req.status == RequirementStatus.rejected:
+        return RequirementStatus.rejected
+
+    lanes = build_lanes(defs)
+    if not lanes:
+        return RequirementStatus.draft
+
+    released = nodes.get("released")
+    if released and released.enabled and released.state == RequirementNodeState.completed:
+        return RequirementStatus.released
+
+    current_lane: list[RequirementWorkflowNodeDef] | None = None
+    for i, lane in enumerate(lanes):
+        if not _enabled_nodes_in_lane(lane, nodes):
+            continue
+        if i > 0 and not all(_lane_gate_done(prev, nodes) for prev in lanes[:i]):
+            current_lane = lane
+            break
+        if not _lane_gate_done(lane, nodes):
+            current_lane = lane
+            break
+        if _lane_has_in_progress(lane, nodes):
+            later_active = any(
+                _lane_has_in_progress(lanes[j], nodes)
+                for j in range(i + 1, len(lanes))
+                if _enabled_nodes_in_lane(lanes[j], nodes)
+            )
+            if later_active:
+                continue
+            current_lane = lane
+            break
+        if not _lane_done(lane, nodes):
+            current_lane = lane
+            break
+
+    if current_lane is None:
+        return RequirementStatus.draft
+
+    return _status_for_lane(current_lane, nodes, defs)
+
+
+def _status_for_lane(
+    lane: list[RequirementWorkflowNodeDef],
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+) -> RequirementStatus:
+    keys = {d.node_key for d in lane}
+    if keys & {"req_test", "product_experience", "ui_restoration"}:
+        return RequirementStatus.testing
+    if "integration" in keys:
+        return RequirementStatus.pending_release
+    if keys & {"frontend_dev", "backend_dev"}:
+        return RequirementStatus.developing
+    if "req_review" in keys:
+        return RequirementStatus.pending_review
+    if keys & {"prd_output", "req_design"}:
+        if any(
+            _node_state(nodes.get(d.node_key)) == RequirementNodeState.in_progress
+            for d in lane
+            if d.node_key == "req_design" and _is_enabled(nodes.get(d.node_key))
+        ):
+            return RequirementStatus.designing
+        return RequirementStatus.draft
+    if "released" in keys:
+        return RequirementStatus.pending_release
+    return RequirementStatus.draft
+
+
+def _can_start_node(
+    req: Requirement,
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+    node_key: str,
+) -> None:
+    node = nodes.get(node_key)
+    if not node or not node.enabled:
+        raise RequirementNodeError("节点未启用或不存在")
+
+    state = _node_state(node)
+    if state != RequirementNodeState.pending:
+        raise RequirementNodeError("节点当前不可开始")
+
+    lanes = build_lanes(defs)
+    lane_idx = _find_lane_list_index(lanes, defs, node_key)
+    if lane_idx is None:
+        raise RequirementNodeError("未知节点")
+
+    if lane_idx == 0:
+        return
+
+    for prev in lanes[:lane_idx]:
+        if not _lane_gate_done(prev, nodes):
+            raise RequirementNodeError("请先完成上一阶段节点")
+
+
+def _can_complete_node(nodes: NodeMap, node_key: str) -> None:
+    node = nodes.get(node_key)
+    if not node or not node.enabled:
+        raise RequirementNodeError("节点未启用或不存在")
+    if _node_state(node) != RequirementNodeState.in_progress:
+        raise RequirementNodeError("节点当前不可完成")
+
+
+def _can_skip_node(
+    req: Requirement,
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+    node_key: str,
+) -> None:
+    if req.req_type != RequirementType.tech_optimization:
+        raise RequirementNodeError("仅技术优化类需求可跳过节点")
+    node = nodes.get(node_key)
+    if not node or not node.enabled:
+        raise RequirementNodeError("节点未启用或不存在")
+    if _node_state(node) != RequirementNodeState.pending:
+        raise RequirementNodeError("节点当前不可跳过")
+    _can_start_node(req, nodes, defs, node_key)
+
+
+async def apply_node_action(
+    db: AsyncSession,
+    req: Requirement,
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+    *,
+    node_key: str,
+    action: str,
+    actor_id: str,
+) -> RequirementStatus:
+    if req.status == RequirementStatus.rejected and action != "reopen":
+        raise RequirementNodeError("需求已打回，请先重新打开")
+
+    node = nodes.get(node_key)
+    if not node:
+        raise RequirementNodeError("节点不存在")
+
+    from app.constants.requirement_nodes import requirement_node_label
+
+    now = _utcnow()
+    old_status = req.status
+
+    if action == "start":
+        _can_start_node(req, nodes, defs, node_key)
+        node.state = RequirementNodeState.in_progress
+        node.started_at = now
+        node.operator_id = actor_id
+        summary = f"开始节点：{requirement_node_label(node_key)}"
+    elif action == "complete":
+        state = _node_state(node)
+        if state == RequirementNodeState.pending:
+            _can_start_node(req, nodes, defs, node_key)
+            node.state = RequirementNodeState.in_progress
+            node.started_at = now
+        elif state != RequirementNodeState.in_progress:
+            raise RequirementNodeError("节点当前不可完成")
+        node.state = RequirementNodeState.completed
+        node.completed_at = now
+        node.operator_id = actor_id
+        summary = f"完成节点：{requirement_node_label(node_key)}"
+    elif action == "skip":
+        _can_skip_node(req, nodes, defs, node_key)
+        node.state = RequirementNodeState.skipped
+        node.completed_at = now
+        node.operator_id = actor_id
+        summary = f"跳过节点：{requirement_node_label(node_key)}"
+    elif action == "reopen":
+        if not node.enabled:
+            raise RequirementNodeError("节点未启用")
+        if node.state not in (
+            RequirementNodeState.completed,
+            RequirementNodeState.skipped,
+            RequirementNodeState.in_progress,
+        ):
+            raise RequirementNodeError("节点当前不可重开")
+        node.state = RequirementNodeState.pending
+        node.started_at = None
+        node.completed_at = None
+        node.operator_id = actor_id
+        summary = f"重开节点：{requirement_node_label(node_key)}"
+    elif action == "reject":
+        if node_key != "req_review":
+            raise RequirementNodeError("仅需求评审可打回")
+        if not node.enabled or _node_state(node) != RequirementNodeState.in_progress:
+            raise RequirementNodeError("评审进行中才可打回")
+        node.state = RequirementNodeState.pending
+        node.started_at = None
+        node.completed_at = None
+        req.status = RequirementStatus.rejected
+        await log_requirement_activity(
+            db,
+            requirement_id=req.id,
+            actor_id=actor_id,
+            action_type="reject",
+            summary="需求评审不通过",
+            detail={"node_key": node_key},
+        )
+        return RequirementStatus.rejected
+    else:
+        raise RequirementNodeError("未知操作")
+
+    await db.flush()
+    new_status = derive_requirement_status(req, nodes, defs)
+    req.status = new_status
+
+    await log_requirement_activity(
+        db,
+        requirement_id=req.id,
+        actor_id=actor_id,
+        action_type=f"node_{action}",
+        summary=summary,
+        detail={"node_key": node_key, "action": action},
+    )
+
+    if old_status != new_status and old_status != RequirementStatus.rejected:
+        await log_requirement_activity(
+            db,
+            requirement_id=req.id,
+            actor_id=actor_id,
+            action_type="status_change",
+            summary=f"状态变更：{requirement_status_label(old_status.value)} → {requirement_status_label(new_status.value)}",
+            detail={"from_status": old_status.value, "to_status": new_status.value},
+        )
+
+    return new_status
+
+
+async def reopen_from_rejected(
+    db: AsyncSession,
+    req: Requirement,
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+    *,
+    actor_id: str,
+) -> RequirementStatus:
+    if req.status != RequirementStatus.rejected:
+        raise RequirementNodeError("需求未处于不通过状态")
+
+    req.status = RequirementStatus.draft
+    lanes = build_lanes(defs)
+    if lanes:
+        first_lane_keys = {d.node_key for d in lanes[0]}
+        for key in first_lane_keys:
+            node = nodes.get(key)
+            if node and node.enabled and node.state != RequirementNodeState.pending:
+                node.state = RequirementNodeState.pending
+                node.started_at = None
+                node.completed_at = None
+        review = nodes.get("req_review")
+        if review and review.enabled and review.state != RequirementNodeState.pending:
+            review.state = RequirementNodeState.pending
+            review.started_at = None
+            review.completed_at = None
+
+    new_status = derive_requirement_status(req, nodes, defs)
+    req.status = new_status
+
+    await log_requirement_activity(
+        db,
+        requirement_id=req.id,
+        actor_id=actor_id,
+        action_type="reopen_rejected",
+        summary="重新打开需求（评审不通过后）",
+    )
+    return new_status
+
+
+async def update_requirement_enabled_nodes(
+    db: AsyncSession,
+    req: Requirement,
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+    enabled_map: dict[str, bool],
+    *,
+    actor_id: str,
+) -> RequirementStatus:
+    def_by_key = {d.node_key: d for d in defs}
+
+    for key, enabled in enabled_map.items():
+        if key not in def_by_key:
+            raise RequirementNodeError(f"未知节点: {key}")
+
+    for key, enabled in enabled_map.items():
+        node = nodes.get(key)
+        if not node:
+            node = RequirementNodeProgress(
+                requirement_id=req.id,
+                node_key=key,
+                state=RequirementNodeState.pending,
+                enabled=enabled,
+            )
+            db.add(node)
+            nodes[key] = node
+        else:
+            node.enabled = enabled
+            if not enabled:
+                node.state = RequirementNodeState.skipped
+                node.started_at = None
+                node.completed_at = None
+            elif node.state == RequirementNodeState.skipped:
+                node.state = RequirementNodeState.pending
+
+    await db.flush()
+    new_status = derive_requirement_status(req, nodes, defs)
+    req.status = new_status
+    await log_requirement_activity(
+        db,
+        requirement_id=req.id,
+        actor_id=actor_id,
+        action_type="workflow_enabled",
+        summary="更新了工作流节点启用配置",
+        detail={"enabled": enabled_map},
+    )
+    return new_status
+
+
+async def load_node_map(db: AsyncSession, requirement_id: str) -> NodeMap:
+    from sqlalchemy import select
+
+    result = await db.execute(
+        select(RequirementNodeProgress).where(RequirementNodeProgress.requirement_id == requirement_id)
+    )
+    return {r.node_key: r for r in result.scalars().all()}

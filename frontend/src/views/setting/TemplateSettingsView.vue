@@ -1,5 +1,9 @@
 <template>
-  <n-card title="项目设置">
+  <n-card
+    :bordered="!embedded"
+    :title="embedded ? undefined : '项目设置'"
+    :content-style="embedded ? 'padding: 0' : undefined"
+  >
     <n-form inline label-placement="left" style="margin-bottom: 12px">
       <n-form-item label="项目">
         <n-select
@@ -66,6 +70,22 @@
       <n-tab-pane name="status" tab="缺陷状态">
         <n-data-table :columns="statusColumns" :data="statuses" size="small" />
         <n-button size="small" style="margin-top: 8px" @click="openStatusModal()">添加状态</n-button>
+      </n-tab-pane>
+      <n-tab-pane name="req-roles" tab="需求角色">
+        <RequirementRoleSettingsTab :project-id="selectedProjectId" />
+      </n-tab-pane>
+      <n-tab-pane name="req-fields" tab="需求字段">
+        <RequirementFieldSettingsTab
+          :project-id="selectedProjectId"
+          :req-fields="reqFields"
+          :saving="saving"
+          @update:req-fields="reqFields = $event"
+          @add-field="openFieldEdit('requirement', null)"
+          @edit-field="(i) => openFieldEdit('requirement', i)"
+        />
+      </n-tab-pane>
+      <n-tab-pane name="req-workflow" tab="需求工作流">
+        <RequirementWorkflowSettingsTab :project-id="selectedProjectId" />
       </n-tab-pane>
       <n-tab-pane name="wecom" tab="企微通知">
         <n-form label-placement="top" style="max-width: 960px">
@@ -259,6 +279,9 @@ import {
 } from '@/api/wecomRules';
 import TemplateEditPreview from '@/components/TemplateEditPreview.vue';
 import TemplateFieldPanel from '@/components/TemplateFieldPanel.vue';
+import RequirementFieldSettingsTab from '@/views/setting/RequirementFieldSettingsTab.vue';
+import RequirementRoleSettingsTab from '@/views/setting/RequirementRoleSettingsTab.vue';
+import RequirementWorkflowSettingsTab from '@/views/setting/RequirementWorkflowSettingsTab.vue';
 import {
   FIELD_TYPE_OPTIONS,
   generateFieldId,
@@ -273,6 +296,8 @@ import { apiErrorMessage } from '@/utils/apiError';
 import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
 import type { BugStatusDef, TemplateField, WecomNotifyRule } from '@/types/business';
+
+withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false });
 
 const DEFAULT_CREATE_TEMPLATE =
   '【新建缺陷 {num}】{title}\n项目：{project}\n提出人：{reporter}\n跟进人：{followers}\n{link}';
@@ -292,6 +317,7 @@ const tab = ref('case');
 const saving = ref(false);
 const caseFields = ref<TemplateField[]>([]);
 const bugFields = ref<TemplateField[]>([]);
+const reqFields = ref<TemplateField[]>([]);
 const statuses = ref<BugStatusDef[]>([]);
 const wecom = ref({
   wecom_enabled: false,
@@ -318,7 +344,7 @@ const notifyRoleOptions = [
 ];
 
 const showFieldDrawer = ref(false);
-const fieldEditKind = ref<'case' | 'bug'>('case');
+const fieldEditKind = ref<'case' | 'bug' | 'requirement'>('case');
 const fieldEditIndex = ref<number | null>(null);
 const fieldForm = ref<TemplateField>({
   id: '',
@@ -381,7 +407,12 @@ function formatNotifyRoles(roles: string[]) {
 
 /** 字段编辑抽屉内：将当前表单草稿合并进列表，供右侧实时预览 */
 const draftPreviewFields = computed<TemplateField[]>(() => {
-  const base = fieldEditKind.value === 'case' ? [...caseFields.value] : [...bugFields.value];
+  const base =
+    fieldEditKind.value === 'case'
+      ? [...caseFields.value]
+      : fieldEditKind.value === 'bug'
+        ? [...bugFields.value]
+        : [...reqFields.value];
   const options = isOptionFieldType(fieldForm.value.type)
     ? optionsText.value
         .split('\n')
@@ -478,10 +509,11 @@ const wecomRuleColumns: DataTableColumns<WecomNotifyRule> = [
   },
 ];
 
-function openFieldEdit(kind: 'case' | 'bug', index: number | null) {
+function openFieldEdit(kind: 'case' | 'bug' | 'requirement', index: number | null) {
   fieldEditKind.value = kind;
   fieldEditIndex.value = index;
-  const list = kind === 'case' ? caseFields.value : bugFields.value;
+  const list =
+    kind === 'case' ? caseFields.value : kind === 'bug' ? bugFields.value : reqFields.value;
   if (index === null) {
     fieldForm.value = {
       id: generateFieldId(),
@@ -524,7 +556,12 @@ function confirmFieldEdit() {
     type: fieldForm.value.type as FieldTypeValue,
     options,
   };
-  const list = fieldEditKind.value === 'case' ? [...caseFields.value] : [...bugFields.value];
+  const list =
+    fieldEditKind.value === 'case'
+      ? [...caseFields.value]
+      : fieldEditKind.value === 'bug'
+        ? [...bugFields.value]
+        : [...reqFields.value];
   if (fieldEditIndex.value === null) {
     list.push(row);
   } else {
@@ -532,7 +569,8 @@ function confirmFieldEdit() {
   }
   const normalized = normalizeFieldSort(list);
   if (fieldEditKind.value === 'case') caseFields.value = normalized;
-  else bugFields.value = normalized;
+  else if (fieldEditKind.value === 'bug') bugFields.value = normalized;
+  else reqFields.value = normalized;
   showFieldDrawer.value = false;
 }
 
@@ -753,6 +791,7 @@ async function load() {
   if (!selectedProjectId.value) {
     caseFields.value = [];
     bugFields.value = [];
+    reqFields.value = [];
     statuses.value = [];
     wecom.value = { wecom_enabled: false, wecom_webhook_url: null, app_public_url: null };
     wecomRules.value = [];
@@ -782,7 +821,7 @@ async function load() {
   }
 }
 
-async function saveTemplate(scene: 'functional_case' | 'bug', fields: TemplateField[]) {
+async function saveTemplate(scene: 'functional_case' | 'bug' | 'requirement', fields: TemplateField[]) {
   const projectId = await syncContext();
   if (!projectId) return;
   const nameErr = validateTemplateFieldNames(scene, fields);

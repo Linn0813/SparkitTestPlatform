@@ -3,6 +3,8 @@ import type { TemplateField } from '@/types/business';
 
 export type FieldConfigSource = 'system' | 'template';
 
+export type RequirementOptionCategory = 'priority' | 'req_type';
+
 export interface FieldConfigRow {
   id: string;
   name: string;
@@ -11,6 +13,7 @@ export interface FieldConfigRow {
   required: boolean;
   source: FieldConfigSource;
   sort: number;
+  optionCategory?: RequirementOptionCategory;
 }
 
 const SYSTEM_CASE_FIELDS: FieldConfigRow[] = [
@@ -36,8 +39,24 @@ const SYSTEM_BUG_FIELDS: FieldConfigRow[] = [
   { id: '__found_version', name: '发现版本', type: 'version_link', typeLabel: '版本', required: false, source: 'system', sort: 9 },
 ];
 
-export function buildFieldConfigRows(scene: 'case' | 'bug', templateFields: TemplateField[]): FieldConfigRow[] {
-  const system = scene === 'case' ? SYSTEM_CASE_FIELDS : SYSTEM_BUG_FIELDS;
+const SYSTEM_REQUIREMENT_FIELDS: FieldConfigRow[] = [
+  { id: '__title', name: '需求标题', type: 'text', typeLabel: '文本', required: true, source: 'system', sort: 0 },
+  { id: '__priority', name: '优先级', type: 'select', typeLabel: '单选', required: false, source: 'system', sort: 1, optionCategory: 'priority' },
+  { id: '__req_type', name: '需求类型', type: 'select', typeLabel: '单选', required: false, source: 'system', sort: 2, optionCategory: 'req_type' },
+  { id: '__external_url', name: 'PRD 链接', type: 'text', typeLabel: '文本', required: false, source: 'system', sort: 3 },
+  { id: '__version', name: '关联版本', type: 'version_link', typeLabel: '版本', required: false, source: 'system', sort: 4 },
+];
+
+export function buildFieldConfigRows(
+  scene: 'case' | 'bug' | 'requirement',
+  templateFields: TemplateField[]
+): FieldConfigRow[] {
+  const system =
+    scene === 'case'
+      ? SYSTEM_CASE_FIELDS
+      : scene === 'bug'
+        ? SYSTEM_BUG_FIELDS
+        : SYSTEM_REQUIREMENT_FIELDS;
   const custom = sortTemplateFields(templateFields).map((f, i) => ({
     id: f.id,
     name: f.name,

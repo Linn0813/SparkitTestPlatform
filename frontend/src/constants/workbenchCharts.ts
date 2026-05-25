@@ -41,9 +41,14 @@ export const EXECUTE_RESULT_COLORS: Record<string, string> = {
 export const REQUIREMENT_BAR_COLOR = '#783887';
 
 export const REQUIREMENT_STATUS_COLORS: Record<string, string> = {
-  not_tested: '#AEAEB2',
-  testing: '#3370FF',
-  accepted: '#00C261',
+  draft: '#AEAEB2',
+  pending_review: '#FFA200',
+  designing: '#50CEFB',
+  developing: '#3370FF',
+  testing: '#811FA3',
+  pending_release: '#FF9964',
+  released: '#00C261',
+  rejected: '#ED0303',
 };
 
 export const PLAN_STATUS_COLORS: Record<string, string> = {

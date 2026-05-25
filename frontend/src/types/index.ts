@@ -18,7 +18,8 @@ export interface TokenResponse {
 export interface ProjectBrief {
   id: string;
   name: string;
-  role?: string;
+  role: string;
+  is_project_admin: boolean;
 }
 
 export interface MeResponse {
@@ -38,5 +39,6 @@ export interface ProjectMember {
   project_id: string;
   user_id: string;
   role: string;
+  is_project_admin: boolean;
   user?: User;
 }

@@ -27,7 +27,8 @@ class MeResponse(BaseModel):
 class ProjectBrief(BaseModel):
     id: str
     name: str
-    role: Optional[str] = None
+    role: str = "member"
+    is_project_admin: bool = False
 
 
 MeResponse.model_rebuild()

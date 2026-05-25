@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from app.api.v1.dashboard import _role_key
+from app.api.v1.dashboard import _role_keys
 from app.constants.dashboard_todo import (
     MEMBER_FOLLOWER_TODO_STATUS_KEYS,
     TESTER_FIXED_BUG_STATUS_KEY,
@@ -35,11 +35,9 @@ def _version(
     return v
 
 
-def test_role_key_mapping():
-    assert _role_key(None, True) == "system_admin"
-    assert _role_key(None, False) == "member"
-    assert _role_key(ProjectRole.tester, False) == "tester"
-    assert _role_key(ProjectRole.project_admin, False) == "project_admin"
+def test_role_keys_mapping():
+    assert _role_keys([], True) == ["system_admin"]
+    assert _role_keys([ProjectRole.tester, ProjectRole.product], False) == ["tester", "product"]
 
 
 def test_todo_status_constants():
@@ -59,8 +57,11 @@ def test_unplanned_bug_excluded_status_keys():
 
 def test_tester_todo_constants():
     assert TESTER_FIXED_BUG_STATUS_KEY == "fixed"
-    assert "not_tested" in TESTER_TODO_REQUIREMENT_STATUS_KEYS
-    assert "testing" in TESTER_TODO_REQUIREMENT_STATUS_KEYS
+    assert "developing" in TESTER_TODO_REQUIREMENT_STATUS_KEYS
+    from app.constants.dashboard_todo import TESTER_TODO_TESTING_REQUIREMENT_STATUS_KEYS
+
+    assert "testing" in TESTER_TODO_TESTING_REQUIREMENT_STATUS_KEYS
+    assert "pending_release" in TESTER_TODO_TESTING_REQUIREMENT_STATUS_KEYS
 
 
 def test_pick_default_version_prefers_upcoming_including_today():
@@ -117,7 +118,7 @@ def test_dashboard_workbench_schema_roundtrip():
             "version_focus": {
                 "version": {"id": "v1", "num": 1, "name": "Sprint"},
                 "versions": [{"id": "v1", "num": 1, "name": "Sprint"}],
-                "requirements": {"total": 1, "by_status": [{"key": "not_tested", "label": "未转测", "count": 1}]},
+                "requirements": {"total": 1, "by_status": [{"key": "draft", "label": "草稿", "count": 1}]},
                 "bugs": {"total": 0, "by_status": []},
                 "plans": {"total": 0, "by_status": []},
             },
@@ -138,10 +139,10 @@ def test_dashboard_workbench_schema_roundtrip():
             "testing_requirements": [],
             "follower_todo_bugs": [],
         },
-        "project_role": "member",
+        "project_roles": ["member", "tester"],
     }
     model = DashboardWorkbench.model_validate(payload)
-    assert model.project_role == "member"
+    assert model.project_roles == ["member", "tester"]
     assert model.summary.bug_count == 3
     assert model.overview.version_focus.version is not None
     assert isinstance(model.todo, DashboardTodo)

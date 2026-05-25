@@ -22,10 +22,11 @@ from app.constants.dashboard_todo import (
     MEMBER_FOLLOWER_TODO_STATUS_KEYS,
     TESTER_FIXED_BUG_STATUS_KEY,
     TESTER_TODO_REQUIREMENT_STATUS_KEYS,
+    TESTER_TODO_TESTING_REQUIREMENT_STATUS_KEYS,
 )
 from app.core.database import get_db
 from app.core.deps import ProjectContext, require_project_context
-from app.core.project_permissions import get_project_role
+from app.core.project_permissions import get_project_roles
 from app.models.bug import Bug, BugFollowerLink
 from app.models.case import TestCase
 from app.models.plan import ExecuteResult, PlanCase, PlanCaseResult, PlanStatus, TestPlan
@@ -550,15 +551,17 @@ async def _plans_by_status(
     ]
 
 
-async def _requirements_by_status(
+async def _requirements_by_statuses(
     db: AsyncSession,
     project_id: str,
-    status: RequirementStatus,
+    statuses: tuple[RequirementStatus, ...],
     limit: int,
 ) -> list[RequirementTodoBrief]:
+    if not statuses:
+        return []
     result = await db.execute(
         select(Requirement)
-        .where(Requirement.project_id == project_id, Requirement.status == status)
+        .where(Requirement.project_id == project_id, Requirement.status.in_(statuses))
         .order_by(Requirement.updated_at.desc())
         .limit(limit)
     )
@@ -582,6 +585,15 @@ async def _requirements_by_status(
         )
         for row in rows
     ]
+
+
+async def _requirements_by_status(
+    db: AsyncSession,
+    project_id: str,
+    status: RequirementStatus,
+    limit: int,
+) -> list[RequirementTodoBrief]:
+    return await _requirements_by_statuses(db, project_id, (status,), limit)
 
 
 async def _bugs_query(
@@ -632,12 +644,52 @@ async def _bugs_query(
     ]
 
 
-def _role_key(role: ProjectRole | None, is_system_admin: bool) -> str:
+def _role_keys(roles: list[ProjectRole], is_system_admin: bool) -> list[str]:
     if is_system_admin:
-        return "system_admin"
-    if role is None:
-        return "member"
-    return role.value if hasattr(role, "value") else str(role)
+        return ["system_admin"]
+    return [r.value for r in roles]
+
+
+async def _build_todo_requirements(project_id: str) -> tuple[list, list]:
+    return await asyncio.gather(
+        _requirements_by_statuses_session(
+            project_id,
+            tuple(RequirementStatus(k) for k in TESTER_TODO_REQUIREMENT_STATUS_KEYS),
+            _TODO_LIST_LIMIT,
+        ),
+        _requirements_by_statuses_session(
+            project_id,
+            tuple(RequirementStatus(k) for k in TESTER_TODO_TESTING_REQUIREMENT_STATUS_KEYS),
+            _TODO_LIST_LIMIT,
+        ),
+    )
+
+
+async def _build_todo_for_roles(
+    project_id: str, user_id: str, role_set: set[ProjectRole], *, is_system_admin: bool
+) -> DashboardTodo:
+    if is_system_admin:
+        role_set = {ProjectRole.tester, ProjectRole.product, ProjectRole.developer}
+
+    merged = DashboardTodo()
+
+    if ProjectRole.tester in role_set:
+        tester_todo = await _build_todo_tester(project_id)
+        merged.draft_plans = tester_todo.draft_plans
+        merged.active_plans_todo = tester_todo.active_plans_todo
+        merged.fixed_bugs = tester_todo.fixed_bugs
+        merged.not_tested_requirements = tester_todo.not_tested_requirements
+        merged.testing_requirements = tester_todo.testing_requirements
+    elif ProjectRole.product in role_set:
+        not_tested, testing = await _build_todo_requirements(project_id)
+        merged.not_tested_requirements = not_tested
+        merged.testing_requirements = testing
+
+    if ProjectRole.developer in role_set:
+        dev_todo = await _build_todo_member(project_id, user_id)
+        merged.follower_todo_bugs = dev_todo.follower_todo_bugs
+
+    return merged
 
 
 async def _summary_counts_session(project_id: str) -> DashboardSummary:
@@ -708,11 +760,11 @@ async def _plans_by_status_session(
         return await _plans_by_status(db, project_id, status, limit)
 
 
-async def _requirements_by_status_session(
-    project_id: str, status: RequirementStatus, limit: int
+async def _requirements_by_statuses_session(
+    project_id: str, statuses: tuple[RequirementStatus, ...], limit: int
 ) -> list[RequirementTodoBrief]:
     async with async_session_factory() as db:
-        return await _requirements_by_status(db, project_id, status, limit)
+        return await _requirements_by_statuses(db, project_id, statuses, limit)
 
 
 async def _bugs_query_session(
@@ -745,8 +797,16 @@ async def _build_todo_tester(project_id: str) -> DashboardTodo:
         _plans_by_status_session(project_id, PlanStatus.draft, _TODO_LIST_LIMIT),
         _plans_by_status_session(project_id, PlanStatus.active, _TODO_LIST_LIMIT),
         _bugs_query_session(project_id, status_keys=(TESTER_FIXED_BUG_STATUS_KEY,)),
-        _requirements_by_status_session(project_id, RequirementStatus.not_tested, _TODO_LIST_LIMIT),
-        _requirements_by_status_session(project_id, RequirementStatus.testing, _TODO_LIST_LIMIT),
+        _requirements_by_statuses_session(
+            project_id,
+            tuple(RequirementStatus(k) for k in TESTER_TODO_REQUIREMENT_STATUS_KEYS),
+            _TODO_LIST_LIMIT,
+        ),
+        _requirements_by_statuses_session(
+            project_id,
+            tuple(RequirementStatus(k) for k in TESTER_TODO_TESTING_REQUIREMENT_STATUS_KEYS),
+            _TODO_LIST_LIMIT,
+        ),
     )
     return DashboardTodo(
         draft_plans=draft_plans,
@@ -773,10 +833,10 @@ async def workbench(
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
-    role = await get_project_role(ctx.user, ctx.project_id, db)
-    role_key = _role_key(role, ctx.user.is_system_admin)
+    roles = await get_project_roles(ctx.user, ctx.project_id, db)
+    role_keys = _role_keys(roles, ctx.user.is_system_admin)
     project_id = ctx.project_id
-    is_tester_side = role in (ProjectRole.tester, ProjectRole.project_admin) or ctx.user.is_system_admin
+    role_set = set(roles)
 
     summary_task = _summary_counts_session(project_id)
     overview_task = asyncio.gather(
@@ -784,10 +844,8 @@ async def workbench(
         _bug_focus_session(project_id),
         _plan_focus_session(project_id),
     )
-    todo_task = (
-        _build_todo_tester(project_id)
-        if is_tester_side
-        else _build_todo_member(project_id, ctx.user.id)
+    todo_task = _build_todo_for_roles(
+        project_id, ctx.user.id, role_set, is_system_admin=ctx.user.is_system_admin
     )
 
     summary, overview_parts, todo = await asyncio.gather(summary_task, overview_task, todo_task)
@@ -802,5 +860,5 @@ async def workbench(
         summary=summary,
         overview=overview,
         todo=todo,
-        project_role=role_key,
+        project_roles=role_keys,
     )

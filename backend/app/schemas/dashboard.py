@@ -126,4 +126,4 @@ class DashboardWorkbench(BaseModel):
     summary: DashboardSummary
     overview: DashboardOverview
     todo: DashboardTodo
-    project_role: str
+    project_roles: list[str]

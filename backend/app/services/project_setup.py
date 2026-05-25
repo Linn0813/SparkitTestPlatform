@@ -3,9 +3,19 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.template import BugStatus, ProjectFieldTemplate, ProjectIntegration, TemplateScene
+from app.models.template import (
+    BugStatus,
+    ProjectFieldTemplate,
+    ProjectIntegration,
+    RequirementOptionDef,
+    RequirementRoleDef,
+    RequirementWorkflowNodeDef,
+    TemplateScene,
+)
+from app.services.requirement_config import ensure_project_option_defs, ensure_project_role_defs
+from app.services.requirement_workflow import ensure_project_workflow_defs
 from app.models.wecom_rule import BugWecomNotifyRule
-from app.services.defaults import DEFAULT_BUG_FIELDS, DEFAULT_BUG_STATUSES, DEFAULT_CASE_FIELDS
+from app.services.defaults import DEFAULT_BUG_FIELDS, DEFAULT_BUG_STATUSES, DEFAULT_CASE_FIELDS, DEFAULT_REQUIREMENT_FIELDS
 from app.services.wecom_notify import DEFAULT_CREATE_TEMPLATE, DEFAULT_STATUS_TEMPLATE
 
 
@@ -13,6 +23,7 @@ async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
     for scene, fields in (
         (TemplateScene.functional_case, DEFAULT_CASE_FIELDS),
         (TemplateScene.bug, DEFAULT_BUG_FIELDS),
+        (TemplateScene.requirement, DEFAULT_REQUIREMENT_FIELDS),
     ):
         existing = await db.execute(
             select(ProjectFieldTemplate).where(
@@ -74,3 +85,7 @@ async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
                 enabled=False,
             )
         )
+
+    await ensure_project_workflow_defs(db, project_id)
+    await ensure_project_role_defs(db, project_id)
+    await ensure_project_option_defs(db, project_id)

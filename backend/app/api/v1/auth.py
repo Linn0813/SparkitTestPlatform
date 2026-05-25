@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_current_user, user_can_access_project
 from app.core.security import create_access_token, verify_password
-from app.models.project import Project, ProjectMember
+from app.models.project import BusinessProjectRole, Project, ProjectMember
 from app.models.user import User
 from app.schemas.auth import LoginRequest, MeResponse, ProjectBrief, SwitchContextRequest, TokenResponse
 from app.schemas.user import PasswordChange, UserOut
@@ -29,8 +29,14 @@ async def _build_me(user: User, db: AsyncSession) -> MeResponse:
             .where(ProjectMember.user_id == user.id, Project.is_enabled.is_(True))
         )
         for member, proj in pm_result.all():
+            role_val = member.role.value if hasattr(member.role, "value") else str(member.role)
             projects.append(
-                ProjectBrief(id=proj.id, name=proj.name, role=member.role.value)
+                ProjectBrief(
+                    id=proj.id,
+                    name=proj.name,
+                    role=role_val,
+                    is_project_admin=bool(member.is_project_admin),
+                )
             )
 
     return MeResponse(user=UserOut.model_validate(user), projects=projects)

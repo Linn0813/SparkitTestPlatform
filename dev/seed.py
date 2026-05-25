@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.core.database import async_session_factory, engine
 from app.core.security import hash_password
-from app.models.project import Project, ProjectMember, ProjectRole
+from app.models.project import BusinessProjectRole, Project, ProjectMember
 from app.models.user import User
 from app.services.project_setup import ensure_project_defaults
 
@@ -42,7 +42,14 @@ async def seed() -> None:
         db.add(project)
         await db.flush()
 
-        db.add(ProjectMember(project_id=project.id, user_id=admin.id, role=ProjectRole.project_admin))
+        db.add(
+            ProjectMember(
+                project_id=project.id,
+                user_id=admin.id,
+                role=BusinessProjectRole.member,
+                is_project_admin=True,
+            )
+        )
 
         admin.last_project_id = project.id
 

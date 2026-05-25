@@ -1,9 +1,14 @@
 import type { TagProps } from 'naive-ui';
 
 export const REQUIREMENT_STATUS_OPTIONS = [
-  { label: '未转测', value: 'not_tested' },
+  { label: '草稿', value: 'draft' },
+  { label: '待评审', value: 'pending_review' },
+  { label: '设计中', value: 'designing' },
+  { label: '开发中', value: 'developing' },
   { label: '测试中', value: 'testing' },
-  { label: '已验收', value: 'accepted' },
+  { label: '待发版', value: 'pending_release' },
+  { label: '已发版', value: 'released' },
+  { label: '不通过', value: 'rejected' },
 ] as const;
 
 export function requirementStatusLabel(key: string): string {
@@ -11,7 +16,10 @@ export function requirementStatusLabel(key: string): string {
 }
 
 export function requirementStatusTagType(key: string): TagProps['type'] {
-  if (key === 'testing') return 'info';
-  if (key === 'accepted') return 'success';
-  return 'warning';
+  if (key === 'released') return 'success';
+  if (key === 'rejected') return 'error';
+  if (key === 'testing' || key === 'pending_release') return 'info';
+  if (key === 'developing' || key === 'designing') return 'warning';
+  if (key === 'pending_review') return 'warning';
+  return 'default';
 }

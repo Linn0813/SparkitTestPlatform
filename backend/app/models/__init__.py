@@ -13,8 +13,28 @@ from app.models.case import CaseModule, CasePriority, TestCase
 from app.models.plan import ExecuteResult, PlanCase, PlanCaseResult, PlanStatus, TestPlan
 from app.models.project import Project, ProjectMember, ProjectRole
 from app.models.project_version import ProjectVersion
-from app.models.requirement import BugPlanLink, BugRequirementLink, CaseRequirementLink, Requirement
-from app.models.template import BugStatus, ProjectFieldTemplate, ProjectIntegration, TemplateScene
+from app.models.requirement import (
+    BugPlanLink,
+    BugRequirementLink,
+    CaseRequirementLink,
+    Requirement,
+    RequirementActivity,
+    RequirementComment,
+    RequirementNodeProgress,
+    RequirementNodeState,
+    RequirementPriority,
+    RequirementStatus,
+    RequirementType,
+)
+from app.models.template import (
+    BugStatus,
+    ProjectFieldTemplate,
+    ProjectIntegration,
+    RequirementOptionDef,
+    RequirementRoleDef,
+    RequirementWorkflowNodeDef,
+    TemplateScene,
+)
 from app.models.wecom_rule import BugWecomNotifyRule
 from app.models.stored_file import StoredFile
 from app.models.user import User
@@ -27,6 +47,9 @@ __all__ = [
     "TemplateScene",
     "ProjectFieldTemplate",
     "BugStatus",
+    "RequirementRoleDef",
+    "RequirementOptionDef",
+    "RequirementWorkflowNodeDef",
     "ProjectIntegration",
     "CaseModule",
     "CasePriority",
@@ -38,6 +61,13 @@ __all__ = [
     "PlanCaseResult",
     "ProjectVersion",
     "Requirement",
+    "RequirementPriority",
+    "RequirementType",
+    "RequirementStatus",
+    "RequirementNodeState",
+    "RequirementNodeProgress",
+    "RequirementActivity",
+    "RequirementComment",
     "CaseRequirementLink",
     "BugRequirementLink",
     "BugPlanLink",

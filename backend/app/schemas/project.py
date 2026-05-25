@@ -1,9 +1,10 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from app.models.project import ProjectRole
+from app.core.project_roles import parse_business_role
+from app.models.project import BusinessProjectRole, ProjectRole
 from app.schemas.common import ORMBase
 from app.schemas.user import UserOut
 
@@ -28,10 +29,31 @@ class ProjectMemberOut(ORMBase):
     id: str
     project_id: str
     user_id: str
-    role: ProjectRole
+    role: BusinessProjectRole
+    is_project_admin: bool
     user: Optional[UserOut] = None
 
 
 class ProjectMemberAdd(BaseModel):
     user_id: str
-    role: ProjectRole = ProjectRole.member
+    role: BusinessProjectRole = BusinessProjectRole.member
+    is_project_admin: bool = False
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: BusinessProjectRole) -> BusinessProjectRole:
+        parse_business_role(v, for_http=False)
+        return v
+
+
+class ProjectMemberUpdate(BaseModel):
+    role: Optional[BusinessProjectRole] = None
+    is_project_admin: Optional[bool] = None
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: Optional[BusinessProjectRole]) -> Optional[BusinessProjectRole]:
+        if v is None:
+            return v
+        parse_business_role(v, for_http=False)
+        return v

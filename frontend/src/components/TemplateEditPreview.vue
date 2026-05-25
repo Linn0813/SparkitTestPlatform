@@ -19,7 +19,7 @@
               <n-select disabled value="module" :options="[{ label: '示例模块', value: 'module' }]" style="width: 100%" />
             </n-form-item>
             <n-form-item label="优先级">
-              <n-select disabled value="P2" :options="priorityOptions" style="width: 100%" />
+              <n-select disabled value="P2" :options="casePriorityOptions" style="width: 100%" />
             </n-form-item>
             <n-form-item label="前置条件">
               <n-input disabled type="textarea" placeholder="示例前置条件" :rows="2" />
@@ -34,7 +34,7 @@
               <n-select disabled placeholder="可选，多选" style="width: 100%" />
             </n-form-item>
           </template>
-          <template v-else>
+          <template v-else-if="scene === 'bug'">
             <n-form-item label="缺陷标题">
               <n-input disabled placeholder="示例缺陷标题" />
             </n-form-item>
@@ -73,6 +73,41 @@
               <n-select disabled placeholder="可选" style="width: 100%" />
             </n-form-item>
             <n-form-item label="发现版本">
+              <n-select disabled placeholder="可选" style="width: 100%" />
+            </n-form-item>
+          </template>
+          <template v-else>
+            <n-form-item label="需求标题">
+              <n-input disabled placeholder="示例需求标题" />
+            </n-form-item>
+            <n-form-item label="优先级">
+              <n-space :size="6" wrap>
+                <n-tag
+                  v-for="opt in reqPriorityOptions"
+                  :key="opt.value"
+                  size="small"
+                  :bordered="false"
+                >
+                  {{ opt.label }}
+                </n-tag>
+              </n-space>
+            </n-form-item>
+            <n-form-item label="需求类型">
+              <n-space :size="6" wrap>
+                <n-tag
+                  v-for="opt in reqTypeOptions"
+                  :key="opt.value"
+                  size="small"
+                  :bordered="false"
+                >
+                  {{ opt.label }}
+                </n-tag>
+              </n-space>
+            </n-form-item>
+            <n-form-item label="PRD / 外部链接">
+              <n-input disabled placeholder="可选" />
+            </n-form-item>
+            <n-form-item label="关联版本">
               <n-select disabled placeholder="可选" style="width: 100%" />
             </n-form-item>
           </template>
@@ -120,25 +155,52 @@ import {
   normalizeRichTextValue,
   sortTemplateFields,
 } from '@/constants/fieldTypes';
-import type { BugStatusDef, TemplateField } from '@/types/business';
+import type { BugStatusDef, RequirementOptionDef, TemplateField } from '@/types/business';
 
 const props = withDefaults(
   defineProps<{
-    scene: 'case' | 'bug';
+    scene: 'case' | 'bug' | 'requirement';
     fields: TemplateField[];
     projectId?: string | null;
     bugStatuses?: BugStatusDef[];
+    priorityOptions?: RequirementOptionDef[];
+    typeOptions?: RequirementOptionDef[];
   }>(),
   {
     bugStatuses: () => [],
+    priorityOptions: () => [] as RequirementOptionDef[],
+    typeOptions: () => [] as RequirementOptionDef[],
   }
 );
 
 const sortedFields = computed(() => sortTemplateFields(props.fields));
 
-const drawerTitle = computed(() => (props.scene === 'case' ? '新建用例' : '新建缺陷'));
+const drawerTitle = computed(() => {
+  if (props.scene === 'case') return '新建用例';
+  if (props.scene === 'bug') return '新建缺陷';
+  return '新建需求';
+});
 
-const priorityOptions = ['P0', 'P1', 'P2', 'P3'].map((v) => ({ label: v, value: v }));
+const casePriorityOptions = ['P0', 'P1', 'P2', 'P3'].map((v) => ({ label: v, value: v }));
+
+const reqPriorityOptions = computed(() =>
+  props.priorityOptions.length
+    ? props.priorityOptions.map((o) => ({ label: o.label, value: o.option_key }))
+    : [
+        { label: 'P00', value: 'p00' },
+        { label: 'P0', value: 'p0' },
+        { label: 'P1', value: 'p1' },
+      ]
+);
+
+const reqTypeOptions = computed(() =>
+  props.typeOptions.length
+    ? props.typeOptions.map((o) => ({ label: o.label, value: o.option_key }))
+    : [
+        { label: '需求开发', value: 'feature' },
+        { label: '技术优化', value: 'tech_optimization' },
+      ]
+);
 
 const statusOptions = ref<{ label: string; value: string }[]>([]);
 

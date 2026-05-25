@@ -43,6 +43,16 @@ RESERVED_FIELD_NAMES_BY_SCENE: dict[str, frozenset[str]] = {
         "预期结果",
         "关联需求",
     }),
+    "requirement": frozenset({
+        "需求标题",
+        "标题",
+        "优先级",
+        "需求类型",
+        "PRD",
+        "PRD 链接",
+        "关联版本",
+        "版本上线时间",
+    }),
 }
 
 

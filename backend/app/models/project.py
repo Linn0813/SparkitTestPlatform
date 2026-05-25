@@ -12,8 +12,19 @@ from app.core.database import Base
 
 class ProjectRole(str, enum.Enum):
     project_admin = "project_admin"
-    tester = "tester"
     member = "member"
+    tester = "tester"
+    product = "product"
+    developer = "developer"
+
+
+class BusinessProjectRole(str, enum.Enum):
+    """业务角色（不含 project_admin）。"""
+
+    member = "member"
+    tester = "tester"
+    product = "product"
+    developer = "developer"
 
 
 class Project(Base):
@@ -34,7 +45,10 @@ class ProjectMember(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    role: Mapped[ProjectRole] = mapped_column(Enum(ProjectRole), nullable=False, default=ProjectRole.member)
+    role: Mapped[BusinessProjectRole] = mapped_column(
+        Enum(BusinessProjectRole), nullable=False, default=BusinessProjectRole.member
+    )
+    is_project_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     project: Mapped["Project"] = relationship(back_populates="members")

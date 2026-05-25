@@ -1,12 +1,25 @@
+from __future__ import annotations
+
+from typing import Optional
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_project_access, require_system_admin
-from app.models.project import Project, ProjectMember, ProjectRole
+from app.core.project_permissions import user_can_manage_project_settings
+from app.core.project_roles import member_is_project_admin
+from app.models.project import BusinessProjectRole, Project, ProjectMember
 from app.models.user import User
-from app.schemas.project import ProjectCreate, ProjectMemberAdd, ProjectMemberOut, ProjectOut, ProjectUpdate
+from app.schemas.project import (
+    ProjectCreate,
+    ProjectMemberAdd,
+    ProjectMemberOut,
+    ProjectMemberUpdate,
+    ProjectOut,
+    ProjectUpdate,
+)
 from app.schemas.upload import FileUrlOut, ProjectUploadOut
 from app.schemas.user import UserOut
 from app.services.file_storage import (
@@ -47,7 +60,14 @@ async def create_project(
     project = Project(name=body.name)
     db.add(project)
     await db.flush()
-    db.add(ProjectMember(project_id=project.id, user_id=user.id, role=ProjectRole.project_admin))
+    db.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=user.id,
+            role=BusinessProjectRole.member,
+            is_project_admin=True,
+        )
+    )
     await db.flush()
     await ensure_project_defaults(project.id, db)
     await db.refresh(project)
@@ -75,18 +95,33 @@ async def get_project(
 
 
 async def _require_project_manage(project_id: str, user: User, db: AsyncSession) -> None:
-    if user.is_system_admin:
+    if not await user_can_manage_project_settings(user, project_id, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project admin required")
+
+
+async def _ensure_not_last_project_admin(
+    db: AsyncSession, project_id: str, member: ProjectMember
+) -> None:
+    if not member_is_project_admin(member):
         return
-    pm = await db.execute(
-        select(ProjectMember).where(
-            ProjectMember.project_id == project_id,
-            ProjectMember.user_id == user.id,
-            ProjectMember.role == ProjectRole.project_admin,
+    result = await db.execute(select(ProjectMember).where(ProjectMember.project_id == project_id))
+    admins = [m for m in result.scalars().all() if member_is_project_admin(m)]
+    if len(admins) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot remove or demote the last project admin",
         )
+
+
+def _member_out(member: ProjectMember, user: Optional[User]) -> ProjectMemberOut:
+    return ProjectMemberOut(
+        id=member.id,
+        project_id=member.project_id,
+        user_id=member.user_id,
+        role=member.role,
+        is_project_admin=member.is_project_admin,
+        user=UserOut.model_validate(user) if user else None,
     )
-    if pm.scalar_one_or_none():
-        return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project admin required")
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -142,15 +177,7 @@ async def list_project_members(
     out: list[ProjectMemberOut] = []
     for m in result.scalars().all():
         u = await db.get(User, m.user_id)
-        out.append(
-            ProjectMemberOut(
-                id=m.id,
-                project_id=m.project_id,
-                user_id=m.user_id,
-                role=m.role,
-                user=UserOut.model_validate(u) if u else None,
-            )
-        )
+        out.append(_member_out(m, u))
     return out
 
 
@@ -169,17 +196,16 @@ async def add_project_member(
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Already a member")
-    member = ProjectMember(project_id=project_id, user_id=body.user_id, role=body.role)
+    member = ProjectMember(
+        project_id=project_id,
+        user_id=body.user_id,
+        role=body.role,
+        is_project_admin=body.is_project_admin,
+    )
     db.add(member)
     await db.flush()
     u = await db.get(User, body.user_id)
-    return ProjectMemberOut(
-        id=member.id,
-        project_id=member.project_id,
-        user_id=member.user_id,
-        role=member.role,
-        user=UserOut.model_validate(u) if u else None,
-    )
+    return _member_out(member, u)
 
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -196,7 +222,7 @@ async def upload_project_file(
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    await require_project_access(project_id, ProjectRole.member, user, db)
+    await require_project_access(project_id, user, db)
     content_type = file.content_type or "application/octet-stream"
     if not any(content_type.startswith(p) for p in ALLOWED_UPLOAD_TYPES):
         raise HTTPException(
@@ -228,11 +254,37 @@ async def get_project_file_url(
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    await require_project_access(project_id, ProjectRole.member, user, db)
+    await require_project_access(project_id, user, db)
     prefix = f"projects/{project_id}/"
     if not object_key.startswith(prefix):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file key")
     return FileUrlOut(url=build_file_download_url(object_key))
+
+
+@router.patch("/{project_id}/members/{member_id}", response_model=ProjectMemberOut)
+async def update_project_member(
+    project_id: str,
+    member_id: str,
+    body: ProjectMemberUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_project_manage(project_id, user, db)
+    member = await db.get(ProjectMember, member_id)
+    if not member or member.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    if body.is_project_admin is not None or body.role is not None:
+        old_is_admin = member.is_project_admin
+        new_is_admin = body.is_project_admin if body.is_project_admin is not None else old_is_admin
+        if old_is_admin and not new_is_admin:
+            await _ensure_not_last_project_admin(db, project_id, member)
+        if body.is_project_admin is not None:
+            member.is_project_admin = body.is_project_admin
+        if body.role is not None:
+            member.role = body.role
+    await db.flush()
+    u = await db.get(User, member.user_id)
+    return _member_out(member, u)
 
 
 @router.delete("/{project_id}/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -246,4 +298,5 @@ async def remove_project_member(
     member = await db.get(ProjectMember, member_id)
     if not member or member.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    await _ensure_not_last_project_admin(db, project_id, member)
     await db.delete(member)

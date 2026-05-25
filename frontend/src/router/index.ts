@@ -71,16 +71,18 @@ const router = createRouter({
           meta: { systemAdmin: true, hideContextSwitcher: true },
         },
         {
-          path: 'setting/project-members',
-          name: 'setting-project-members',
-          component: () => import('@/views/setting/ProjectMembersView.vue'),
+          path: 'setting/project-config',
+          name: 'setting-project-config',
+          component: () => import('@/views/setting/ProjectConfigView.vue'),
           meta: { hideContextSwitcher: true, projectAdmin: true },
         },
         {
+          path: 'setting/project-members',
+          redirect: { name: 'setting-project-config', query: { tab: 'members' } },
+        },
+        {
           path: 'setting/templates',
-          name: 'setting-templates',
-          component: () => import('@/views/setting/TemplateSettingsView.vue'),
-          meta: { hideContextSwitcher: true, projectAdmin: true },
+          redirect: { name: 'setting-project-config', query: { tab: 'templates' } },
         },
         {
           path: 'setting/projects-manage',

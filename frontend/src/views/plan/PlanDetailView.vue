@@ -299,6 +299,7 @@ import {
 } from '@/constants/planStatus';
 import type { BugItem, BugStatusDef, PlanCase, PlanStats, Requirement, TestCase, TestPlan } from '@/types/business';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
+import { requirementOptionLabel } from '@/utils/requirementLabel';
 
 const route = useRoute();
 const router = useRouter();
@@ -341,7 +342,7 @@ const canManagePlan = computed(() => canManagePlans(plan.value?.project_id));
 
 const priorityOptions = ['P0', 'P1', 'P2', 'P3'].map((v) => ({ label: v, value: v }));
 const requirementOptions = computed(() =>
-  requirements.value.map((r) => ({ label: r.title, value: r.id }))
+  requirements.value.map((r) => ({ label: requirementOptionLabel(r), value: r.id }))
 );
 
 const resultFilterOptions = PLAN_RESULT_OPTIONS;

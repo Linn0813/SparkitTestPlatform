@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
 import type { TemplateField } from '@/types/business';
 
-export type TemplateScene = 'functional_case' | 'bug';
+export type TemplateScene = 'functional_case' | 'bug' | 'requirement';
 
 /** 确保顶栏上下文与目标项目一致后再拉取模板（避免设置页与编辑页项目不一致） */
 export async function ensureContextForProject(projectId: string): Promise<void> {

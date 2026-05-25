@@ -74,6 +74,7 @@ import {
   NSpin,
   NTabPane,
   NTabs,
+  NTag,
   NText,
   NTooltip,
   useMessage,
@@ -86,6 +87,7 @@ import { getVersion } from '@/api/versions';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
 import { useContextStore } from '@/stores/context';
 import type { BugItem, BugStatusDef, ProjectVersion, Requirement } from '@/types/business';
+import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
 import { formatDateOnly } from '@/utils/formatDateOnly';
 
@@ -132,6 +134,17 @@ const requirementColumns: DataTableColumns<Requirement> = [
     minWidth: 120,
     maxWidth: 280,
     ellipsis: { tooltip: true },
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 90,
+    render: (r) =>
+      h(
+        NTag,
+        { size: 'small', type: requirementStatusTagType(r.status), bordered: false },
+        () => requirementStatusLabel(r.status)
+      ),
   },
   {
     title: 'PRD 链接',

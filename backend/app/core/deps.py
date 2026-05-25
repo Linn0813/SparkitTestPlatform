@@ -11,9 +11,11 @@ from app.core.project_permissions import (
     user_can_manage_bugs_full,
     user_can_manage_catalog,
     user_can_manage_cases_and_plans,
+    user_can_manage_project_settings,
+    user_is_project_member,
 )
 from app.core.security import decode_access_token
-from app.models.project import Project, ProjectMember, ProjectRole
+from app.models.project import Project, ProjectMember
 from app.models.user import User
 
 security_scheme = HTTPBearer(auto_error=False)
@@ -43,21 +45,11 @@ async def require_system_admin(user: User = Depends(get_current_user)) -> User:
 
 async def require_project_access(
     project_id: str,
-    min_role: ProjectRole = ProjectRole.member,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    if user.is_system_admin:
-        return user
-    result = await db.execute(
-        select(ProjectMember).where(ProjectMember.project_id == project_id, ProjectMember.user_id == user.id)
-    )
-    member = result.scalar_one_or_none()
-    if not member:
+    if not await user_is_project_member(user, project_id, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No project access")
-    role_order = [ProjectRole.member, ProjectRole.tester, ProjectRole.project_admin]
-    if role_order.index(member.role) < role_order.index(min_role):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient project role")
     return user
 
 
@@ -66,7 +58,9 @@ async def require_project_admin(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    return await require_project_access(project_id, ProjectRole.project_admin, user, db)
+    if not await user_can_manage_project_settings(user, project_id, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project admin required")
+    return user
 
 
 @dataclass
@@ -86,12 +80,11 @@ async def require_project_context(
     x_project_id: Optional[str] = Header(default=None, alias="X-Project-Id"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    min_role: ProjectRole = ProjectRole.member,
 ) -> ProjectContext:
     if not x_project_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-Project-Id header required")
     await _resolve_project(x_project_id, db)
-    await require_project_access(x_project_id, min_role, user, db)
+    await require_project_access(x_project_id, user, db)
     return ProjectContext(user=user, project_id=x_project_id)
 
 
@@ -100,7 +93,7 @@ async def require_project_context_tester(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ProjectContext:
-    return await require_project_context(x_project_id, user, db, ProjectRole.tester)
+    return await require_project_context_cases_plans(x_project_id, user, db)
 
 
 async def require_project_context_admin(
@@ -108,7 +101,12 @@ async def require_project_context_admin(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ProjectContext:
-    return await require_project_context(x_project_id, user, db, ProjectRole.project_admin)
+    if not x_project_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-Project-Id header required")
+    await _resolve_project(x_project_id, db)
+    if not await user_can_manage_project_settings(user, x_project_id, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project admin required")
+    return ProjectContext(user=user, project_id=x_project_id)
 
 
 async def require_project_context_catalog(
@@ -116,7 +114,7 @@ async def require_project_context_catalog(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ProjectContext:
-    """需求、版本、用例模块写操作：member+。"""
+    """需求、版本、用例模块写操作：任意项目角色。"""
     if not x_project_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-Project-Id header required")
     await _resolve_project(x_project_id, db)
@@ -130,7 +128,7 @@ async def require_project_context_cases_plans(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ProjectContext:
-    """测试用例、测试计划写操作：tester+。"""
+    """测试用例、测试计划写操作：tester。"""
     if not x_project_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-Project-Id header required")
     await _resolve_project(x_project_id, db)
@@ -140,7 +138,6 @@ async def require_project_context_cases_plans(
 
 
 async def user_can_full_edit_project(user: User, project_id: str, db: AsyncSession) -> bool:
-    """测试人员、项目管理员或系统管理员可对缺陷等内容做完整编辑。"""
     return await user_can_manage_bugs_full(user, project_id, db)
 
 

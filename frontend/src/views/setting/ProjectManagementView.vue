@@ -1,5 +1,10 @@
 <template>
-  <n-card title="项目管理">
+  <n-card
+    :bordered="!embedded"
+    :title="embedded ? undefined : '项目管理'"
+    :header-style="embedded ? 'padding: 0 0 12px' : undefined"
+    :content-style="embedded ? 'padding: 0' : undefined"
+  >
     <template #header-extra>
       <n-button v-if="canCreateProject()" type="primary" @click="showCreate = true">新建项目</n-button>
     </template>
@@ -46,6 +51,8 @@ import { usePermissions } from '@/composables/usePermissions';
 import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
 import type { Project } from '@/types';
+
+withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false });
 
 const auth = useAuthStore();
 const ctx = useContextStore();

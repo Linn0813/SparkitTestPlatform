@@ -7,7 +7,12 @@
       </n-space>
     </template>
     <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 10px">
-      下表包含编辑页<strong>全部字段</strong>。「系统固定」不可在此修改；「可配置」字段可编辑、排序并保存到模板。
+      <template v-if="scene === 'requirement'">
+        下表包含编辑页<strong>全部字段</strong>。优先级、需求类型可点击「编辑选项」配置 Tag 选项；其余系统字段不可改。「可配置」为自定义扩展字段。
+      </template>
+      <template v-else>
+        下表包含编辑页<strong>全部字段</strong>。「系统固定」不可在此修改；「可配置」字段可编辑、排序并保存到模板。
+      </template>
     </n-text>
     <n-data-table :columns="columns" :data="displayRows" size="small" :bordered="true" />
   </n-card>
@@ -20,28 +25,46 @@ import {
   buildFieldConfigRows,
   isSystemFieldRow,
   type FieldConfigRow,
+  type RequirementOptionCategory,
 } from '@/constants/systemFields';
 import { isBuiltinField, normalizeFieldSort, sortTemplateFields } from '@/constants/fieldTypes';
 import type { TemplateField } from '@/types/business';
 
-const props = defineProps<{
-  scene: 'case' | 'bug';
-  fields: TemplateField[];
-  saving?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    scene: 'case' | 'bug' | 'requirement';
+    fields: TemplateField[];
+    saving?: boolean;
+    optionCounts?: Partial<Record<RequirementOptionCategory, number>>;
+  }>(),
+  {
+    optionCounts: () => ({}),
+  }
+);
 
 const emit = defineEmits<{
   'update:fields': [fields: TemplateField[]];
   add: [];
   edit: [index: number];
   save: [];
+  'edit-options': [category: RequirementOptionCategory];
 }>();
 
 const dialog = useDialog();
 
 const displayRows = computed(() => buildFieldConfigRows(props.scene, props.fields));
 
-const columns: DataTableColumns<FieldConfigRow> = [
+function typeCellLabel(row: FieldConfigRow): string {
+  if (row.optionCategory && props.scene === 'requirement') {
+    const count = props.optionCounts[row.optionCategory];
+    if (count != null && count > 0) {
+      return `${row.typeLabel} · ${count} 项`;
+    }
+  }
+  return row.typeLabel;
+}
+
+const columns = computed<DataTableColumns<FieldConfigRow>>(() => [
   {
     title: '来源',
     key: 'source',
@@ -54,13 +77,25 @@ const columns: DataTableColumns<FieldConfigRow> = [
       ),
   },
   { title: '名称', key: 'name', ellipsis: { tooltip: true } },
-  { title: '类型', key: 'typeLabel', width: 100 },
+  { title: '类型', key: 'typeLabel', width: 120, render: (r) => typeCellLabel(r) },
   { title: '必填', key: 'required', width: 56, render: (r) => (r.required ? '是' : '否') },
   {
     title: '操作',
     key: 'actions',
     width: 140,
     render: (row) => {
+      if (isSystemFieldRow(row) && row.optionCategory && props.scene === 'requirement') {
+        return h(
+          NButton,
+          {
+            size: 'tiny',
+            quaternary: true,
+            type: 'primary',
+            onClick: () => emit('edit-options', row.optionCategory!),
+          },
+          () => '编辑选项'
+        );
+      }
       if (isSystemFieldRow(row)) {
         return h(NText, { depth: 3, style: { fontSize: '12px' } }, () => '—');
       }
@@ -93,7 +128,7 @@ const columns: DataTableColumns<FieldConfigRow> = [
       ]);
     },
   },
-];
+]);
 
 function move(fieldId: string, delta: number) {
   const sorted = sortTemplateFields(props.fields);

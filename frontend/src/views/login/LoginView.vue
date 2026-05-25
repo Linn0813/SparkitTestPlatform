@@ -10,7 +10,7 @@
         </n-form-item>
         <n-button type="primary" block :loading="loading" attr-type="submit">登录</n-button>
         <n-text depth="3" style="display: block; margin-top: 12px; font-size: 12px">
-          演示账号：admin@example.com / Admin123!（需已执行 seed）
+          
         </n-text>
       </n-form>
     </n-card>

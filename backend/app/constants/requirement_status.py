@@ -1,12 +1,32 @@
 from __future__ import annotations
 
-REQUIREMENT_STATUS_KEYS: tuple[str, ...] = ("not_tested", "testing", "accepted")
+REQUIREMENT_STATUS_KEYS: tuple[str, ...] = (
+    "draft",
+    "pending_review",
+    "designing",
+    "developing",
+    "testing",
+    "pending_release",
+    "released",
+    "rejected",
+)
 
 REQUIREMENT_STATUS_LABELS: dict[str, str] = {
-    "not_tested": "未转测",
+    "draft": "草稿",
+    "pending_review": "待评审",
+    "designing": "设计中",
+    "developing": "开发中",
     "testing": "测试中",
-    "accepted": "已验收",
+    "pending_release": "待发版",
+    "released": "已发版",
+    "rejected": "不通过",
 }
+
+# 工作台待办：开发中
+TESTER_TODO_DEVELOPING_STATUS_KEYS: tuple[str, ...] = ("developing",)
+
+# 工作台待办：测试中 + 待发版
+TESTER_TODO_TESTING_STATUS_KEYS: tuple[str, ...] = ("testing", "pending_release")
 
 
 def requirement_status_label(key: str) -> str:

@@ -169,6 +169,7 @@ import { modulePathLabel } from '@/utils/moduleTree';
 import { decodeFilterQuery, encodeFilterValues, hasFilterValues } from '@/utils/filterQueryCodec';
 import { pickAdjacentItemId } from '@/utils/listNavigation';
 import { truncateForTable } from '@/utils/text';
+import { requirementOptionLabel } from '@/utils/requirementLabel';
 
 const ctx = useContextStore();
 const { canManageCases } = usePermissions();
@@ -214,7 +215,7 @@ const caseForm = ref({
 const priorityOptions = ['P0', 'P1', 'P2', 'P3'].map((v) => ({ label: v, value: v }));
 
 const requirementOptions = computed(() =>
-  requirements.value.map((r) => ({ label: r.title, value: r.id }))
+  requirements.value.map((r) => ({ label: requirementOptionLabel(r), value: r.id }))
 );
 
 const reqById = computed(() => new Map(requirements.value.map((r) => [r.id, r])));

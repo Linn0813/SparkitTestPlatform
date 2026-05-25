@@ -135,6 +135,7 @@ import type { BugItem, BugStatusDef, Requirement, TestPlan } from '@/types/busin
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
 import { decodeFilterQuery, encodeFilterValues, hasFilterValues, resolveStatusKeysFromRouteQuery } from '@/utils/filterQueryCodec';
 import { pickAdjacentItemId } from '@/utils/listNavigation';
+import { requirementOptionLabel } from '@/utils/requirementLabel';
 
 const route = useRoute();
 const router = useRouter();
@@ -221,7 +222,7 @@ const statusOptions = computed(() =>
 );
 
 const requirementOptions = computed(() =>
-  requirements.value.map((r) => ({ label: r.title, value: r.id }))
+  requirements.value.map((r) => ({ label: requirementOptionLabel(r), value: r.id }))
 );
 
 const planOptions = computed(() => plans.value.map((p) => ({ label: p.name, value: p.id })));

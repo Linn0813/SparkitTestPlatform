@@ -14,13 +14,12 @@ export const SIDEBAR_MAIN_ITEMS: SidebarMenuItem[] = [
   { label: '测试用例', key: 'cases' },
   { label: '测试计划', key: 'plans', activeAliases: ['plan-detail'] },
   { label: '缺陷管理', key: 'bugs' },
+  { label: '项目配置', key: 'setting-project-config' },
 ];
 
 /** 用户菜单：管理与配置（按权限显示） */
 export const USER_ADMIN_MENU_ITEMS: SidebarMenuItem[] = [
   { label: '项目管理', key: 'setting-projects-manage' },
-  { label: '项目成员', key: 'setting-project-members' },
-  { label: '项目设置', key: 'setting-templates' },
   { label: '系统用户', key: 'setting-users' },
 ];
 

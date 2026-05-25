@@ -177,6 +177,7 @@ import { usePermissions } from '@/composables/usePermissions';
 import { mergeCustomFields, validateCustomFields } from '@/constants/fieldTypes';
 import type { Requirement, TestCase } from '@/types/business';
 import { modulePathLabel } from '@/utils/moduleTree';
+import { requirementOptionLabel } from '@/utils/requirementLabel';
 
 export interface PlanExecutionContext {
   planId: string;
@@ -241,7 +242,7 @@ const moreMenuOptions = [
 ];
 
 const requirementOptions = computed(() =>
-  requirements.value.map((r) => ({ label: r.title, value: r.id }))
+  requirements.value.map((r) => ({ label: requirementOptionLabel(r), value: r.id }))
 );
 
 const moduleLabel = computed(() => {

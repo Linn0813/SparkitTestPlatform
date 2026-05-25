@@ -11,7 +11,7 @@ import {
 } from '@/constants/fieldTypes';
 import type { TemplateField } from '@/types/business';
 
-export type EntityScene = 'bug' | 'functional_case';
+export type EntityScene = 'bug' | 'functional_case' | 'requirement';
 
 /** 与后端 bug_filters.FILTER_EMPTY 一致 */
 export const FILTER_EMPTY_VALUE = '__empty__';
@@ -57,6 +57,16 @@ export const RESERVED_TEMPLATE_FIELD_NAMES: Record<EntityScene, readonly string[
     '步骤',
     '预期结果',
     '关联需求',
+  ],
+  requirement: [
+    '需求标题',
+    '标题',
+    '优先级',
+    '需求类型',
+    'PRD',
+    'PRD 链接',
+    '关联版本',
+    '版本上线时间',
   ],
 };
 
@@ -129,7 +139,9 @@ export function validateTemplateFieldNames(
 }
 
 function dedupeLabelsForScene(scene: EntityScene): Set<string> {
-  return scene === 'bug' ? BUG_DEDUPE_LABELS : CASE_DEDUPE_LABELS;
+  if (scene === 'bug') return BUG_DEDUPE_LABELS;
+  if (scene === 'functional_case') return CASE_DEDUPE_LABELS;
+  return new Set<string>();
 }
 
 export function dedupeTemplateFields(scene: EntityScene, fields: TemplateField[]): TemplateField[] {

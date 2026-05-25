@@ -26,8 +26,9 @@
           </n-tab-pane>
 
           <n-tab-pane name="todo" tab="我的待办">
-            <n-grid v-if="isTesterSide" class="tester-todo-grid" :cols="2" :x-gap="16" :y-gap="16">
-              <n-gi class="tester-todo-grid__pair-cell">
+            <n-alert v-if="!hasAnyTodo" type="info">暂无待办</n-alert>
+            <n-grid v-else class="tester-todo-grid" :cols="todoGridCols" :x-gap="16" :y-gap="16">
+              <n-gi v-if="showPlanTodo" class="tester-todo-grid__pair-cell">
                 <TodoSection
                   stretch
                   title="计划"
@@ -56,7 +57,7 @@
                 </TodoSection>
               </n-gi>
 
-              <n-gi class="tester-todo-grid__pair-cell">
+              <n-gi v-if="showReqTodo" class="tester-todo-grid__pair-cell">
                 <TodoSection
                   stretch
                   title="需求"
@@ -85,7 +86,7 @@
                 </TodoSection>
               </n-gi>
 
-              <n-gi :span="2">
+              <n-gi v-if="showFixedBugTodo" :span="todoGridCols">
                 <TodoSection
                   title="已修复缺陷"
                   :count="data?.todo.fixed_bugs?.length ?? 0"
@@ -104,26 +105,27 @@
                   </div>
                 </TodoSection>
               </n-gi>
-            </n-grid>
 
-            <TodoSection
-              v-else
-              title="我跟进的缺陷"
-              :count="data?.todo.follower_todo_bugs?.length ?? 0"
-              :empty="!data?.todo.follower_todo_bugs?.length"
-              :view-all-to="bugsFollowerLink"
-            >
-              <div v-for="b in data?.todo.follower_todo_bugs" :key="b.id" class="todo-item">
-                <WorkbenchTodoRow
-                  mode="action"
-                  :label="b.title"
-                  :columns="bugFollowerTodoColumns(b)"
-                  :tag="bugStatusLabel(b.status_key)"
-                  :tag-type="bugStatusTagTypeForKey(b.status_key)"
-                  @click="openTodoBug(b.id, data?.todo.follower_todo_bugs ?? [], 'follower')"
-                />
-              </div>
-            </TodoSection>
+              <n-gi v-if="showFollowerBugTodo" :span="todoGridCols">
+                <TodoSection
+                  title="我跟进的缺陷"
+                  :count="data?.todo.follower_todo_bugs?.length ?? 0"
+                  :empty="!data?.todo.follower_todo_bugs?.length"
+                  :view-all-to="bugsFollowerLink"
+                >
+                  <div v-for="b in data?.todo.follower_todo_bugs" :key="b.id" class="todo-item">
+                    <WorkbenchTodoRow
+                      mode="action"
+                      :label="b.title"
+                      :columns="bugFollowerTodoColumns(b)"
+                      :tag="bugStatusLabel(b.status_key)"
+                      :tag-type="bugStatusTagTypeForKey(b.status_key)"
+                      @click="openTodoBug(b.id, data?.todo.follower_todo_bugs ?? [], 'follower')"
+                    />
+                  </div>
+                </TodoSection>
+              </n-gi>
+            </n-grid>
           </n-tab-pane>
 
           <n-tab-pane name="schedule" tab="缺陷排期">
@@ -202,6 +204,7 @@ import {
 } from '@/constants/requirementStatus';
 import { bugFollowerTodoColumns } from '@/utils/bugListLabels';
 import type { BugListColumn } from '@/utils/bugListLabels';
+import { requirementTodoDisplayLabel } from '@/utils/requirementLabel';
 import { formatVersionDisplay } from '@/utils/versionLabel';
 import { pickAdjacentItemId } from '@/utils/listNavigation';
 import TodoSection from './components/TodoSection.vue';
@@ -219,8 +222,6 @@ type ScheduleExpose = {
   unplannedBugs?: BugItem[];
 };
 
-const TESTER_ROLES = new Set(['tester', 'project_admin', 'system_admin']);
-
 const ctx = useContextStore();
 const auth = useAuthStore();
 
@@ -233,6 +234,37 @@ const versionFocusRef = ref<ChartExpose | null>(null);
 const bugFocusRef = ref<ChartExpose | null>(null);
 const planFocusRef = ref<ChartExpose | null>(null);
 const scheduleRef = ref<ScheduleExpose | null>(null);
+
+const projectRoles = computed(() => data.value?.project_roles ?? []);
+
+const showPlanTodo = computed(
+  () => projectRoles.value.includes('system_admin') || projectRoles.value.includes('tester')
+);
+const showReqTodo = computed(
+  () =>
+    projectRoles.value.includes('system_admin') ||
+    projectRoles.value.includes('tester') ||
+    projectRoles.value.includes('product')
+);
+const showFixedBugTodo = computed(
+  () => projectRoles.value.includes('system_admin') || projectRoles.value.includes('tester')
+);
+const showFollowerBugTodo = computed(
+  () => projectRoles.value.includes('system_admin') || projectRoles.value.includes('developer')
+);
+
+const hasAnyTodo = computed(
+  () =>
+    showPlanTodo.value ||
+    showReqTodo.value ||
+    showFixedBugTodo.value ||
+    showFollowerBugTodo.value
+);
+
+const todoGridCols = computed(() => {
+  const topCount = (showPlanTodo.value ? 1 : 0) + (showReqTodo.value ? 1 : 0);
+  return topCount > 1 ? 2 : 1;
+});
 
 const bugDrawerVisible = ref(false);
 const activeBugId = ref<string | null>(null);
@@ -330,11 +362,6 @@ const projectName = computed(() => {
   return auth.me?.projects.find((p) => p.id === pid)?.name ?? '工作台';
 });
 
-const isTesterSide = computed(() => {
-  const role = data.value?.project_role;
-  return role ? TESTER_ROLES.has(role) : false;
-});
-
 const planTodoCount = computed(
   () =>
     (data.value?.todo.draft_plans?.length ?? 0) + (data.value?.todo.active_plans_todo?.length ?? 0)
@@ -374,7 +401,7 @@ const bugsFollowerLink = computed<RouteLocationRaw | undefined>(() => {
 });
 
 function requirementTodoLabel(r: RequirementTodoBrief) {
-  return r.title;
+  return requirementTodoDisplayLabel(r);
 }
 
 function requirementTodoColumns(r: RequirementTodoBrief): BugListColumn[] {

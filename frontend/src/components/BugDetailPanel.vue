@@ -278,6 +278,7 @@ import type { BugActivity, BugAttachment, BugComment, BugItem, BugStatusDef, Req
 import { displayUserLabel } from '@/utils/displayUser';
 import { formatNumWithTitle } from '@/utils/entityNum';
 import { formatVersionWithRelease } from '@/utils/versionLabel';
+import { requirementOptionLabel } from '@/utils/requirementLabel';
 
 const props = defineProps<{
   bugId: string;
@@ -385,7 +386,7 @@ function formatActivitySummary(a: BugActivity): string {
 }
 
 const requirementOptions = computed(() =>
-  requirements.value.map((r) => ({ label: r.title, value: r.id }))
+  requirements.value.map((r) => ({ label: requirementOptionLabel(r), value: r.id }))
 );
 const planOptions = computed(() => plans.value.map((p) => ({ label: p.name, value: p.id })));
 
