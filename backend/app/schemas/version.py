@@ -10,6 +10,7 @@ class VersionBrief(ORMBase):
     id: str
     num: int
     name: str
+    released_at: Optional[date] = None
 
 
 class ProjectVersionOut(ORMBase):

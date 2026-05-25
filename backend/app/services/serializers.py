@@ -19,7 +19,7 @@ from app.services.links import get_case_requirement_ids
 
 
 def _version_brief_from_row(row: ProjectVersion) -> VersionBrief:
-    return VersionBrief(id=row.id, num=row.num, name=row.name)
+    return VersionBrief(id=row.id, num=row.num, name=row.name, released_at=row.released_at)
 
 
 async def _version_brief(db: AsyncSession, version_id: str | None) -> VersionBrief | None:

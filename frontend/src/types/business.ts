@@ -68,6 +68,8 @@ export interface VersionBrief {
   id: string;
   num: number;
   name: string;
+  /** 上线日期 YYYY-MM-DD */
+  released_at?: string | null;
 }
 
 export interface ProjectVersion {

@@ -277,6 +277,7 @@ import {
 import type { BugActivity, BugAttachment, BugComment, BugItem, BugStatusDef, Requirement, TestPlan } from '@/types/business';
 import { displayUserLabel } from '@/utils/displayUser';
 import { formatNumWithTitle } from '@/utils/entityNum';
+import { formatVersionWithRelease } from '@/utils/versionLabel';
 
 const props = defineProps<{
   bugId: string;
@@ -431,8 +432,8 @@ const followersLabel = computed(() => {
   return '—';
 });
 
-const planVersionLabel = computed(() => bug.value?.plan_version?.name ?? '—');
-const foundVersionLabel = computed(() => bug.value?.found_version?.name ?? '—');
+const planVersionLabel = computed(() => formatVersionWithRelease(bug.value?.plan_version));
+const foundVersionLabel = computed(() => formatVersionWithRelease(bug.value?.found_version));
 
 function linkTitles(ids: string[] | undefined, list: { id: string; title?: string; name?: string }[]) {
   if (!ids?.length) return '—';
