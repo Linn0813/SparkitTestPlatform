@@ -280,13 +280,13 @@ import {
 import {
   createRequirementComment,
   deleteRequirement,
-  getRequirement,
   listRequirementActivities,
   listRequirementComments,
   closeRequirement,
   reopenClosedRequirement,
   reopenRejectedRequirement,
   requirementNodeAction,
+  syncRequirementStatus,
   updateRequirement,
   type RequirementNodeAction,
 } from '@/api/requirements';
@@ -546,16 +546,17 @@ function syncEnabledDraft() {
 async function load() {
   loading.value = true;
   try {
-    const [{ data }, { data: acts }, { data: cmts }] = await Promise.all([
-      getRequirement(props.requirementId),
+    const [{ data: acts }, { data: cmts }] = await Promise.all([
       listRequirementActivities(props.requirementId),
       listRequirementComments(props.requirementId),
     ]);
-    req.value = data;
+    const { data: synced } = await syncRequirementStatus(props.requirementId);
+    req.value = synced;
     activities.value = acts;
     comments.value = cmts;
     await Promise.all([projectConfig.reload(), fieldSchema.reload()]);
-    customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, data.custom_fields);
+    customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, synced.custom_fields);
+    emit('updated', synced);
     syncEnabledDraft();
     selectedNodeKey.value = null;
   } finally {

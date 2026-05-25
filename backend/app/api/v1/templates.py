@@ -7,7 +7,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import ProjectContext, require_project_context, require_project_context_admin
+from app.core.deps import (
+    ProjectContext,
+    require_project_context,
+    require_project_context_admin,
+    require_project_context_catalog,
+)
 from app.models.bug import Bug
 from app.models.requirement import RequirementNodeProgress
 from app.models.template import (
@@ -22,6 +27,7 @@ from app.models.template import (
 from app.schemas.requirement import (
     RequirementStatusRuleOut,
     RequirementStatusRulesReplaceBody,
+    RequirementStatusSyncBatchOut,
     RequirementWorkflowNodeDefCreate,
     RequirementWorkflowNodeDefOut,
     RequirementWorkflowNodeDefUpdate,
@@ -58,6 +64,7 @@ from app.services.requirement_config import (
     validate_option_key_format,
     validate_role_key_format,
 )
+from app.services.requirement_nodes import sync_project_requirement_statuses
 from app.services.requirement_status_rules import (
     ensure_project_status_rules,
     load_project_status_rules,
@@ -626,6 +633,18 @@ async def replace_requirement_status_rules_api(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     return [RequirementStatusRuleOut.model_validate(r) for r in rules]
+
+
+@router.post("/{project_id}/requirements/sync-statuses", response_model=RequirementStatusSyncBatchOut)
+async def sync_project_requirement_statuses_api(
+    project_id: str,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    updated_count = await sync_project_requirement_statuses(db, project_id, actor_id=ctx.user.id)
+    return RequirementStatusSyncBatchOut(updated_count=updated_count)
 
 
 @router.get("/{project_id}/integrations/wecom", response_model=WecomIntegrationOut)

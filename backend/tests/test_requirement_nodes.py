@@ -15,8 +15,12 @@ from app.models.requirement import (
 from app.models.template import RequirementWorkflowNodeDef
 from app.services.requirement_nodes import (
     RequirementNodeError,
+    _can_complete_node,
     _can_start_node,
+    apply_node_action,
+    auto_start_ready_nodes,
     derive_requirement_status,
+    sync_requirement_status_from_workflow,
     update_requirement_enabled_nodes,
 )
 from app.services.requirement_status_rules import default_status_rule_likes
@@ -250,6 +254,59 @@ def test_derive_status_closed_sticky():
     assert derive_requirement_status(req, nodes, defs) == RequirementStatus.closed
 
 
+def test_derive_status_developing_when_integration_pending_not_pending_release():
+    """联调未开始、发版未开始时不应为待发版（旧规则遗留场景）。"""
+    req = _make_req(status=RequirementStatus.pending_release)
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.completed,
+            "frontend_dev": RequirementNodeState.completed,
+            "backend_dev": RequirementNodeState.completed,
+            "integration": RequirementNodeState.pending,
+            "released": RequirementNodeState.pending,
+        },
+        defs=defs,
+    )
+    assert derive_requirement_status(req, nodes, defs) == RequirementStatus.developing
+
+
+@pytest.mark.asyncio
+async def test_sync_requirement_status_writes_back():
+    req = _make_req(status=RequirementStatus.pending_release)
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.completed,
+            "frontend_dev": RequirementNodeState.completed,
+            "backend_dev": RequirementNodeState.completed,
+            "integration": RequirementNodeState.pending,
+        },
+        defs=defs,
+    )
+    db = AsyncMock()
+    with patch(
+        "app.services.requirement_nodes.load_status_rules_for_derive",
+        new=AsyncMock(return_value=default_status_rule_likes()),
+    ), patch(
+        "app.services.requirement_nodes.load_node_map",
+        new=AsyncMock(return_value=nodes),
+    ), patch(
+        "app.services.requirement_workflow.load_project_workflow_defs",
+        new=AsyncMock(return_value=defs),
+    ):
+        new_status, changed = await sync_requirement_status_from_workflow(
+            db, req, actor_id="user-1", log_activity=False
+        )
+    assert changed is True
+    assert new_status == RequirementStatus.developing
+    assert req.status == RequirementStatus.developing
+
+
 def test_gate_review_requires_phase1():
     req = _make_req()
     defs = _default_defs()
@@ -441,6 +498,107 @@ def test_case_design_and_frontend_dev_start_after_review():
     )
     _can_start_node(req, nodes, defs, "frontend_dev")
     _can_start_node(req, nodes, defs, "case_design")
+
+
+def test_auto_start_ready_nodes_after_dev_complete():
+    req = _make_req()
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.completed,
+            "frontend_dev": RequirementNodeState.completed,
+            "backend_dev": RequirementNodeState.completed,
+            "integration": RequirementNodeState.pending,
+        },
+        defs=defs,
+    )
+    started = auto_start_ready_nodes(req, nodes, defs)
+    assert "integration" in started
+    assert nodes["integration"].state == RequirementNodeState.in_progress
+
+
+def test_auto_start_does_not_start_when_gate_blocked():
+    req = _make_req()
+    defs = _default_defs()
+    nodes = _nodes(defs=defs)
+    started = auto_start_ready_nodes(req, nodes, defs)
+    assert "req_review" not in started
+    assert nodes["req_review"].state == RequirementNodeState.pending
+
+
+@pytest.mark.asyncio
+async def test_apply_complete_from_pending_auto_starts():
+    req = _make_req()
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.pending,
+        },
+        defs=defs,
+    )
+    db = AsyncMock()
+    with patch(
+        "app.services.requirement_nodes.load_status_rules_for_derive",
+        new=AsyncMock(return_value=default_status_rule_likes()),
+    ), patch("app.services.requirement_nodes.log_requirement_activity", new=AsyncMock()):
+        await apply_node_action(
+            db,
+            req,
+            nodes,
+            defs,
+            node_key="req_review",
+            action="complete",
+            actor_id="user-1",
+        )
+    assert nodes["req_review"].state == RequirementNodeState.completed
+
+
+def test_complete_in_progress_blocked_when_upstream_reopened():
+    req = _make_req()
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.pending,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.in_progress,
+        },
+        defs=defs,
+    )
+    with pytest.raises(RequirementNodeError, match="上一阶段"):
+        _can_complete_node(nodes, defs, "req_review")
+
+
+@pytest.mark.asyncio
+async def test_apply_complete_in_progress_succeeds():
+    req = _make_req()
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.in_progress,
+        },
+        defs=defs,
+    )
+    db = AsyncMock()
+    with patch(
+        "app.services.requirement_nodes.load_status_rules_for_derive",
+        new=AsyncMock(return_value=default_status_rule_likes()),
+    ), patch("app.services.requirement_nodes.log_requirement_activity", new=AsyncMock()):
+        await apply_node_action(
+            db,
+            req,
+            nodes,
+            defs,
+            node_key="req_review",
+            action="complete",
+            actor_id="user-1",
+        )
+    assert nodes["req_review"].state == RequirementNodeState.completed
 
 
 def test_lane_without_blocking_nodes_auto_passes_gate():

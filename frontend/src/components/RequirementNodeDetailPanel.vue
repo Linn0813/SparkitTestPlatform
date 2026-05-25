@@ -21,7 +21,8 @@
           <n-text class="meta-value meta-value--schedule">{{ nodeScheduleLabel }}</n-text>
         </div>
       </div>
-      <n-space v-if="actionButtons.length" :size="4" class="node-detail-actions">
+      <n-space v-if="actionButtons.length || gateHint" :size="4" class="node-detail-actions" align="center">
+        <n-text v-if="gateHint" depth="3" class="gate-hint">{{ gateHint }}</n-text>
         <n-button
           v-for="act in actionButtons"
           :key="act.action"
@@ -168,6 +169,7 @@ import type {
   RequirementNodeTask,
   RequirementType,
 } from '@/types/business';
+import { gateBlockedReason, isNodeActionable } from '@/utils/requirementNodeGate';
 import { nodeStateDotClass, nodeStateLabel } from '@/utils/requirementWorkflowLayout';
 
 const props = defineProps<{
@@ -233,6 +235,14 @@ const nodeScheduleLabel = computed(() => {
   return `${start} ~ ${end}`;
 });
 
+const workflowNodes = computed(() => props.requirement.nodes ?? []);
+
+const gateHint = computed(() => {
+  if (!props.canEdit || props.rejected || !props.node.enabled) return null;
+  if (props.node.state !== 'pending') return null;
+  return gateBlockedReason(workflowNodes.value, props.node.node_key);
+});
+
 const actionButtons = computed((): {
   action: RequirementNodeAction;
   label: string;
@@ -240,11 +250,15 @@ const actionButtons = computed((): {
 }[] => {
   if (!props.canEdit || props.rejected || !props.node.enabled) return [];
   const node = props.node;
+  const nodes = workflowNodes.value;
   const list: { action: RequirementNodeAction; label: string; type?: 'primary' | 'error' | 'default' }[] = [];
+
   if (node.state === 'pending' || node.state === 'in_progress') {
-    list.push({ action: 'complete', label: '完成', type: 'primary' });
-    if (node.state === 'in_progress' && node.node_key === 'req_review') {
-      list.push({ action: 'reject', label: '不通过', type: 'error' });
+    if (isNodeActionable(nodes, node)) {
+      list.push({ action: 'complete', label: '完成', type: 'primary' });
+      if (node.node_key === 'req_review') {
+        list.push({ action: 'reject', label: '不通过', type: 'error' });
+      }
     }
   } else if (node.state === 'completed' || node.state === 'skipped') {
     list.push({ action: 'reopen', label: '重开' });
@@ -435,6 +449,11 @@ async function onDeleteTask(task: RequirementNodeTask) {
 .node-detail-actions {
   flex-shrink: 0;
   margin-left: auto;
+}
+
+.gate-hint {
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .node-meta-item {

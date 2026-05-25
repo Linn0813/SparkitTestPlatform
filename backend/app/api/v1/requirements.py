@@ -34,6 +34,7 @@ from app.services.requirement_nodes import (
     load_node_map,
     reopen_from_closed,
     reopen_from_rejected,
+    sync_requirement_status_from_workflow,
     update_requirement_enabled_nodes,
 )
 from app.services.requirement_serializers import (
@@ -239,6 +240,9 @@ async def get_requirement(
 ):
     row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
     await fill_empty_task_assignees_from_requirement(db, row)
+    from app.services.requirement_nodes import ensure_requirement_nodes_auto_started
+
+    await ensure_requirement_nodes_auto_started(db, row, actor_id=ctx.user.id)
     return await requirement_out(row, db)
 
 
@@ -490,6 +494,18 @@ async def requirement_reopen_closed(
         await reopen_from_closed(db, row, nodes, defs, actor_id=ctx.user.id)
     except RequirementNodeError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    return await requirement_out(row, db)
+
+
+@router.post("/{requirement_id}/sync-status", response_model=RequirementOut)
+async def requirement_sync_status(
+    requirement_id: str,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    await sync_requirement_status_from_workflow(db, row, actor_id=ctx.user.id)
     await db.refresh(row)
     return await requirement_out(row, db)
 

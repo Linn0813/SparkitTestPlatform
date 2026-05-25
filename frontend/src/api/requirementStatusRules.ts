@@ -5,6 +5,10 @@ export function listRequirementStatusRules(projectId: string) {
   return http.get<RequirementStatusRule[]>(`/projects/${projectId}/requirement-status-rules`);
 }
 
+export function syncProjectRequirementStatuses(projectId: string) {
+  return http.post<{ updated_count: number }>(`/projects/${projectId}/requirements/sync-statuses`);
+}
+
 export function saveRequirementStatusRules(
   projectId: string,
   rules: {

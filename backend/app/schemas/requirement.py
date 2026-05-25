@@ -157,6 +157,10 @@ class RequirementStatusRulesReplaceBody(BaseModel):
     rules: list[RequirementStatusRuleItem]
 
 
+class RequirementStatusSyncBatchOut(BaseModel):
+    updated_count: int
+
+
 class RequirementWorkflowOut(BaseModel):
     defs: list[RequirementWorkflowNodeDefOut]
     nodes: list[RequirementNodeProgressOut]

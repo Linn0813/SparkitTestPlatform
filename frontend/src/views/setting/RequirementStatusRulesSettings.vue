@@ -33,7 +33,11 @@ import {
   type DataTableColumns,
   type SelectOption,
 } from 'naive-ui';
-import { listRequirementStatusRules, saveRequirementStatusRules } from '@/api/requirementStatusRules';
+import {
+  listRequirementStatusRules,
+  saveRequirementStatusRules,
+  syncProjectRequirementStatuses,
+} from '@/api/requirementStatusRules';
 import { REQUIREMENT_STATUS_OPTIONS } from '@/constants/requirementStatus';
 import type { RequirementStatus, RequirementStatusRule, RequirementWorkflowNodeDef } from '@/types/business';
 
@@ -136,7 +140,12 @@ async function onSave() {
       }))
     );
     draft.value = toDraft(data);
-    message.success('状态映射已保存');
+    const { data: syncResult } = await syncProjectRequirementStatuses(props.projectId);
+    message.success(
+      syncResult.updated_count > 0
+        ? `状态映射已保存，已按最新规则更新 ${syncResult.updated_count} 条需求状态`
+        : '状态映射已保存'
+    );
   } catch (e: unknown) {
     const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
     message.error(typeof detail === 'string' ? detail : '保存失败');

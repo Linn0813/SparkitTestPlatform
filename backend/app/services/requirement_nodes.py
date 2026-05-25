@@ -201,6 +201,22 @@ def derive_requirement_status(
     return RequirementStatus.draft
 
 
+def _assert_previous_lane_gate(
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+    node_key: str,
+) -> None:
+    lanes = build_lanes(defs)
+    lane_idx = _find_lane_list_index(lanes, defs, node_key)
+    if lane_idx is None:
+        raise RequirementNodeError("未知节点")
+    if lane_idx == 0:
+        return
+    for prev in lanes[:lane_idx]:
+        if not _lane_gate_done(prev, nodes):
+            raise RequirementNodeError("请先完成上一阶段节点")
+
+
 def _can_start_node(
     req: Requirement,
     nodes: NodeMap,
@@ -215,25 +231,54 @@ def _can_start_node(
     if state != RequirementNodeState.pending:
         raise RequirementNodeError("节点当前不可开始")
 
-    lanes = build_lanes(defs)
-    lane_idx = _find_lane_list_index(lanes, defs, node_key)
-    if lane_idx is None:
-        raise RequirementNodeError("未知节点")
-
-    if lane_idx == 0:
-        return
-
-    for prev in lanes[:lane_idx]:
-        if not _lane_gate_done(prev, nodes):
-            raise RequirementNodeError("请先完成上一阶段节点")
+    _assert_previous_lane_gate(nodes, defs, node_key)
 
 
-def _can_complete_node(nodes: NodeMap, node_key: str) -> None:
+def auto_start_ready_nodes(
+    req: Requirement,
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+    *,
+    actor_id: str | None = None,
+) -> list[str]:
+    """前置阶段 gate 已满足时，将 pending 节点自动置为进行中。"""
+    if req.status in (RequirementStatus.rejected, RequirementStatus.closed):
+        return []
+
+    now = _utcnow()
+    started: list[str] = []
+    for d in defs:
+        key = d.node_key
+        node = nodes.get(key)
+        if not node or not node.enabled:
+            continue
+        if _node_state(node) != RequirementNodeState.pending:
+            continue
+        try:
+            _assert_previous_lane_gate(nodes, defs, key)
+        except RequirementNodeError:
+            continue
+        node.state = RequirementNodeState.in_progress
+        if not node.started_at:
+            node.started_at = now
+        if actor_id:
+            node.operator_id = actor_id
+        started.append(key)
+    return started
+
+
+def _can_complete_node(
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+    node_key: str,
+) -> None:
     node = nodes.get(node_key)
     if not node or not node.enabled:
         raise RequirementNodeError("节点未启用或不存在")
-    if _node_state(node) != RequirementNodeState.in_progress:
+    state = _node_state(node)
+    if state not in (RequirementNodeState.pending, RequirementNodeState.in_progress):
         raise RequirementNodeError("节点当前不可完成")
+    _assert_previous_lane_gate(nodes, defs, node_key)
 
 
 def _can_skip_node(
@@ -276,6 +321,8 @@ async def apply_node_action(
     now = _utcnow()
     old_status = req.status
 
+    auto_start_ready_nodes(req, nodes, defs, actor_id=actor_id)
+
     if action == "start":
         _can_start_node(req, nodes, defs, node_key)
         node.state = RequirementNodeState.in_progress
@@ -283,13 +330,7 @@ async def apply_node_action(
         node.operator_id = actor_id
         summary = f"开始节点：{requirement_node_label(node_key)}"
     elif action == "complete":
-        state = _node_state(node)
-        if state == RequirementNodeState.pending:
-            _can_start_node(req, nodes, defs, node_key)
-            node.state = RequirementNodeState.in_progress
-            node.started_at = now
-        elif state != RequirementNodeState.in_progress:
-            raise RequirementNodeError("节点当前不可完成")
+        _can_complete_node(nodes, defs, node_key)
         node.state = RequirementNodeState.completed
         node.completed_at = now
         node.operator_id = actor_id
@@ -504,6 +545,82 @@ async def update_requirement_enabled_nodes(
         detail={"enabled": enabled_map},
     )
     return new_status
+
+
+async def ensure_requirement_nodes_auto_started(
+    db: AsyncSession,
+    req: Requirement,
+    *,
+    actor_id: str | None = None,
+) -> list[str]:
+    from app.services.requirement_workflow import load_project_workflow_defs
+
+    defs = await load_project_workflow_defs(db, req.project_id)
+    nodes = await load_node_map(db, req.id)
+    started = auto_start_ready_nodes(req, nodes, defs, actor_id=actor_id)
+    if not started:
+        return []
+    await db.flush()
+    rules = await load_status_rules_for_derive(db, req.project_id)
+    req.status = derive_requirement_status(req, nodes, defs, rules=rules)
+    await db.flush()
+    return started
+
+
+async def sync_requirement_status_from_workflow(
+    db: AsyncSession,
+    req: Requirement,
+    *,
+    actor_id: str | None = None,
+    log_activity: bool = True,
+) -> tuple[RequirementStatus, bool]:
+    from app.services.requirement_workflow import load_project_workflow_defs
+
+    nodes = await load_node_map(db, req.id)
+    defs = await load_project_workflow_defs(db, req.project_id)
+    auto_start_ready_nodes(req, nodes, defs, actor_id=actor_id)
+    await db.flush()
+    rules = await load_status_rules_for_derive(db, req.project_id)
+    old_status = req.status
+    new_status = derive_requirement_status(req, nodes, defs, rules=rules)
+    if new_status == old_status:
+        return new_status, False
+
+    req.status = new_status
+    await db.flush()
+
+    if log_activity and actor_id:
+        await log_requirement_activity(
+            db,
+            requirement_id=req.id,
+            actor_id=actor_id,
+            action_type="status_sync",
+            summary=(
+                f"按最新规则刷新状态：{requirement_status_label(old_status.value)}"
+                f" → {requirement_status_label(new_status.value)}"
+            ),
+            detail={"from_status": old_status.value, "to_status": new_status.value},
+        )
+    return new_status, True
+
+
+async def sync_project_requirement_statuses(
+    db: AsyncSession,
+    project_id: str,
+    *,
+    actor_id: str | None = None,
+) -> int:
+    from sqlalchemy import select
+
+    result = await db.execute(select(Requirement).where(Requirement.project_id == project_id))
+    updated = 0
+    for req in result.scalars().all():
+        _, changed = await sync_requirement_status_from_workflow(
+            db, req, actor_id=actor_id, log_activity=bool(actor_id)
+        )
+        if changed:
+            updated += 1
+    return updated
 
 
 async def load_node_map(db: AsyncSession, requirement_id: str) -> NodeMap:

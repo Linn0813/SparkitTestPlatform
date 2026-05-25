@@ -86,6 +86,10 @@ export function reopenClosedRequirement(id: string) {
   return http.post<Requirement>(`/requirements/${id}/reopen-closed`);
 }
 
+export function syncRequirementStatus(id: string) {
+  return http.post<Requirement>(`/requirements/${id}/sync-status`);
+}
+
 export function listRequirementActivities(id: string) {
   return http.get<RequirementActivity[]>(`/requirements/${id}/activities`);
 }
