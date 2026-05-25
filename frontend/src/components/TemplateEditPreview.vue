@@ -110,6 +110,9 @@
             <n-form-item label="关联版本">
               <n-select disabled placeholder="可选" style="width: 100%" />
             </n-form-item>
+            <n-form-item label="版本上线时间">
+              <n-input disabled placeholder="随关联版本自动带出" />
+            </n-form-item>
           </template>
         </div>
 

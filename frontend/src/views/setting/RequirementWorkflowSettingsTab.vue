@@ -2,18 +2,27 @@
   <div v-if="!projectId" class="wf-settings-empty">
     <n-text depth="3">请选择项目</n-text>
   </div>
-  <div v-else class="wf-settings-layout">
-    <div class="wf-settings-config">
-      <n-space justify="space-between" align="center" style="margin-bottom: 8px">
-        <n-text strong>工作流节点</n-text>
-        <n-button size="small" type="primary" @click="openCreate">添加节点</n-button>
-      </n-space>
-      <n-data-table size="small" :columns="columns" :data="defs" :loading="loading" />
-    </div>
-    <div class="wf-settings-preview">
-      <n-text depth="3" class="preview-label">工作流预览</n-text>
-      <RequirementWorkflowCanvas mode="preview" :nodes="previewNodes" />
-    </div>
+  <div v-else class="wf-settings-root">
+    <n-tabs v-model:value="sectionTab" type="line" class="wf-section-tabs">
+      <n-tab-pane name="nodes" tab="工作流节点">
+        <div class="wf-settings-layout">
+          <div class="wf-settings-config">
+            <n-space justify="space-between" align="center" style="margin-bottom: 8px">
+              <n-text strong>节点列表</n-text>
+              <n-button size="small" type="primary" @click="openCreate">添加节点</n-button>
+            </n-space>
+            <n-data-table size="small" :columns="columns" :data="defs" :loading="loading" />
+          </div>
+          <div class="wf-settings-preview">
+            <n-text depth="3" class="preview-label">工作流预览</n-text>
+            <RequirementWorkflowCanvas mode="preview" :nodes="previewNodes" />
+          </div>
+        </div>
+      </n-tab-pane>
+      <n-tab-pane name="status-rules" tab="状态与节点映射">
+        <RequirementStatusRulesSettings :project-id="projectId" :workflow-nodes="defs" />
+      </n-tab-pane>
+    </n-tabs>
 
     <n-drawer v-model:show="showModal" :width="480" placement="right">
       <n-drawer-content :title="editing ? '编辑节点' : '添加节点'" closable>
@@ -80,6 +89,7 @@ import {
   updateRequirementWorkflowNode,
 } from '@/api/requirementWorkflow';
 import RequirementWorkflowCanvas from '@/components/RequirementWorkflowCanvas.vue';
+import RequirementStatusRulesSettings from '@/views/setting/RequirementStatusRulesSettings.vue';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
 import type { RequirementWorkflowNodeDef } from '@/types/business';
 import { expandWorkflowCanvasNodes, type WorkflowNodeSource } from '@/utils/requirementWorkflowLayout';
@@ -92,6 +102,7 @@ const projectConfig = useRequirementProjectConfig(() => props.projectId);
 const roleOptions = computed(() =>
   projectConfig.roles.value.map((r) => ({ label: r.label, value: r.role_key }))
 );
+const sectionTab = ref<'nodes' | 'status-rules'>('nodes');
 const loading = ref(false);
 const saving = ref(false);
 const defs = ref<RequirementWorkflowNodeDef[]>([]);
@@ -275,6 +286,12 @@ watch(() => props.projectId, load);
 </script>
 
 <style scoped>
+.wf-settings-root {
+  min-width: 0;
+}
+.wf-section-tabs :deep(.n-tab-pane) {
+  padding-top: 12px;
+}
 .wf-settings-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

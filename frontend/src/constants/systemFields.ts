@@ -3,7 +3,10 @@ import type { TemplateField } from '@/types/business';
 
 export type FieldConfigSource = 'system' | 'template';
 
-export type RequirementOptionCategory = 'priority' | 'req_type';
+export type SystemOptionCategory = 'priority' | 'req_type' | 'bug_status';
+
+/** @deprecated 使用 SystemOptionCategory */
+export type RequirementOptionCategory = Exclude<SystemOptionCategory, 'bug_status'>;
 
 export interface FieldConfigRow {
   id: string;
@@ -13,7 +16,7 @@ export interface FieldConfigRow {
   required: boolean;
   source: FieldConfigSource;
   sort: number;
-  optionCategory?: RequirementOptionCategory;
+  optionCategory?: SystemOptionCategory;
 }
 
 const SYSTEM_CASE_FIELDS: FieldConfigRow[] = [
@@ -28,7 +31,7 @@ const SYSTEM_CASE_FIELDS: FieldConfigRow[] = [
 
 const SYSTEM_BUG_FIELDS: FieldConfigRow[] = [
   { id: '__title', name: '缺陷标题', type: 'text', typeLabel: '文本', required: true, source: 'system', sort: 0 },
-  { id: '__status', name: '状态', type: 'status', typeLabel: '单选', required: true, source: 'system', sort: 1 },
+  { id: '__status', name: '状态', type: 'status', typeLabel: '单选', required: true, source: 'system', sort: 1, optionCategory: 'bug_status' },
   { id: '__reporter', name: '提出人', type: 'member', typeLabel: '人员', required: true, source: 'system', sort: 2 },
   { id: '__followers', name: '跟进人', type: 'member_multi', typeLabel: '人员', required: false, source: 'system', sort: 3 },
   { id: '__description', name: '描述', type: 'text', typeLabel: '文本', required: false, source: 'system', sort: 4 },
@@ -45,6 +48,7 @@ const SYSTEM_REQUIREMENT_FIELDS: FieldConfigRow[] = [
   { id: '__req_type', name: '需求类型', type: 'select', typeLabel: '单选', required: false, source: 'system', sort: 2, optionCategory: 'req_type' },
   { id: '__external_url', name: 'PRD 链接', type: 'text', typeLabel: '文本', required: false, source: 'system', sort: 3 },
   { id: '__version', name: '关联版本', type: 'version_link', typeLabel: '版本', required: false, source: 'system', sort: 4 },
+  { id: '__version_released_at', name: '版本上线时间', type: 'date', typeLabel: '日期', required: false, source: 'system', sort: 5 },
 ];
 
 export function buildFieldConfigRows(

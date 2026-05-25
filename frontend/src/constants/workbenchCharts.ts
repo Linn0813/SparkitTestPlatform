@@ -49,6 +49,7 @@ export const REQUIREMENT_STATUS_COLORS: Record<string, string> = {
   pending_release: '#FF9964',
   released: '#00C261',
   rejected: '#ED0303',
+  closed: '#AEAEB2',
 };
 
 export const PLAN_STATUS_COLORS: Record<string, string> = {

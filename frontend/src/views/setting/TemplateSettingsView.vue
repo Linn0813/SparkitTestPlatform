@@ -4,28 +4,8 @@
     :title="embedded ? undefined : '项目设置'"
     :content-style="embedded ? 'padding: 0' : undefined"
   >
-    <n-form inline label-placement="left" style="margin-bottom: 12px">
-      <n-form-item label="项目">
-        <n-select
-          v-model:value="selectedProjectId"
-          :options="projectOptions"
-          placeholder="选择项目"
-          style="width: 240px"
-          @update:value="onProjectChange"
-        />
-      </n-form-item>
-    </n-form>
-    <n-alert v-if="!selectedProjectId" type="info">请选择项目</n-alert>
-    <template v-else>
-      <n-alert
-        v-if="selectedProjectId && ctx.projectId && selectedProjectId !== ctx.projectId"
-        type="warning"
-        style="margin-bottom: 12px"
-      >
-        顶栏当前项目与下方选择不一致。切换下方项目或保存模板后，顶栏会同步为所选项目；用例/缺陷编辑以顶栏项目为准。
-      </n-alert>
-    </template>
-    <n-tabs v-if="selectedProjectId" v-model:value="tab" type="line">
+    <n-alert v-if="!ctx.projectId" type="info" style="margin-bottom: 12px">请先在顶栏选择项目</n-alert>
+    <n-tabs v-else v-model:value="tab" type="line">
       <n-tab-pane name="case" tab="用例字段">
         <div class="template-editor-layout">
           <TemplateFieldPanel
@@ -42,41 +22,28 @@
             class="template-editor-preview"
             scene="case"
             :fields="caseFields"
-            :project-id="selectedProjectId"
+            :project-id="ctx.projectId"
           />
         </div>
       </n-tab-pane>
       <n-tab-pane name="bug" tab="缺陷字段">
-        <div class="template-editor-layout">
-          <TemplateFieldPanel
-            class="template-editor-config"
-            scene="bug"
-            :fields="bugFields"
-            :saving="saving"
-            @update:fields="bugFields = $event"
-            @add="openFieldEdit('bug', null)"
-            @edit="(i) => openFieldEdit('bug', i)"
-            @save="saveTemplate('bug', bugFields)"
-          />
-          <TemplateEditPreview
-            class="template-editor-preview"
-            scene="bug"
-            :fields="bugFields"
-            :project-id="selectedProjectId"
-            :bug-statuses="statuses"
-          />
-        </div>
-      </n-tab-pane>
-      <n-tab-pane name="status" tab="缺陷状态">
-        <n-data-table :columns="statusColumns" :data="statuses" size="small" />
-        <n-button size="small" style="margin-top: 8px" @click="openStatusModal()">添加状态</n-button>
+        <BugFieldSettingsTab
+          :project-id="ctx.projectId"
+          :bug-fields="bugFields"
+          :statuses="statuses"
+          :saving="saving"
+          @update:bug-fields="bugFields = $event"
+          @add-field="openFieldEdit('bug', null)"
+          @edit-field="(i) => openFieldEdit('bug', i)"
+          @refresh="load"
+        />
       </n-tab-pane>
       <n-tab-pane name="req-roles" tab="需求角色">
-        <RequirementRoleSettingsTab :project-id="selectedProjectId" />
+        <RequirementRoleSettingsTab :project-id="ctx.projectId" />
       </n-tab-pane>
       <n-tab-pane name="req-fields" tab="需求字段">
         <RequirementFieldSettingsTab
-          :project-id="selectedProjectId"
+          :project-id="ctx.projectId"
           :req-fields="reqFields"
           :saving="saving"
           @update:req-fields="reqFields = $event"
@@ -85,7 +52,7 @@
         />
       </n-tab-pane>
       <n-tab-pane name="req-workflow" tab="需求工作流">
-        <RequirementWorkflowSettingsTab :project-id="selectedProjectId" />
+        <RequirementWorkflowSettingsTab :project-id="ctx.projectId" />
       </n-tab-pane>
       <n-tab-pane name="wecom" tab="企微通知">
         <n-form label-placement="top" style="max-width: 960px">
@@ -148,7 +115,7 @@
             <TemplateEditPreview
               :scene="fieldEditKind"
               :fields="draftPreviewFields"
-              :project-id="selectedProjectId"
+              :project-id="ctx.projectId"
               :bug-statuses="statuses"
             />
           </n-grid-item>
@@ -158,28 +125,6 @@
         </template>
       </n-drawer-content>
     </n-drawer>
-
-    <n-modal
-      v-model:show="showStatusModal"
-      preset="dialog"
-      :title="editingStatus ? '编辑状态' : '添加状态'"
-      positive-text="保存"
-      @positive-click="onSaveStatus"
-    >
-      <n-form label-width="100">
-        <n-form-item label="状态标识">
-          <n-input
-            v-model:value="statusForm.key"
-            :disabled="!!editingStatus"
-            placeholder="英文标识，如 in_progress"
-          />
-        </n-form-item>
-        <n-form-item label="名称">
-          <n-input v-model:value="statusForm.label" placeholder="请输入状态名称" />
-        </n-form-item>
-        <n-form-item label="终态"><n-switch v-model:value="statusForm.is_terminal" /></n-form-item>
-      </n-form>
-    </n-modal>
 
     <n-modal
       v-model:show="showRuleModal"
@@ -233,7 +178,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue';
+import { computed, h, onMounted, ref, watch } from 'vue';
 import {
   NAlert,
   NButton,
@@ -258,15 +203,11 @@ import {
   useMessage,
   type DataTableColumns,
 } from 'naive-ui';
-import { switchContext } from '@/api/auth';
 import {
-  createBugStatus,
-  deleteBugStatus,
   getTemplate,
   getWecom,
   listBugStatuses,
   testWecom,
-  updateBugStatus,
   updateTemplate,
   updateWecom,
 } from '@/api/templates';
@@ -279,6 +220,7 @@ import {
 } from '@/api/wecomRules';
 import TemplateEditPreview from '@/components/TemplateEditPreview.vue';
 import TemplateFieldPanel from '@/components/TemplateFieldPanel.vue';
+import BugFieldSettingsTab from '@/views/setting/BugFieldSettingsTab.vue';
 import RequirementFieldSettingsTab from '@/views/setting/RequirementFieldSettingsTab.vue';
 import RequirementRoleSettingsTab from '@/views/setting/RequirementRoleSettingsTab.vue';
 import RequirementWorkflowSettingsTab from '@/views/setting/RequirementWorkflowSettingsTab.vue';
@@ -289,11 +231,9 @@ import {
   normalizeFieldSort,
   type FieldTypeValue,
 } from '@/constants/fieldTypes';
-import { useSettingScope } from '@/composables/useSettingScope';
 import { invalidateProjectFieldSchemaCache } from '@/composables/useProjectFieldSchema';
 import { validateTemplateFieldNames } from '@/schemas/entityFieldSchema';
 import { apiErrorMessage } from '@/utils/apiError';
-import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
 import type { BugStatusDef, TemplateField, WecomNotifyRule } from '@/types/business';
 
@@ -305,13 +245,9 @@ const DEFAULT_CREATE_TEMPLATE =
 const DEFAULT_TRANSITION_TEMPLATE =
   '【缺陷 {num}】{title}\n项目：{project}\n提出人：{reporter}\n跟进人：{followers}\n状态：{from_status} → {to_status}\n{link}';
 
-const auth = useAuthStore();
 const ctx = useContextStore();
 const message = useMessage();
 const dialog = useDialog();
-
-const selectedProjectId = ref<string | null>(null);
-const { restoreProject } = useSettingScope(selectedProjectId);
 
 const tab = ref('case');
 const saving = ref(false);
@@ -356,18 +292,6 @@ const fieldForm = ref<TemplateField>({
 });
 const optionsText = ref('');
 const selectOptionsPlaceholder = '每行一个选项，例如：致命、严重、一般';
-
-const showStatusModal = ref(false);
-const editingStatus = ref<BugStatusDef | null>(null);
-const statusForm = ref({
-  key: '',
-  label: '',
-  is_terminal: false,
-});
-
-const projectOptions = computed(() =>
-  (auth.me?.projects ?? []).map((p) => ({ label: p.name, value: p.id }))
-);
 
 const statusKeyOptions = computed(() =>
   statuses.value.map((s) => ({ label: s.label, value: s.key }))
@@ -436,33 +360,6 @@ const draftPreviewFields = computed<TemplateField[]>(() => {
   }
   return normalizeFieldSort(base);
 });
-
-const statusColumns: DataTableColumns<BugStatusDef> = [
-  { title: '标识', key: 'key', width: 120 },
-  { title: '名称', key: 'label' },
-  {
-    title: '终态',
-    key: 'is_terminal',
-    width: 70,
-    render: (r) => (r.is_terminal ? '是' : '否'),
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 200,
-    render: (row, index) =>
-      h(NSpace, { size: 4 }, () => [
-        h(NButton, { size: 'tiny', quaternary: true, disabled: index === 0, onClick: () => moveStatus(index, -1) }, () => '上移'),
-        h(
-          NButton,
-          { size: 'tiny', quaternary: true, disabled: index === statuses.value.length - 1, onClick: () => moveStatus(index, 1) },
-          () => '下移'
-        ),
-        h(NButton, { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openStatusModal(row) }, () => '编辑'),
-        h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeStatus(row) }, () => '删除'),
-      ]),
-  },
-];
 
 const wecomRuleColumns: DataTableColumns<WecomNotifyRule> = [
   {
@@ -574,22 +471,6 @@ function confirmFieldEdit() {
   showFieldDrawer.value = false;
 }
 
-function openStatusModal(row?: BugStatusDef) {
-  editingStatus.value = row ?? null;
-  statusForm.value = row
-    ? {
-        key: row.key,
-        label: row.label,
-        is_terminal: row.is_terminal,
-      }
-    : {
-        key: '',
-        label: '',
-        is_terminal: false,
-      };
-  showStatusModal.value = true;
-}
-
 function applyWecomRules(rules: WecomNotifyRule[]) {
   wecomRules.value = rules;
 }
@@ -641,7 +522,7 @@ function removeRule(row: WecomNotifyRule) {
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      const projectId = await syncContext();
+      const projectId = ctx.projectId;
       if (!projectId) return;
       try {
         await deleteWecomNotifyRule(projectId, row.id);
@@ -655,7 +536,7 @@ function removeRule(row: WecomNotifyRule) {
 }
 
 async function onSaveRule() {
-  const projectId = await syncContext();
+  const projectId = ctx.projectId;
   if (!projectId) return false;
   const f = ruleForm.value;
   if (!f.message_template.trim()) {
@@ -714,81 +595,8 @@ async function loadWecomRules(projectId: string) {
   applyWecomRules(data);
 }
 
-async function moveStatus(index: number, delta: number) {
-  const projectId = await syncContext();
-  if (!projectId) return;
-  const j = index + delta;
-  if (j < 0 || j >= statuses.value.length) return;
-  const list = [...statuses.value];
-  [list[index], list[j]] = [list[j], list[index]];
-  await Promise.all(list.map((s, i) => updateBugStatus(projectId, s.id, { sort: i })));
-  await load();
-}
-
-function removeStatus(row: BugStatusDef) {
-  dialog.warning({
-    title: '确认删除',
-    content: `删除状态「${row.label}」？已有缺陷若使用该状态需手动调整。`,
-    positiveText: '删除',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      const projectId = await syncContext();
-      if (!projectId) return;
-      try {
-        await deleteBugStatus(projectId, row.id);
-        message.success('已删除');
-        await load();
-      } catch {
-        message.error('删除失败');
-      }
-    },
-  });
-}
-
-async function onSaveStatus() {
-  const projectId = await syncContext();
-  if (!projectId) return false;
-  if (!statusForm.value.key.trim() || !statusForm.value.label.trim()) {
-    message.warning('请填写状态标识和名称');
-    return false;
-  }
-  try {
-    if (editingStatus.value) {
-      await updateBugStatus(projectId, editingStatus.value.id, {
-        label: statusForm.value.label,
-        is_terminal: statusForm.value.is_terminal,
-      });
-    } else {
-      await createBugStatus(projectId, {
-        ...statusForm.value,
-        sort: statuses.value.length,
-      });
-    }
-    showStatusModal.value = false;
-    message.success('已保存');
-    await load();
-    return true;
-  } catch {
-    message.error('保存失败');
-    return false;
-  }
-}
-
-async function syncContext(): Promise<string | null> {
-  if (!selectedProjectId.value) return null;
-  const { data } = await switchContext(selectedProjectId.value);
-  ctx.applyFromMe(data);
-  auth.user = data.user;
-  auth.me = data;
-  return selectedProjectId.value;
-}
-
-async function onProjectChange() {
-  await load();
-}
-
 async function load() {
-  if (!selectedProjectId.value) {
+  if (!ctx.projectId) {
     caseFields.value = [];
     bugFields.value = [];
     reqFields.value = [];
@@ -798,7 +606,7 @@ async function load() {
     return;
   }
   try {
-    const projectId = await syncContext();
+    const projectId = ctx.projectId;
     if (!projectId) return;
     const [c, b, s, w, rules] = await Promise.all([
       getTemplate(projectId, 'functional_case'),
@@ -822,7 +630,7 @@ async function load() {
 }
 
 async function saveTemplate(scene: 'functional_case' | 'bug' | 'requirement', fields: TemplateField[]) {
-  const projectId = await syncContext();
+  const projectId = ctx.projectId;
   if (!projectId) return;
   const nameErr = validateTemplateFieldNames(scene, fields);
   if (nameErr) {
@@ -843,7 +651,7 @@ async function saveTemplate(scene: 'functional_case' | 'bug' | 'requirement', fi
 }
 
 async function saveWecomWebhook(): Promise<boolean> {
-  const projectId = await syncContext();
+  const projectId = ctx.projectId;
   if (!projectId) return false;
   try {
     const { data } = await updateWecom(projectId, wecom.value);
@@ -861,7 +669,7 @@ async function saveWecomWebhook(): Promise<boolean> {
 }
 
 async function onTestWecom() {
-  const projectId = await syncContext();
+  const projectId = ctx.projectId;
   if (!projectId) return;
   const url = wecom.value.wecom_webhook_url?.trim();
   if (!url) {
@@ -878,13 +686,13 @@ async function onTestWecom() {
   }
 }
 
-async function init() {
-  const validProjectIds = projectOptions.value.map((o) => o.value as string);
-  restoreProject(validProjectIds, ctx.projectId ?? validProjectIds[0] ?? null);
-  await load();
-}
+watch(() => ctx.projectId, () => {
+  void load();
+});
 
-onMounted(init);
+onMounted(() => {
+  void load();
+});
 </script>
 
 <style scoped>

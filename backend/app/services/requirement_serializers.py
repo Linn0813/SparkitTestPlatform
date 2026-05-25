@@ -7,12 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.requirement_nodes import REQUIREMENT_NODE_ROLE_KEYS, requirement_node_label
 from app.models.project import ProjectMember
-from app.models.requirement import Requirement, RequirementNodeProgress, RequirementNodeState
+from app.models.requirement import Requirement, RequirementNodeProgress, RequirementNodeState, RequirementNodeTask
 from app.models.user import User
-from app.schemas.requirement import RequirementNodeProgressOut, RequirementOut, RequirementWorkflowOut
+from app.schemas.requirement import RequirementNodeProgressOut, RequirementNodeTaskOut, RequirementOut, RequirementWorkflowOut
 from app.schemas.user import UserOut
 from app.schemas.version import VersionBrief
 from app.services.requirement_nodes import load_node_map
+from app.services.requirement_node_tasks import aggregate_node_planned_schedule, load_tasks_for_requirement
 from app.services.requirement_workflow import def_lane_indexes, ensure_project_workflow_defs, load_project_workflow_defs
 
 ROLE_KEY_TO_ID_FIELD = {
@@ -57,10 +58,44 @@ async def validate_requirement_role_user_ids(
         raise ValueError(f"用户不属于当前项目: {', '.join(sorted(missing))}")
 
 
+async def build_node_task_outs(
+    tasks: list[RequirementNodeTask], db: AsyncSession
+) -> list[RequirementNodeTaskOut]:
+    user_ids = {t.assignee_id for t in tasks if t.assignee_id}
+    users_map: dict[str, UserOut] = {}
+    if user_ids:
+        result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        users_map = {u.id: UserOut.model_validate(u) for u in result.scalars().all()}
+    return [
+        RequirementNodeTaskOut(
+            id=t.id,
+            requirement_id=t.requirement_id,
+            node_key=t.node_key,
+            title=t.title,
+            role_key=t.role_key,
+            assignee_id=t.assignee_id,
+            assignee=users_map.get(t.assignee_id) if t.assignee_id else None,
+            estimate_points=t.estimate_points,
+            scheduled_start=t.scheduled_start,
+            scheduled_end=t.scheduled_end,
+            sort=t.sort,
+            created_at=t.created_at,
+            updated_at=t.updated_at,
+        )
+        for t in tasks
+    ]
+
+
 async def build_requirement_workflow_out(
-    row: Requirement, db: AsyncSession
+    row: Requirement, db: AsyncSession, tasks: list[RequirementNodeTask] | None = None
 ) -> RequirementWorkflowOut:
     from app.schemas.requirement import RequirementWorkflowNodeDefOut
+
+    if tasks is None:
+        tasks = await load_tasks_for_requirement(db, row.id)
+    tasks_by_node: dict[str, list[RequirementNodeTask]] = {}
+    for t in tasks:
+        tasks_by_node.setdefault(t.node_key, []).append(t)
 
     defs = await ensure_project_workflow_defs(db, row.project_id)
     node_map = await load_node_map(db, row.id)
@@ -70,6 +105,8 @@ async def build_requirement_workflow_out(
         progress = node_map.get(d.node_key)
         state = progress.state if progress else RequirementNodeState.pending
         enabled = progress.enabled if progress else True
+        node_tasks = tasks_by_node.get(d.node_key, [])
+        planned_start, planned_end = aggregate_node_planned_schedule(node_tasks)
         nodes.append(
             RequirementNodeProgressOut(
                 node_key=d.node_key,
@@ -84,6 +121,8 @@ async def build_requirement_workflow_out(
                 started_at=progress.started_at if progress else None,
                 completed_at=progress.completed_at if progress else None,
                 operator_id=progress.operator_id if progress else None,
+                planned_schedule_start=planned_start,
+                planned_schedule_end=planned_end,
             )
         )
     return RequirementWorkflowOut(
@@ -121,7 +160,9 @@ async def requirement_out(row: Requirement, db: AsyncSession) -> RequirementOut:
         result = await db.execute(select(User).where(User.id.in_(user_ids)))
         users_map = {u.id: UserOut.model_validate(u) for u in result.scalars().all()}
 
-    workflow = await build_requirement_workflow_out(row, db)
+    tasks = await load_tasks_for_requirement(db, row.id)
+    workflow = await build_requirement_workflow_out(row, db, tasks)
+    node_tasks = await build_node_task_outs(tasks, db)
 
     return RequirementOut(
         id=row.id,
@@ -149,6 +190,7 @@ async def requirement_out(row: Requirement, db: AsyncSession) -> RequirementOut:
         qa=users_map.get(row.qa_id) if row.qa_id else None,
         designer=users_map.get(row.designer_id) if row.designer_id else None,
         nodes=workflow.nodes,
+        node_tasks=node_tasks,
         created_by=row.created_by,
         created_at=row.created_at,
         updated_at=row.updated_at,

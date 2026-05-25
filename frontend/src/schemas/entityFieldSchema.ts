@@ -9,7 +9,9 @@ import {
   normalizeRichTextValue,
   sortTemplateFields,
 } from '@/constants/fieldTypes';
-import type { TemplateField } from '@/types/business';
+import { buildFieldConfigRows, type FieldConfigRow } from '@/constants/systemFields';
+import type { Requirement, TemplateField } from '@/types/business';
+import { formatDateOnly } from '@/utils/formatDateOnly';
 
 export type EntityScene = 'bug' | 'functional_case' | 'requirement';
 
@@ -391,6 +393,123 @@ export function buildTemplateTableColumns<T extends { custom_fields?: Record<str
       return formatTemplateFieldValue(field, val, ctx);
     },
   }));
+}
+
+export type RequirementDetailFieldDisplayKind = 'text' | 'link' | 'richtext';
+
+export interface RequirementDetailFieldDisplay {
+  kind: RequirementDetailFieldDisplayKind;
+  text: string;
+  href?: string;
+}
+
+export interface RequirementDetailFieldContext {
+  req: Requirement;
+  customFields: Record<string, unknown>;
+  templateFields: TemplateField[];
+  priorityLabel: (key: string) => string;
+  typeLabel: (key: string) => string;
+  memberLabel?: (userId: string) => string;
+}
+
+export function buildRequirementDetailRows(templateFields: TemplateField[]): FieldConfigRow[] {
+  return buildFieldConfigRows('requirement', templateFields);
+}
+
+export function resolveRequirementDetailField(
+  row: FieldConfigRow,
+  ctx: RequirementDetailFieldContext
+): RequirementDetailFieldDisplay {
+  const formatCtx: TemplateFieldFormatContext = {
+    memberLabel: ctx.memberLabel,
+  };
+
+  if (row.source === 'system') {
+    switch (row.id) {
+      case '__title':
+        return { kind: 'text', text: ctx.req.title || '—' };
+      case '__priority':
+        return { kind: 'text', text: ctx.priorityLabel(ctx.req.priority) || '—' };
+      case '__req_type':
+        return { kind: 'text', text: ctx.typeLabel(ctx.req.req_type) || '—' };
+      case '__external_url': {
+        const url = ctx.req.external_url?.trim();
+        if (!url) return { kind: 'text', text: '—' };
+        return { kind: 'link', text: url, href: url };
+      }
+      case '__version':
+        return { kind: 'text', text: ctx.req.version?.name ?? '—' };
+      case '__version_released_at':
+        return { kind: 'text', text: formatDateOnly(ctx.req.version?.released_at) };
+      default:
+        return { kind: 'text', text: '—' };
+    }
+  }
+
+  const field = ctx.templateFields.find((f) => f.id === row.id);
+  if (!field) return { kind: 'text', text: '—' };
+
+  const value = ctx.customFields[row.id];
+  if (isRichtextType(field.type) && richTextHasContent(value)) {
+    return { kind: 'richtext', text: richTextPlain(value) };
+  }
+  if (typeof value === 'string') {
+    const url = value.trim();
+    if (/^https?:\/\//i.test(url)) {
+      return { kind: 'link', text: url, href: url };
+    }
+  }
+  return { kind: 'text', text: formatTemplateFieldValue(field, value, formatCtx) };
+}
+
+function isLinkLikeFieldRow(row: FieldConfigRow): boolean {
+  return row.id === '__external_url' || row.name.includes('链接');
+}
+
+export function requirementDetailFieldSpan(
+  row: FieldConfigRow,
+  ctx: RequirementDetailFieldContext
+): 1 | 2 {
+  if (isLinkLikeFieldRow(row)) return 2;
+  const display = resolveRequirementDetailField(row, ctx);
+  if (display.kind === 'link' || display.kind === 'richtext') return 2;
+  if (row.source === 'template') {
+    const field = ctx.templateFields.find((f) => f.id === row.id);
+    if (field?.type === 'textarea') return 2;
+  }
+  return 1;
+}
+
+export type RequirementDetailLayoutGroup =
+  | { type: 'full'; row: FieldConfigRow }
+  | { type: 'pair'; rows: [FieldConfigRow] | [FieldConfigRow, FieldConfigRow] };
+
+/** 将字段行分组为双列 pair 或独占整行的 full（链接类字段） */
+export function buildRequirementDetailLayout(
+  rows: FieldConfigRow[],
+  ctx: RequirementDetailFieldContext
+): RequirementDetailLayoutGroup[] {
+  const groups: RequirementDetailLayoutGroup[] = [];
+  let pending: FieldConfigRow | null = null;
+
+  for (const row of rows) {
+    if (requirementDetailFieldSpan(row, ctx) === 2) {
+      if (pending) {
+        groups.push({ type: 'pair', rows: [pending] });
+        pending = null;
+      }
+      groups.push({ type: 'full', row });
+    } else if (pending) {
+      groups.push({ type: 'pair', rows: [pending, row] });
+      pending = null;
+    } else {
+      pending = row;
+    }
+  }
+  if (pending) {
+    groups.push({ type: 'pair', rows: [pending] });
+  }
+  return groups;
 }
 
 export { isRichtextType };

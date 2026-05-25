@@ -98,7 +98,8 @@ export type RequirementStatus =
   | 'testing'
   | 'pending_release'
   | 'released'
-  | 'rejected';
+  | 'rejected'
+  | 'closed';
 
 export type RequirementPriority = string;
 export type RequirementType = string;
@@ -117,6 +118,24 @@ export interface RequirementNodeProgress {
   started_at: string | null;
   completed_at: string | null;
   operator_id: string | null;
+  planned_schedule_start?: string | null;
+  planned_schedule_end?: string | null;
+}
+
+export interface RequirementNodeTask {
+  id: string;
+  requirement_id: string;
+  node_key: string;
+  title: string;
+  role_key: string;
+  assignee_id: string | null;
+  assignee?: UserBrief | null;
+  estimate_points: number | null;
+  scheduled_start: string | null;
+  scheduled_end: string | null;
+  sort: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface RequirementRoleDef {
@@ -146,6 +165,18 @@ export interface RequirementWorkflowNodeDef {
   lane_indexes: number[];
   blocks_lane_gate: boolean;
   sort_in_lane: number;
+}
+
+/** 需求状态推导规则 */
+export type RequirementStatusRuleTrigger = 'lane' | 'node_completed' | 'status_hold';
+
+export interface RequirementStatusRule {
+  id: string;
+  project_id: string;
+  status: RequirementStatus;
+  node_keys: string[];
+  sort: number;
+  trigger_type: RequirementStatusRuleTrigger;
 }
 
 export interface RequirementWorkflowOut {
@@ -179,6 +210,7 @@ export interface Requirement {
   role_assignee_ids?: Record<string, string[]>;
   custom_fields?: Record<string, unknown>;
   nodes: RequirementNodeProgress[];
+  node_tasks?: RequirementNodeTask[];
   created_by: string;
   created_at: string;
   updated_at: string;

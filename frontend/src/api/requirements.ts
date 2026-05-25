@@ -78,6 +78,14 @@ export function reopenRejectedRequirement(id: string) {
   return http.post<Requirement>(`/requirements/${id}/reopen-rejected`);
 }
 
+export function closeRequirement(id: string) {
+  return http.post<Requirement>(`/requirements/${id}/close`);
+}
+
+export function reopenClosedRequirement(id: string) {
+  return http.post<Requirement>(`/requirements/${id}/reopen-closed`);
+}
+
 export function listRequirementActivities(id: string) {
   return http.get<RequirementActivity[]>(`/requirements/${id}/activities`);
 }

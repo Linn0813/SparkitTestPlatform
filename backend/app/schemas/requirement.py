@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
@@ -7,6 +7,43 @@ from app.models.requirement import RequirementNodeState, RequirementStatus
 from app.schemas.common import ORMBase
 from app.schemas.user import UserOut
 from app.schemas.version import VersionBrief
+
+
+class RequirementNodeTaskOut(BaseModel):
+    id: str
+    requirement_id: str
+    node_key: str
+    title: str
+    role_key: str
+    assignee_id: Optional[str] = None
+    assignee: Optional[UserOut] = None
+    estimate_points: Optional[float] = None
+    scheduled_start: Optional[date] = None
+    scheduled_end: Optional[date] = None
+    sort: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RequirementNodeTaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=256)
+    role_key: str = Field(min_length=1, max_length=64)
+    assignee_id: Optional[str] = None
+    estimate_points: Optional[float] = Field(default=None, ge=0)
+    scheduled_start: Optional[date] = None
+    scheduled_end: Optional[date] = None
+
+
+class RequirementNodeTaskUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=256)
+    role_key: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    assignee_id: Optional[str] = None
+    estimate_points: Optional[float] = Field(default=None, ge=0)
+    scheduled_start: Optional[date] = None
+    scheduled_end: Optional[date] = None
+    sort: Optional[int] = Field(default=None, ge=0)
 
 
 class RequirementNodeProgressOut(BaseModel):
@@ -22,6 +59,8 @@ class RequirementNodeProgressOut(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     operator_id: Optional[str] = None
+    planned_schedule_start: Optional[date] = None
+    planned_schedule_end: Optional[date] = None
 
 
 class RequirementWorkflowNodeDefOut(BaseModel):
@@ -96,6 +135,28 @@ class RequirementWorkflowNodeReorderBody(BaseModel):
     items: list[RequirementWorkflowNodeReorderItem]
 
 
+class RequirementStatusRuleOut(BaseModel):
+    id: str
+    project_id: str
+    status: str
+    node_keys: list[str]
+    sort: int
+    trigger_type: str = "lane"
+
+    model_config = {"from_attributes": True}
+
+
+class RequirementStatusRuleItem(BaseModel):
+    status: str = Field(min_length=1, max_length=32)
+    node_keys: list[str] = Field(default_factory=list)
+    sort: int = Field(ge=0, default=0)
+    trigger_type: str = Field(default="lane", max_length=32)
+
+
+class RequirementStatusRulesReplaceBody(BaseModel):
+    rules: list[RequirementStatusRuleItem]
+
+
 class RequirementWorkflowOut(BaseModel):
     defs: list[RequirementWorkflowNodeDefOut]
     nodes: list[RequirementNodeProgressOut]
@@ -131,6 +192,7 @@ class RequirementOut(ORMBase):
     qa: Optional[UserOut] = None
     designer: Optional[UserOut] = None
     nodes: list[RequirementNodeProgressOut] = Field(default_factory=list)
+    node_tasks: list[RequirementNodeTaskOut] = Field(default_factory=list)
     created_by: str
     created_at: datetime
     updated_at: datetime

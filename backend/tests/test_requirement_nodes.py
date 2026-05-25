@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -19,6 +19,7 @@ from app.services.requirement_nodes import (
     derive_requirement_status,
     update_requirement_enabled_nodes,
 )
+from app.services.requirement_status_rules import default_status_rule_likes
 from app.services.requirement_workflow import assert_workflow_node_deletable
 from app.services.requirement_workflow_defaults import DEFAULT_REQUIREMENT_WORKFLOW_NODES
 
@@ -89,8 +90,40 @@ def test_derive_status_draft_by_default():
 def test_derive_status_designing():
     req = _make_req()
     defs = _default_defs()
-    nodes = _nodes({"req_design": RequirementNodeState.in_progress}, defs=defs)
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.in_progress,
+        },
+        defs=defs,
+    )
     assert derive_requirement_status(req, nodes, defs) == RequirementStatus.designing
+
+
+def test_derive_status_draft_when_prd_and_design_incomplete():
+    req = _make_req()
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.pending,
+            "req_design": RequirementNodeState.in_progress,
+        },
+        defs=defs,
+    )
+    assert derive_requirement_status(req, nodes, defs) == RequirementStatus.draft
+
+
+def test_derive_status_draft_when_design_done_prd_not():
+    req = _make_req()
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.in_progress,
+            "req_design": RequirementNodeState.completed,
+        },
+        defs=defs,
+    )
+    assert derive_requirement_status(req, nodes, defs) == RequirementStatus.draft
 
 
 def test_derive_status_pending_review_when_phase1_done():
@@ -122,7 +155,7 @@ def test_derive_status_developing_parallel_dev():
     assert derive_requirement_status(req, nodes, defs) == RequirementStatus.developing
 
 
-def test_derive_status_pending_release_on_integration():
+def test_derive_status_developing_on_integration():
     req = _make_req()
     defs = _default_defs()
     nodes = _nodes(
@@ -133,6 +166,45 @@ def test_derive_status_pending_release_on_integration():
             "frontend_dev": RequirementNodeState.completed,
             "backend_dev": RequirementNodeState.completed,
             "integration": RequirementNodeState.in_progress,
+        },
+        defs=defs,
+    )
+    assert derive_requirement_status(req, nodes, defs) == RequirementStatus.developing
+
+
+def test_derive_status_testing_after_dev_and_integration_done():
+    req = _make_req()
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.completed,
+            "frontend_dev": RequirementNodeState.completed,
+            "backend_dev": RequirementNodeState.completed,
+            "integration": RequirementNodeState.completed,
+            "req_test": RequirementNodeState.pending,
+        },
+        defs=defs,
+    )
+    assert derive_requirement_status(req, nodes, defs) == RequirementStatus.testing
+
+
+def test_derive_status_pending_release_on_released_lane():
+    req = _make_req()
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.completed,
+            "frontend_dev": RequirementNodeState.completed,
+            "backend_dev": RequirementNodeState.completed,
+            "integration": RequirementNodeState.completed,
+            "req_test": RequirementNodeState.completed,
+            "product_experience": RequirementNodeState.completed,
+            "ui_restoration": RequirementNodeState.completed,
+            "released": RequirementNodeState.in_progress,
         },
         defs=defs,
     )
@@ -169,6 +241,13 @@ def test_derive_status_rejected_sticky():
     defs = _default_defs()
     nodes = _nodes({"req_review": RequirementNodeState.pending}, defs=defs)
     assert derive_requirement_status(req, nodes, defs) == RequirementStatus.rejected
+
+
+def test_derive_status_closed_sticky():
+    req = _make_req(status=RequirementStatus.closed)
+    defs = _default_defs()
+    nodes = _nodes({"frontend_dev": RequirementNodeState.in_progress}, defs=defs)
+    assert derive_requirement_status(req, nodes, defs) == RequirementStatus.closed
 
 
 def test_gate_review_requires_phase1():
@@ -277,14 +356,18 @@ async def test_released_can_be_disabled():
     defs = _default_defs()
     nodes = _nodes(defs=defs)
     db = AsyncMock()
-    await update_requirement_enabled_nodes(
-        db,
-        req,
-        nodes,
-        defs,
-        {"released": False},
-        actor_id="user-1",
-    )
+    with patch(
+        "app.services.requirement_nodes.load_status_rules_for_derive",
+        new=AsyncMock(return_value=default_status_rule_likes()),
+    ):
+        await update_requirement_enabled_nodes(
+            db,
+            req,
+            nodes,
+            defs,
+            {"released": False},
+            actor_id="user-1",
+        )
     assert nodes["released"].enabled is False
     assert nodes["released"].state == RequirementNodeState.skipped
 

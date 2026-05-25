@@ -17,6 +17,9 @@ from app.schemas.requirement import (
     RequirementCommentOut,
     RequirementCreate,
     RequirementNodeActionBody,
+    RequirementNodeTaskCreate,
+    RequirementNodeTaskOut,
+    RequirementNodeTaskUpdate,
     RequirementOut,
     RequirementUpdate,
     RequirementWorkflowEnabledUpdate,
@@ -27,11 +30,27 @@ from app.services.requirement_activity import log_requirement_activity
 from app.services.requirement_nodes import (
     RequirementNodeError,
     apply_node_action,
+    close_requirement,
     load_node_map,
+    reopen_from_closed,
     reopen_from_rejected,
     update_requirement_enabled_nodes,
 )
-from app.services.requirement_serializers import build_requirement_workflow_out, requirement_out, validate_requirement_role_user_ids
+from app.services.requirement_serializers import (
+    build_node_task_outs,
+    build_requirement_workflow_out,
+    requirement_out,
+    validate_requirement_role_user_ids,
+)
+from app.services.requirement_node_tasks import (
+    RequirementNodeTaskError,
+    create_node_task,
+    delete_node_task,
+    fill_empty_task_assignees_from_requirement,
+    get_task_or_raise,
+    load_tasks_for_requirement,
+    update_node_task,
+)
 from app.services.field_validator import load_project_member_user_ids, validate_custom_fields
 from app.services.project_setup import ensure_project_defaults
 from app.services.requirement_config import validate_requirement_option
@@ -198,6 +217,9 @@ async def create_requirement(
     db.add(row)
     await db.flush()
     await init_requirement_progress_from_defs(db, row, defs)
+    from app.services.requirement_workflow import init_requirement_tasks_from_defs
+
+    await init_requirement_tasks_from_defs(db, row, defs)
     await log_requirement_activity(
         db,
         requirement_id=row.id,
@@ -216,6 +238,7 @@ async def get_requirement(
     db: AsyncSession = Depends(get_db),
 ):
     row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    await fill_empty_task_assignees_from_requirement(db, row)
     return await requirement_out(row, db)
 
 
@@ -270,6 +293,16 @@ async def update_requirement(
     for k, v in data.items():
         setattr(row, k, v)
     await db.flush()
+    role_id_fields = (
+        "frontend_rd_id",
+        "backend_rd_id",
+        "pm_id",
+        "tech_owner_id",
+        "qa_id",
+        "designer_id",
+    )
+    if "role_assignee_ids" in data or any(k in data for k in role_id_fields):
+        await fill_empty_task_assignees_from_requirement(db, row)
     await db.refresh(row)
     return await requirement_out(row, db)
 
@@ -282,11 +315,12 @@ async def delete_requirement(
 ):
     from sqlalchemy import delete
 
-    from app.models.requirement import RequirementActivity, RequirementComment, RequirementNodeProgress
+    from app.models.requirement import RequirementActivity, RequirementComment, RequirementNodeProgress, RequirementNodeTask
 
     row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
     await db.execute(delete(RequirementComment).where(RequirementComment.requirement_id == row.id))
     await db.execute(delete(RequirementActivity).where(RequirementActivity.requirement_id == row.id))
+    await db.execute(delete(RequirementNodeTask).where(RequirementNodeTask.requirement_id == row.id))
     await db.execute(delete(RequirementNodeProgress).where(RequirementNodeProgress.requirement_id == row.id))
     await db.delete(row)
 
@@ -312,6 +346,148 @@ async def requirement_node_action(
             action=body.action,
             actor_id=ctx.user.id,
         )
+    except RequirementNodeError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    return await requirement_out(row, db)
+
+
+@router.get("/{requirement_id}/node-tasks", response_model=list[RequirementNodeTaskOut])
+async def list_requirement_node_tasks(
+    requirement_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    tasks = await load_tasks_for_requirement(db, row.id)
+    return await build_node_task_outs(tasks, db)
+
+
+@router.post(
+    "/{requirement_id}/nodes/{node_key}/tasks",
+    response_model=RequirementOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_requirement_node_task(
+    requirement_id: str,
+    node_key: str,
+    body: RequirementNodeTaskCreate,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    try:
+        if body.assignee_id:
+            await validate_requirement_role_user_ids(db, ctx.project_id, [body.assignee_id])
+        await create_node_task(
+            db,
+            row,
+            node_key,
+            title=body.title,
+            role_key=body.role_key,
+            assignee_id=body.assignee_id,
+            estimate_points=body.estimate_points,
+            scheduled_start=body.scheduled_start,
+            scheduled_end=body.scheduled_end,
+        )
+    except RequirementNodeTaskError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    return await requirement_out(row, db)
+
+
+@router.patch(
+    "/{requirement_id}/nodes/{node_key}/tasks/{task_id}",
+    response_model=RequirementOut,
+)
+async def update_requirement_node_task(
+    requirement_id: str,
+    node_key: str,
+    task_id: str,
+    body: RequirementNodeTaskUpdate,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    try:
+        task = await get_task_or_raise(db, row.id, node_key, task_id)
+        data = body.model_dump(exclude_unset=True)
+        if data.get("assignee_id"):
+            await validate_requirement_role_user_ids(db, ctx.project_id, [data["assignee_id"]])
+        await update_node_task(
+            db,
+            row,
+            task,
+            title=data.get("title"),
+            role_key=data.get("role_key"),
+            assignee_id=data.get("assignee_id"),
+            clear_assignee="assignee_id" in data and data["assignee_id"] is None,
+            estimate_points=data.get("estimate_points"),
+            clear_estimate="estimate_points" in data and data["estimate_points"] is None,
+            scheduled_start=data.get("scheduled_start"),
+            scheduled_end=data.get("scheduled_end"),
+            clear_schedule=(
+                "scheduled_start" in data
+                and data["scheduled_start"] is None
+                and "scheduled_end" in data
+                and data["scheduled_end"] is None
+            ),
+            sort=data.get("sort"),
+            fields_set=set(data.keys()),
+        )
+    except RequirementNodeTaskError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    return await requirement_out(row, db)
+
+
+@router.delete(
+    "/{requirement_id}/nodes/{node_key}/tasks/{task_id}",
+    response_model=RequirementOut,
+)
+async def delete_requirement_node_task(
+    requirement_id: str,
+    node_key: str,
+    task_id: str,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    try:
+        task = await get_task_or_raise(db, row.id, node_key, task_id)
+        await delete_node_task(db, row, task)
+    except RequirementNodeTaskError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    return await requirement_out(row, db)
+
+
+@router.post("/{requirement_id}/close", response_model=RequirementOut)
+async def requirement_close(
+    requirement_id: str,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    try:
+        await close_requirement(db, row, actor_id=ctx.user.id)
+    except RequirementNodeError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    return await requirement_out(row, db)
+
+
+@router.post("/{requirement_id}/reopen-closed", response_model=RequirementOut)
+async def requirement_reopen_closed(
+    requirement_id: str,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    defs = await load_project_workflow_defs(db, ctx.project_id)
+    nodes = await load_node_map(db, row.id)
+    try:
+        await reopen_from_closed(db, row, nodes, defs, actor_id=ctx.user.id)
     except RequirementNodeError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     await db.refresh(row)

@@ -10,6 +10,9 @@
       <template v-if="scene === 'requirement'">
         下表包含编辑页<strong>全部字段</strong>。优先级、需求类型可点击「编辑选项」配置 Tag 选项；其余系统字段不可改。「可配置」为自定义扩展字段。
       </template>
+      <template v-else-if="scene === 'bug'">
+        下表包含编辑页<strong>全部字段</strong>。状态可点击「编辑选项」配置；其余系统字段不可改。「可配置」为自定义扩展字段。
+      </template>
       <template v-else>
         下表包含编辑页<strong>全部字段</strong>。「系统固定」不可在此修改；「可配置」字段可编辑、排序并保存到模板。
       </template>
@@ -25,7 +28,7 @@ import {
   buildFieldConfigRows,
   isSystemFieldRow,
   type FieldConfigRow,
-  type RequirementOptionCategory,
+  type SystemOptionCategory,
 } from '@/constants/systemFields';
 import { isBuiltinField, normalizeFieldSort, sortTemplateFields } from '@/constants/fieldTypes';
 import type { TemplateField } from '@/types/business';
@@ -35,7 +38,7 @@ const props = withDefaults(
     scene: 'case' | 'bug' | 'requirement';
     fields: TemplateField[];
     saving?: boolean;
-    optionCounts?: Partial<Record<RequirementOptionCategory, number>>;
+    optionCounts?: Partial<Record<SystemOptionCategory, number>>;
   }>(),
   {
     optionCounts: () => ({}),
@@ -47,15 +50,26 @@ const emit = defineEmits<{
   add: [];
   edit: [index: number];
   save: [];
-  'edit-options': [category: RequirementOptionCategory];
+  'edit-options': [category: SystemOptionCategory];
 }>();
 
 const dialog = useDialog();
 
 const displayRows = computed(() => buildFieldConfigRows(props.scene, props.fields));
 
+function canEditSystemOptions(row: FieldConfigRow): boolean {
+  if (!row.optionCategory) return false;
+  if (props.scene === 'requirement') {
+    return row.optionCategory === 'priority' || row.optionCategory === 'req_type';
+  }
+  if (props.scene === 'bug') {
+    return row.optionCategory === 'bug_status';
+  }
+  return false;
+}
+
 function typeCellLabel(row: FieldConfigRow): string {
-  if (row.optionCategory && props.scene === 'requirement') {
+  if (row.optionCategory && canEditSystemOptions(row)) {
     const count = props.optionCounts[row.optionCategory];
     if (count != null && count > 0) {
       return `${row.typeLabel} · ${count} 项`;
@@ -84,7 +98,7 @@ const columns = computed<DataTableColumns<FieldConfigRow>>(() => [
     key: 'actions',
     width: 140,
     render: (row) => {
-      if (isSystemFieldRow(row) && row.optionCategory && props.scene === 'requirement') {
+      if (isSystemFieldRow(row) && canEditSystemOptions(row)) {
         return h(
           NButton,
           {

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -31,6 +31,7 @@ class RequirementStatus(str, enum.Enum):
     pending_release = "pending_release"
     released = "released"
     rejected = "rejected"
+    closed = "closed"
 
 
 class RequirementNodeState(str, enum.Enum):
@@ -95,6 +96,27 @@ class RequirementNodeProgress(Base):
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     operator_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class RequirementNodeTask(Base):
+    __tablename__ = "requirement_node_tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    requirement_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("requirements.id"), nullable=False, index=True
+    )
+    node_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    role_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    assignee_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    estimate_points: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    scheduled_start: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    scheduled_end: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False

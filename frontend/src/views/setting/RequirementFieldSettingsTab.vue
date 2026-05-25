@@ -88,7 +88,7 @@ import {
 } from '@/api/templates';
 import TemplateEditPreview from '@/components/TemplateEditPreview.vue';
 import TemplateFieldPanel from '@/components/TemplateFieldPanel.vue';
-import type { RequirementOptionCategory } from '@/constants/systemFields';
+import type { RequirementOptionCategory, SystemOptionCategory } from '@/constants/systemFields';
 import { invalidateRequirementProjectConfig, loadRequirementOptions } from '@/composables/useRequirementProjectConfig';
 import { invalidateProjectFieldSchemaCache } from '@/composables/useProjectFieldSchema';
 import { normalizeFieldSort } from '@/constants/fieldTypes';
@@ -172,7 +172,8 @@ const drawerOptionColumns = computed<DataTableColumns<RequirementOptionDef>>(() 
   },
 ]);
 
-function openOptionsDrawer(category: RequirementOptionCategory) {
+function openOptionsDrawer(category: SystemOptionCategory) {
+  if (category === 'bug_status') return;
   optionCategory.value = category;
   showOptionsDrawer.value = true;
 }

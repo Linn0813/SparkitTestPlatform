@@ -20,6 +20,8 @@ from app.models.template import (
     TemplateScene,
 )
 from app.schemas.requirement import (
+    RequirementStatusRuleOut,
+    RequirementStatusRulesReplaceBody,
     RequirementWorkflowNodeDefCreate,
     RequirementWorkflowNodeDefOut,
     RequirementWorkflowNodeDefUpdate,
@@ -55,6 +57,11 @@ from app.services.requirement_config import (
     rename_role_key_in_project,
     validate_option_key_format,
     validate_role_key_format,
+)
+from app.services.requirement_status_rules import (
+    ensure_project_status_rules,
+    load_project_status_rules,
+    replace_project_status_rules,
 )
 from app.services.requirement_workflow import (
     assert_workflow_node_deletable,
@@ -584,6 +591,41 @@ async def reorder_requirement_workflow_nodes(
     await db.flush()
     defs = await load_project_workflow_defs(db, project_id)
     return [RequirementWorkflowNodeDefOut.model_validate(d) for d in defs]
+
+
+@router.get("/{project_id}/requirement-status-rules", response_model=list[RequirementStatusRuleOut])
+async def list_requirement_status_rules(
+    project_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    await ensure_project_workflow_defs(db, project_id)
+    rules = await ensure_project_status_rules(db, project_id)
+    return [RequirementStatusRuleOut.model_validate(r) for r in rules]
+
+
+@router.put("/{project_id}/requirement-status-rules", response_model=list[RequirementStatusRuleOut])
+async def replace_requirement_status_rules_api(
+    project_id: str,
+    body: RequirementStatusRulesReplaceBody,
+    ctx: ProjectContext = Depends(require_project_context_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    defs = await ensure_project_workflow_defs(db, project_id)
+    try:
+        rules = await replace_project_status_rules(
+            db,
+            project_id,
+            [item.model_dump() for item in body.rules],
+            workflow_defs=defs,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    return [RequirementStatusRuleOut.model_validate(r) for r in rules]
 
 
 @router.get("/{project_id}/integrations/wecom", response_model=WecomIntegrationOut)

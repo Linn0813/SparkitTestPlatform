@@ -1,4 +1,4 @@
-/** 评论/记录等场景展示用户：姓名 + 邮箱，避免只显示「系统管理员」等易误解的名称 */
+/** 评论/记录等场景展示用户：优先姓名，无姓名时用 userId */
 export function displayUserLabel(
   user?: { name?: string | null; email?: string | null } | null,
   userId?: string | null,
@@ -8,10 +8,7 @@ export function displayUserLabel(
     return memberLabel;
   }
   const name = user?.name?.trim();
-  const email = user?.email?.trim();
-  if (name && email) return `${name} (${email})`;
   if (name) return name;
-  if (email) return email;
   if (userId) return userId;
   return '用户';
 }

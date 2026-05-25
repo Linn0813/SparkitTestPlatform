@@ -93,11 +93,28 @@ async def init_requirement_progress_from_defs(
     await db.flush()
 
 
+async def init_requirement_tasks_from_defs(
+    db: AsyncSession,
+    req: Requirement,
+    defs: list[RequirementWorkflowNodeDef],
+) -> None:
+    from app.services.requirement_node_tasks import seed_default_tasks_from_defs
+
+    await seed_default_tasks_from_defs(db, req, defs)
+
+
 async def sync_progress_for_new_def(
     db: AsyncSession,
     project_id: str,
     node_key: str,
 ) -> None:
+    from app.models.requirement import RequirementNodeTask
+    from app.services.requirement_node_tasks import seed_default_tasks_for_requirement
+
+    defs = await load_project_workflow_defs(db, project_id)
+    node_def = next((d for d in defs if d.node_key == node_key), None)
+    def_by_key = {node_key: node_def} if node_def else {}
+
     reqs = await db.execute(select(Requirement).where(Requirement.project_id == project_id))
     for req in reqs.scalars().all():
         existing = await db.execute(
@@ -108,14 +125,25 @@ async def sync_progress_for_new_def(
         )
         if existing.scalar_one_or_none():
             continue
-        db.add(
-            RequirementNodeProgress(
-                requirement_id=req.id,
-                node_key=node_key,
-                state=RequirementNodeState.pending,
-                enabled=False,
-            )
+        progress = RequirementNodeProgress(
+            requirement_id=req.id,
+            node_key=node_key,
+            state=RequirementNodeState.pending,
+            enabled=False,
         )
+        db.add(progress)
+        await db.flush()
+        if node_def and node_def.role_keys:
+            task_exists = await db.execute(
+                select(RequirementNodeTask.id).where(
+                    RequirementNodeTask.requirement_id == req.id,
+                    RequirementNodeTask.node_key == node_key,
+                )
+            )
+            if task_exists.first() is None:
+                await seed_default_tasks_for_requirement(
+                    db, req, [progress], def_by_key, only_if_empty=False
+                )
     await db.flush()
 
 

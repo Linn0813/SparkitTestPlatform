@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.requirement_status import requirement_status_label
+from app.constants.requirement_status_rules import StatusRuleLike, lane_match_requirements
+from app.services.requirement_status_rules import default_status_rule_likes, load_status_rules_for_derive
 from app.models.requirement import (
     Requirement,
     RequirementNodeProgress,
@@ -106,21 +108,67 @@ def _find_lane_list_index(
         return None
 
 
+def _node_completed(nodes: NodeMap, node_key: str) -> bool:
+    node = nodes.get(node_key)
+    return bool(node and node.enabled and _node_state(node) == RequirementNodeState.completed)
+
+
+def _node_incomplete(nodes: NodeMap, node_key: str) -> bool:
+    node = nodes.get(node_key)
+    if not node or not node.enabled:
+        return False
+    return _node_state(node) not in (
+        RequirementNodeState.completed,
+        RequirementNodeState.skipped,
+    )
+
+
+def _match_status_rule(
+    req: Requirement,
+    nodes: NodeMap,
+    lane: list[RequirementWorkflowNodeDef] | None,
+    rule: StatusRuleLike,
+) -> bool:
+    if rule.trigger_type == "status_hold":
+        return req.status.value == rule.status
+
+    if rule.trigger_type == "node_completed":
+        if not rule.node_keys:
+            return False
+        return all(_node_completed(nodes, k) for k in rule.node_keys)
+
+    if rule.trigger_type != "lane" or lane is None:
+        return False
+
+    keys = {d.node_key for d in lane}
+    if not (keys & set(rule.node_keys)):
+        return False
+
+    require_completed, require_incomplete = lane_match_requirements(rule.status, rule.node_keys)
+    if require_incomplete and not any(_node_incomplete(nodes, k) for k in require_incomplete):
+        return False
+    if require_completed and not all(_node_completed(nodes, k) for k in require_completed):
+        return False
+
+    return True
+
+
 def derive_requirement_status(
     req: Requirement,
     nodes: NodeMap,
     defs: list[RequirementWorkflowNodeDef],
+    *,
+    rules: list[StatusRuleLike] | None = None,
 ) -> RequirementStatus:
+    # 评审打回：不进入可配置映射表，保持不通过直至重新打开
     if req.status == RequirementStatus.rejected:
         return RequirementStatus.rejected
+
+    rule_list = rules or default_status_rule_likes()
 
     lanes = build_lanes(defs)
     if not lanes:
         return RequirementStatus.draft
-
-    released = nodes.get("released")
-    if released and released.enabled and released.state == RequirementNodeState.completed:
-        return RequirementStatus.released
 
     current_lane: list[RequirementWorkflowNodeDef] | None = None
     for i, lane in enumerate(lanes):
@@ -146,36 +194,10 @@ def derive_requirement_status(
             current_lane = lane
             break
 
-    if current_lane is None:
-        return RequirementStatus.draft
+    for rule in sorted(rule_list, key=lambda r: (r.sort, r.status)):
+        if _match_status_rule(req, nodes, current_lane, rule):
+            return RequirementStatus(rule.status)
 
-    return _status_for_lane(current_lane, nodes, defs)
-
-
-def _status_for_lane(
-    lane: list[RequirementWorkflowNodeDef],
-    nodes: NodeMap,
-    defs: list[RequirementWorkflowNodeDef],
-) -> RequirementStatus:
-    keys = {d.node_key for d in lane}
-    if keys & {"req_test", "product_experience", "ui_restoration"}:
-        return RequirementStatus.testing
-    if "integration" in keys:
-        return RequirementStatus.pending_release
-    if keys & {"frontend_dev", "backend_dev"}:
-        return RequirementStatus.developing
-    if "req_review" in keys:
-        return RequirementStatus.pending_review
-    if keys & {"prd_output", "req_design"}:
-        if any(
-            _node_state(nodes.get(d.node_key)) == RequirementNodeState.in_progress
-            for d in lane
-            if d.node_key == "req_design" and _is_enabled(nodes.get(d.node_key))
-        ):
-            return RequirementStatus.designing
-        return RequirementStatus.draft
-    if "released" in keys:
-        return RequirementStatus.pending_release
     return RequirementStatus.draft
 
 
@@ -242,6 +264,8 @@ async def apply_node_action(
 ) -> RequirementStatus:
     if req.status == RequirementStatus.rejected and action != "reopen":
         raise RequirementNodeError("需求已打回，请先重新打开")
+    if req.status == RequirementStatus.closed:
+        raise RequirementNodeError("需求已关闭，请先重新打开")
 
     node = nodes.get(node_key)
     if not node:
@@ -312,7 +336,8 @@ async def apply_node_action(
         raise RequirementNodeError("未知操作")
 
     await db.flush()
-    new_status = derive_requirement_status(req, nodes, defs)
+    rules = await load_status_rules_for_derive(db, req.project_id)
+    new_status = derive_requirement_status(req, nodes, defs, rules=rules)
     req.status = new_status
 
     await log_requirement_activity(
@@ -334,6 +359,59 @@ async def apply_node_action(
             detail={"from_status": old_status.value, "to_status": new_status.value},
         )
 
+    return new_status
+
+
+async def close_requirement(
+    db: AsyncSession,
+    req: Requirement,
+    *,
+    actor_id: str,
+) -> RequirementStatus:
+    if req.status == RequirementStatus.closed:
+        raise RequirementNodeError("需求已关闭")
+    if req.status == RequirementStatus.rejected:
+        raise RequirementNodeError("需求已打回，无法关闭")
+    if req.status == RequirementStatus.released:
+        raise RequirementNodeError("需求已发版，无法关闭")
+
+    req.status = RequirementStatus.closed
+    await db.flush()
+    await log_requirement_activity(
+        db,
+        requirement_id=req.id,
+        actor_id=actor_id,
+        action_type="close",
+        summary="关闭了需求",
+    )
+    return RequirementStatus.closed
+
+
+async def reopen_from_closed(
+    db: AsyncSession,
+    req: Requirement,
+    nodes: NodeMap,
+    defs: list[RequirementWorkflowNodeDef],
+    *,
+    actor_id: str,
+) -> RequirementStatus:
+    if req.status != RequirementStatus.closed:
+        raise RequirementNodeError("需求未处于已关闭状态")
+
+    req.status = RequirementStatus.draft
+    await db.flush()
+    rules = await load_status_rules_for_derive(db, req.project_id)
+    new_status = derive_requirement_status(req, nodes, defs, rules=rules)
+    req.status = new_status
+    await db.flush()
+
+    await log_requirement_activity(
+        db,
+        requirement_id=req.id,
+        actor_id=actor_id,
+        action_type="reopen_closed",
+        summary="重新打开了需求（已关闭后）",
+    )
     return new_status
 
 
@@ -364,7 +442,8 @@ async def reopen_from_rejected(
             review.started_at = None
             review.completed_at = None
 
-    new_status = derive_requirement_status(req, nodes, defs)
+    rules = await load_status_rules_for_derive(db, req.project_id)
+    new_status = derive_requirement_status(req, nodes, defs, rules=rules)
     req.status = new_status
 
     await log_requirement_activity(
@@ -413,7 +492,8 @@ async def update_requirement_enabled_nodes(
                 node.state = RequirementNodeState.pending
 
     await db.flush()
-    new_status = derive_requirement_status(req, nodes, defs)
+    rules = await load_status_rules_for_derive(db, req.project_id)
+    new_status = derive_requirement_status(req, nodes, defs, rules=rules)
     req.status = new_status
     await log_requirement_activity(
         db,

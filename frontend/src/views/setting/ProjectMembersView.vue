@@ -7,26 +7,15 @@
   >
     <template #header-extra>
       <n-button
-        v-if="canManageProjectMembers(selectedProjectId)"
+        v-if="canManageProjectMembers(ctx.projectId)"
         type="primary"
-        :disabled="!selectedProjectId"
+        :disabled="!ctx.projectId"
         @click="showAdd = true"
       >
         添加成员
       </n-button>
     </template>
-    <n-form inline label-placement="left" style="margin-bottom: 12px">
-      <n-form-item label="项目">
-        <n-select
-          v-model:value="selectedProjectId"
-          :options="projectOptions"
-          placeholder="选择项目"
-          style="width: 240px"
-          @update:value="load"
-        />
-      </n-form-item>
-    </n-form>
-    <n-alert v-if="!selectedProjectId" type="info">请选择项目</n-alert>
+    <n-alert v-if="!ctx.projectId" type="info" style="margin-bottom: 12px">请先在顶栏选择项目</n-alert>
     <n-data-table v-else :columns="columns" :data="members" :loading="loading" />
     <n-modal v-model:show="showAdd" preset="dialog" title="添加成员" positive-text="添加" @positive-click="onAdd">
       <n-form label-placement="left" label-width="80">
@@ -83,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue';
+import { computed, h, onMounted, ref, watch } from 'vue';
 import {
   NAlert,
   NButton,
@@ -110,7 +99,6 @@ import {
 } from '@/api/projects';
 import { listUsers, updateUser } from '@/api/users';
 import { usePermissions } from '@/composables/usePermissions';
-import { useSettingScope } from '@/composables/useSettingScope';
 import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
 import {
@@ -131,8 +119,6 @@ const { canManageProjectMembers, isSystemAdmin } = usePermissions();
 const message = useMessage();
 const dialog = useDialog();
 
-const selectedProjectId = ref<string | null>(null);
-const { restoreProject } = useSettingScope(selectedProjectId);
 const members = ref<ProjectMember[]>([]);
 const allUsers = ref<User[]>([]);
 const loading = ref(false);
@@ -151,17 +137,13 @@ const editForm = ref({
   is_project_admin: false,
 });
 
-const projectOptions = computed(() =>
-  (auth.me?.projects ?? []).map((p) => ({ label: p.name, value: p.id }))
-);
-
 const specialtyRoleOptions = SPECIALTY_ROLE_OPTIONS;
 
 const userOptions = computed(() =>
   allUsers.value.map((u) => ({ label: `${u.name} (${u.email})`, value: u.id }))
 );
 
-const canManage = computed(() => canManageProjectMembers(selectedProjectId.value));
+const canManage = computed(() => canManageProjectMembers(ctx.projectId));
 
 const columns = computed<DataTableColumns<ProjectMember>>(() => {
   const base: DataTableColumns<ProjectMember> = [
@@ -221,7 +203,7 @@ function openEdit(row: ProjectMember) {
 
 async function onEditSave() {
   const row = editingMember.value;
-  if (!selectedProjectId.value || !row) return false;
+  if (!ctx.projectId || !row) return false;
 
   const newRole = memberRoleFromSpecialty(editForm.value.specialtyRole);
   const nameChanged = isSystemAdmin.value && editForm.value.name.trim() !== (row.user?.name ?? '');
@@ -238,7 +220,7 @@ async function onEditSave() {
       await updateUser(row.user_id, { name: editForm.value.name.trim() });
     }
     if (roleChanged || adminChanged) {
-      await updateProjectMember(selectedProjectId.value, row.id, {
+      await updateProjectMember(ctx.projectId, row.id, {
         role: newRole,
         is_project_admin: editForm.value.is_project_admin,
       });
@@ -256,13 +238,13 @@ async function onEditSave() {
 }
 
 async function load() {
-  if (!selectedProjectId.value) {
+  if (!ctx.projectId) {
     members.value = [];
     return;
   }
   loading.value = true;
   try {
-    const { data } = await listProjectMembers(selectedProjectId.value);
+    const { data } = await listProjectMembers(ctx.projectId);
     members.value = data;
   } catch {
     members.value = [];
@@ -282,12 +264,12 @@ async function loadUsers() {
 }
 
 async function onAdd() {
-  if (!selectedProjectId.value || !addForm.value.user_id) {
-    message.warning('请选择项目和用户');
+  if (!ctx.projectId || !addForm.value.user_id) {
+    message.warning('请先在顶栏选择项目并选择用户');
     return false;
   }
   try {
-    await addProjectMember(selectedProjectId.value, {
+    await addProjectMember(ctx.projectId, {
       user_id: addForm.value.user_id,
       role: memberRoleFromSpecialty(addForm.value.specialtyRole),
       is_project_admin: addForm.value.is_project_admin,
@@ -304,7 +286,8 @@ async function onAdd() {
 }
 
 function onRemove(row: ProjectMember) {
-  if (!selectedProjectId.value) return;
+  const projectId = ctx.projectId;
+  if (!projectId) return;
   dialog.warning({
     title: '确认移除',
     content: `移除成员 ${row.user?.email ?? row.user_id}？`,
@@ -312,7 +295,7 @@ function onRemove(row: ProjectMember) {
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        await removeProjectMember(selectedProjectId.value!, row.id);
+        await removeProjectMember(projectId, row.id);
         message.success('已移除');
         await load();
       } catch (e) {
@@ -322,14 +305,12 @@ function onRemove(row: ProjectMember) {
   });
 }
 
-async function init() {
-  const validProjectIds = projectOptions.value.map((o) => o.value as string);
-  restoreProject(validProjectIds, ctx.projectId ?? validProjectIds[0] ?? null);
-  await load();
-}
+watch(() => ctx.projectId, () => {
+  void load();
+});
 
 onMounted(() => {
   loadUsers();
-  init();
+  void load();
 });
 </script>

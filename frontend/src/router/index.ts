@@ -74,7 +74,7 @@ const router = createRouter({
           path: 'setting/project-config',
           name: 'setting-project-config',
           component: () => import('@/views/setting/ProjectConfigView.vue'),
-          meta: { hideContextSwitcher: true, projectAdmin: true },
+          meta: { projectAdmin: true },
         },
         {
           path: 'setting/project-members',

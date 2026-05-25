@@ -5,7 +5,7 @@ import type { ProjectMember } from '@/types';
 function memberNameOnly(m: ProjectMember): string {
   const name = m.user?.name?.trim();
   if (name) return name;
-  return m.user?.email?.trim() || m.user_id;
+  return m.user_id;
 }
 
 export function useProjectMemberOptions(projectId: Ref<string | null | undefined>) {
@@ -24,7 +24,7 @@ export function useProjectMemberOptions(projectId: Ref<string | null | undefined
     try {
       const { data } = await listProjectMembers(id);
       options.value = data.map((m) => ({
-        label: m.user?.name ? `${m.user.name} (${m.user.email})` : m.user_id,
+        label: memberNameOnly(m),
         value: m.user_id,
       }));
       nameOptions.value = data.map((m) => ({

@@ -21,6 +21,15 @@
           <template v-else-if="canEdit">
             <n-button quaternary size="small" @click="enterEdit">编辑需求</n-button>
             <n-button quaternary size="small" @click="enterWorkflowEdit">编辑节点</n-button>
+            <n-button
+              v-if="canCloseRequirement"
+              quaternary
+              size="small"
+              :loading="closeSaving"
+              @click="onCloseRequirement"
+            >
+              关闭需求
+            </n-button>
             <n-button quaternary size="small" type="error" @click="onDelete">删除</n-button>
           </template>
           <n-button quaternary size="small" @click="emit('close')">关闭</n-button>
@@ -38,9 +47,15 @@
 
     <div class="panel-body">
       <template v-if="!editMode">
-        <div v-if="req.status === 'rejected'" class="rejected-banner">
+        <div v-if="req.status === 'rejected'" class="status-banner rejected-banner">
           <n-text type="error">需求评审不通过</n-text>
           <n-button v-if="canEdit" size="small" type="primary" :loading="nodeSaving" @click="onReopenRejected">
+            重新打开
+          </n-button>
+        </div>
+        <div v-else-if="req.status === 'closed'" class="status-banner closed-banner">
+          <n-text depth="2">需求已关闭</n-text>
+          <n-button v-if="canEdit" size="small" type="primary" :loading="nodeSaving" @click="onReopenClosed">
             重新打开
           </n-button>
         </div>
@@ -83,7 +98,7 @@
             mode="view"
             :nodes="workflowEditMode ? workflowEditCanvasNodes : canvasNodes"
             :req-type="req.req_type"
-            :rejected="req.status === 'rejected'"
+            :rejected="workflowFrozen"
             :selected-node-key="workflowEditMode ? null : selectedNodeKey"
             @node-select="onNodeSelect"
           />
@@ -93,60 +108,38 @@
           <RequirementNodeDetailPanel
             :requirement="req"
             :node="selectedNode"
+            :node-tasks="selectedNodeTasks"
+            :member-options="memberOptions"
             :can-edit="!!canEdit"
-            :rejected="req.status === 'rejected'"
+            :rejected="workflowFrozen"
             :req-type="req.req_type"
             :loading="nodeSaving"
             @node-action="onNodeAction"
-            @edit-requirement="enterEdit"
+            @tasks-updated="onTasksUpdated"
           />
         </div>
 
         <div v-if="!workflowEditMode" class="tabs-block">
           <n-tabs type="line" animated>
             <n-tab-pane name="info" tab="需求信息">
-              <n-descriptions :column="2" label-placement="left" class="field-block">
-                <n-descriptions-item label="需求标题">{{ req.title }}</n-descriptions-item>
-                <n-descriptions-item label="优先级">{{ projectConfig.priorityLabel(req.priority) }}</n-descriptions-item>
-                <n-descriptions-item label="需求类型">{{ projectConfig.typeLabel(req.req_type) }}</n-descriptions-item>
-                <n-descriptions-item label="关联版本">{{ req.version?.name ?? '—' }}</n-descriptions-item>
-                <n-descriptions-item label="版本上线时间">
-                  {{ formatDateOnly(req.version?.released_at) }}
-                </n-descriptions-item>
-                <n-descriptions-item label="PRD 链接" :span="2">
-                  <a v-if="req.external_url" :href="req.external_url" target="_blank" rel="noopener">
-                    {{ req.external_url }}
-                  </a>
-                  <span v-else>—</span>
-                </n-descriptions-item>
-                <n-descriptions-item
-                  v-for="field in templateUiFields"
-                  :key="field.id"
-                  :label="field.name"
-                  :span="isRichtextType(field.type) ? 2 : 1"
-                >
-                  <InlineMarkdownContent
-                    v-if="isRichtextType(field.type) && richTextHasContent(customFields[field.id])"
-                    :text="richTextPlain(customFields[field.id])"
-                    :project-id="req.project_id"
-                  />
-                  <template v-else>{{ formatTemplateFieldValue(field, customFields[field.id], templateFieldCtx) }}</template>
-                </n-descriptions-item>
-              </n-descriptions>
-            </n-tab-pane>
-            <n-tab-pane name="people" tab="相关人员">
-              <n-descriptions :column="2" label-placement="left" class="field-block">
-                <n-descriptions-item
-                  v-for="role in activeWorkflowRoles"
-                  :key="role.key"
-                  :label="role.label"
-                >
-                  {{ roleUserLabel(role.key) }}
-                </n-descriptions-item>
-                <n-descriptions-item v-if="!activeWorkflowRoles.length" :span="2">
-                  <n-text depth="3">请先在「编辑节点」中启用工作流节点</n-text>
-                </n-descriptions-item>
-              </n-descriptions>
+              <EntityDetailFieldList
+                v-if="detailFieldContext"
+                class="field-block"
+                :rows="detailRows"
+                :context="detailFieldContext"
+                :project-id="req.project_id"
+              />
+              <div v-if="activeWorkflowRoles.length" class="people-fields field-block">
+                <div class="field-pair">
+                  <div v-for="role in activeWorkflowRoles" :key="role.key" class="field-cell">
+                    <div class="field-label">{{ role.label }}</div>
+                    <div class="field-value">{{ roleUserLabel(role.key) }}</div>
+                  </div>
+                </div>
+              </div>
+              <n-text v-else depth="3" class="empty-roles-hint">
+                请先在「编辑节点」中启用工作流节点，再配置相关人员
+              </n-text>
             </n-tab-pane>
             <n-tab-pane name="comments" tab="评论">
               <n-space vertical style="width: 100%">
@@ -266,8 +259,6 @@
 import { computed, ref, watch } from 'vue';
 import {
   NButton,
-  NDescriptions,
-  NDescriptionsItem,
   NEmpty,
   NForm,
   NFormItem,
@@ -292,6 +283,8 @@ import {
   getRequirement,
   listRequirementActivities,
   listRequirementComments,
+  closeRequirement,
+  reopenClosedRequirement,
   reopenRejectedRequirement,
   requirementNodeAction,
   updateRequirement,
@@ -299,6 +292,7 @@ import {
 } from '@/api/requirements';
 import { updateRequirementWorkflowEnabled } from '@/api/requirementWorkflow';
 import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
+import EntityDetailFieldList from '@/components/EntityDetailFieldList.vue';
 import InlineMarkdownContent from '@/components/InlineMarkdownContent.vue';
 import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
 import RequirementNodeDetailPanel from '@/components/RequirementNodeDetailPanel.vue';
@@ -307,21 +301,15 @@ import VersionSelect from '@/components/VersionSelect.vue';
 import { LEGACY_ROLE_ID_FIELDS } from '@/constants/requirementNodes';
 import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
 import {
-  isRichtextType,
   mergeCustomFields,
   validateCustomFields,
 } from '@/constants/fieldTypes';
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
-import {
-  formatTemplateFieldValue,
-  richTextHasContent,
-  richTextPlain,
-} from '@/schemas/entityFieldSchema';
+import { buildRequirementDetailRows, type RequirementDetailFieldContext } from '@/schemas/entityFieldSchema';
 import { usePermissions } from '@/composables/usePermissions';
 import type { Requirement, RequirementActivity, RequirementComment } from '@/types/business';
-import { formatDateOnly } from '@/utils/formatDateOnly';
 import {
   expandWorkflowCanvasNodes,
   type WorkflowCanvasNode,
@@ -352,6 +340,7 @@ const comments = ref<RequirementComment[]>([]);
 const loading = ref(false);
 const saving = ref(false);
 const nodeSaving = ref(false);
+const closeSaving = ref(false);
 const commentSaving = ref(false);
 const newComment = ref('');
 const editMode = ref(false);
@@ -368,9 +357,19 @@ const fieldSchema = useProjectFieldSchema('requirement', schemaProjectId);
 const customFields = ref<Record<string, unknown>>({});
 const templateUiFields = computed(() => fieldSchema.templateFieldsForUi.value);
 
-const templateFieldCtx = computed(() => ({
-  memberLabel: (userId: string) => memberOptions.value.find((o) => o.value === userId)?.label ?? userId,
-}));
+const detailRows = computed(() => buildRequirementDetailRows(fieldSchema.templateFields.value));
+
+const detailFieldContext = computed<RequirementDetailFieldContext | null>(() => {
+  if (!req.value) return null;
+  return {
+    req: req.value,
+    customFields: customFields.value,
+    templateFields: fieldSchema.templateFields.value,
+    priorityLabel: projectConfig.priorityLabel,
+    typeLabel: projectConfig.typeLabel,
+    memberLabel: (userId: string) => memberOptions.value.find((o) => o.value === userId)?.label ?? userId,
+  };
+});
 
 const priorityTagOptions = computed(() =>
   projectConfig.priorityOptions.value.map((o) => ({ label: o.label, value: o.option_key }))
@@ -394,6 +393,16 @@ const projectRoleFields = computed<ProjectRoleField[]>(() =>
 );
 
 const canEdit = computed(() => req.value && canManageCatalog(req.value.project_id));
+
+const workflowFrozen = computed(
+  () => req.value?.status === 'rejected' || req.value?.status === 'closed'
+);
+
+const canCloseRequirement = computed(() => {
+  if (!canEdit.value || !req.value) return false;
+  const s = req.value.status;
+  return s !== 'closed' && s !== 'rejected' && s !== 'released';
+});
 
 const baseCanvasNodes = computed<WorkflowCanvasNode[]>(() =>
   expandWorkflowCanvasNodes(
@@ -452,6 +461,17 @@ const selectedNode = computed(() => {
   return req.value.nodes.find((n) => n.node_key === selectedNodeKey.value) ?? null;
 });
 
+const selectedNodeTasks = computed(() => {
+  if (!selectedNodeKey.value || !req.value?.node_tasks) return [];
+  return req.value.node_tasks
+    .filter((t) => t.node_key === selectedNodeKey.value)
+    .sort((a, b) => a.sort - b.sort || a.created_at.localeCompare(b.created_at));
+});
+
+function onTasksUpdated(updated: Requirement) {
+  req.value = updated;
+}
+
 function roleUserLabel(roleKey: string): string {
   if (!req.value) return '—';
   const ids = req.value.role_assignee_ids?.[roleKey];
@@ -470,11 +490,11 @@ function roleUserLabel(roleKey: string): string {
     designer: req.value.designer,
   };
   const u = map[roleKey] as { name?: string; email?: string } | null | undefined;
-  return u?.name?.trim() || u?.email || '—';
+  return u?.name?.trim() || '—';
 }
 
 function commentAuthorLabel(c: RequirementComment): string {
-  return c.user?.name?.trim() || c.user?.email || '未知用户';
+  return c.user?.name?.trim() || '未知用户';
 }
 
 function formatTime(iso: string): string {
@@ -701,6 +721,51 @@ async function onReopenRejected() {
   }
 }
 
+function onCloseRequirement() {
+  if (!req.value) return;
+  dialog.warning({
+    title: '关闭需求',
+    content: `确定关闭「${req.value.title}」？关闭后工作流将冻结，可稍后重新打开。`,
+    positiveText: '关闭',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      closeSaving.value = true;
+      try {
+        const { data } = await closeRequirement(req.value!.id);
+        req.value = data;
+        clearNodeSelection();
+        const { data: acts } = await listRequirementActivities(req.value.id);
+        activities.value = acts;
+        message.success('需求已关闭');
+        emit('updated', data);
+      } catch (e: unknown) {
+        const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+        message.error(typeof detail === 'string' ? detail : '关闭失败');
+      } finally {
+        closeSaving.value = false;
+      }
+    },
+  });
+}
+
+async function onReopenClosed() {
+  if (!req.value) return;
+  nodeSaving.value = true;
+  try {
+    const { data } = await reopenClosedRequirement(req.value.id);
+    req.value = data;
+    const { data: acts } = await listRequirementActivities(req.value.id);
+    activities.value = acts;
+    message.success('已重新打开');
+    emit('updated', data);
+  } catch (e: unknown) {
+    const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+    message.error(typeof detail === 'string' ? detail : '操作失败');
+  } finally {
+    nodeSaving.value = false;
+  }
+}
+
 async function submitComment() {
   if (!req.value || !newComment.value.trim()) return;
   commentSaving.value = true;
@@ -803,6 +868,8 @@ watch(() => props.requirementId, () => {
 }
 .field-block {
   margin-top: 8px;
+  min-width: 0;
+  overflow: hidden;
 }
 .section-label {
   display: block;
@@ -814,14 +881,47 @@ watch(() => props.requirementId, () => {
   margin-top: 8px;
   font-size: 13px;
 }
-.rejected-banner {
+.people-fields {
+  padding-top: 4px;
+  border-top: 1px solid var(--n-divider-color);
+}
+.people-fields .field-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 24px;
+}
+.people-fields .field-cell {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: start;
+  min-width: 0;
+}
+.people-fields .field-label {
+  font-size: 13px;
+  color: var(--n-text-color-3);
+  line-height: 1.5;
+}
+.people-fields .field-value {
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+  min-width: 0;
+}
+.status-banner {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: rgba(208, 48, 80, 0.08);
   border-radius: 6px;
+}
+.rejected-banner {
+  background: rgba(208, 48, 80, 0.08);
+}
+.closed-banner {
+  background: var(--n-color-modal);
+  border: 1px solid var(--n-border-color);
 }
 .comment-item {
   padding: 8px 0;

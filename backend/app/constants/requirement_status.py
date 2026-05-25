@@ -9,6 +9,7 @@ REQUIREMENT_STATUS_KEYS: tuple[str, ...] = (
     "pending_release",
     "released",
     "rejected",
+    "closed",
 )
 
 REQUIREMENT_STATUS_LABELS: dict[str, str] = {
@@ -20,7 +21,13 @@ REQUIREMENT_STATUS_LABELS: dict[str, str] = {
     "pending_release": "待发版",
     "released": "已发版",
     "rejected": "不通过",
+    "closed": "已关闭",
 }
+
+# 终结态：不参与进行中待办推导
+TERMINAL_REQUIREMENT_STATUS_KEYS: frozenset[str] = frozenset(
+    {"released", "rejected", "closed"}
+)
 
 # 工作台待办：开发中
 TESTER_TODO_DEVELOPING_STATUS_KEYS: tuple[str, ...] = ("developing",)
