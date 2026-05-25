@@ -1,3 +1,5 @@
+<template />
+
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import { useLoadingBar } from 'naive-ui';

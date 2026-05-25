@@ -31,11 +31,7 @@ http.interceptors.response.use(
     const url = String(err.config?.url ?? '');
     const isAuthLogin = url.includes('/auth/login');
     if (err.response?.status === 401 && !isAuthLogin) {
-      const auth = useAuthStore();
-      auth.logout();
-      if (!window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login';
-      }
+      useAuthStore().logoutAndRedirect();
     }
     return Promise.reject(err);
   }

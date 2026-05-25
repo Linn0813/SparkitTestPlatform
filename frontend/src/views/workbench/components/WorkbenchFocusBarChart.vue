@@ -62,7 +62,6 @@ function render() {
         right: gridRight,
         top: 16,
         bottom: labelHorizontal ? 20 : 8,
-        containLabel: true,
       },
       xAxis: {
         type: 'category',

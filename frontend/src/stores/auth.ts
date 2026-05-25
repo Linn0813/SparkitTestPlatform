@@ -34,5 +34,13 @@ export const useAuthStore = defineStore('auth', () => {
     useContextStore().reset();
   }
 
-  return { token, user, me, login, loadMe, logout };
+  /** 清空登录态并进入登录页（全页跳转，避免仅清状态却留在主布局） */
+  function logoutAndRedirect() {
+    logout();
+    if (window.location.pathname !== '/login') {
+      window.location.assign('/login');
+    }
+  }
+
+  return { token, user, me, login, loadMe, logout, logoutAndRedirect };
 });

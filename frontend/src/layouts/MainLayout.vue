@@ -90,8 +90,7 @@ function onUserMenu(key: string) {
     return;
   }
   if (key === 'logout') {
-    auth.logout();
-    router.push({ name: 'login' });
+    auth.logoutAndRedirect();
     return;
   }
   router.push({ name: key });

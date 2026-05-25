@@ -88,7 +88,7 @@ function render() {
         },
       },
       legend: { type: 'scroll', top: 0 },
-      grid: { left: 48, right: gridRight, top: 48, bottom: 8, containLabel: true },
+      grid: { left: 48, right: gridRight, top: 48, bottom: 8 },
       xAxis: { type: 'category', data: xData, axisLabel: { interval: 0, rotate: xData.length > 4 ? 20 : 0 } },
       yAxis: { type: 'value', minInterval: 1 },
       series,
