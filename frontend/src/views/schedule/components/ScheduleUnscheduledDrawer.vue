@@ -1,16 +1,22 @@
 <template>
   <n-drawer :show="show" :width="420" placement="right" @update:show="(v) => emit('update:show', v)">
     <n-drawer-content :title="drawerTitle" closable>
-      <n-empty v-if="!items.length" description="暂无未排期任务" />
+      <n-empty v-if="!groupedItems.length" description="暂无未排期任务" />
       <div v-else class="unsched-list">
-        <div v-for="item in items" :key="item.id" class="unsched-card">
-          <div class="unsched-card__title">{{ cardTitle(item) }}</div>
+        <div v-for="group in groupedItems" :key="group.key" class="unsched-card">
+          <div class="unsched-card__title">{{ group.title }}</div>
           <div class="unsched-card__meta">
-            <span class="unsched-card__phase">{{ cardPhase(item) }}</span>
-            <span v-if="cardTask(item)" class="unsched-card__task">{{ cardTask(item) }}</span>
+            <div
+              v-for="item in group.items"
+              :key="item.id"
+              class="unsched-card__sub"
+            >
+              <span class="unsched-card__phase">{{ cardPhase(item) }}</span>
+              <span v-if="cardTask(item)" class="unsched-card__task">{{ cardTask(item) }}</span>
+            </div>
           </div>
-          <n-button text type="primary" size="small" @click="emit('open-item', item)">
-            {{ openButtonLabel(item) }}
+          <n-button text type="primary" size="small" @click="emit('open-item', group.items[0])">
+            {{ openButtonLabel(group) }}
           </n-button>
         </div>
       </div>
@@ -22,6 +28,7 @@
 import { computed } from 'vue';
 import { NButton, NDrawer, NDrawerContent, NEmpty } from 'naive-ui';
 import type { MemberScheduleItem, MemberScheduleRow } from '@/types/business';
+import { groupUnscheduledItems, type UnscheduledDisplayGroup } from '@/utils/scheduleLayout';
 
 const props = defineProps<{
   show: boolean;
@@ -34,6 +41,7 @@ const emit = defineEmits<{
 }>();
 
 const items = computed(() => props.member?.unscheduled_items ?? []);
+const groupedItems = computed(() => groupUnscheduledItems(items.value));
 
 const drawerTitle = computed(() =>
   props.member ? `${props.member.name} · 未排期 (${items.value.length})` : '未排期'
@@ -41,13 +49,6 @@ const drawerTitle = computed(() =>
 
 function isBugItem(item: MemberScheduleItem): boolean {
   return item.item_type === 'bug';
-}
-
-function cardTitle(item: MemberScheduleItem): string {
-  if (isBugItem(item)) {
-    return item.bug_title ?? item.title;
-  }
-  return item.requirement_title ?? item.title;
 }
 
 function cardPhase(item: MemberScheduleItem): string {
@@ -59,8 +60,8 @@ function cardTask(item: MemberScheduleItem): string | null {
   return item.title;
 }
 
-function openButtonLabel(item: MemberScheduleItem): string {
-  return isBugItem(item) ? '打开缺陷' : '打开需求';
+function openButtonLabel(group: UnscheduledDisplayGroup): string {
+  return group.kind === 'bug' ? '打开缺陷' : '打开需求';
 }
 </script>
 
@@ -87,10 +88,16 @@ function openButtonLabel(item: MemberScheduleItem): string {
 }
 .unsched-card__meta {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
+  flex-direction: column;
+  gap: 6px;
   font-size: 12px;
   color: var(--n-text-color-3);
+}
+.unsched-card__sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
 }
 .unsched-card__phase {
   padding: 2px 6px;

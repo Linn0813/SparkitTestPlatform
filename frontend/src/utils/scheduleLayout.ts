@@ -239,3 +239,59 @@ export function itemAccentColor(item: MemberScheduleItem): string {
   if (item.item_type === 'bug' && item.bug_id) return bugAccentColor(item.bug_id);
   return barAccentColor(item.node_key ?? item.id);
 }
+
+export interface UnscheduledDisplayGroup {
+  key: string;
+  kind: 'requirement' | 'bug';
+  title: string;
+  items: MemberScheduleItem[];
+  requirement_id?: string;
+  bug_id?: string;
+}
+
+/** 未排期列表：同一需求的多条节点任务合并为一组，缺陷仍一条一组。 */
+export function groupUnscheduledItems(items: MemberScheduleItem[]): UnscheduledDisplayGroup[] {
+  const groups: UnscheduledDisplayGroup[] = [];
+  const reqGroupIndex = new Map<string, number>();
+
+  for (const item of items) {
+    if (item.item_type === 'bug') {
+      const bugId = item.bug_id ?? item.id;
+      groups.push({
+        key: `bug:${bugId}`,
+        kind: 'bug',
+        title: item.bug_title ?? item.title,
+        items: [item],
+        bug_id: item.bug_id ?? undefined,
+      });
+      continue;
+    }
+
+    const reqId = item.requirement_id;
+    if (reqId) {
+      const idx = reqGroupIndex.get(reqId);
+      if (idx !== undefined) {
+        groups[idx].items.push(item);
+      } else {
+        reqGroupIndex.set(reqId, groups.length);
+        groups.push({
+          key: `req:${reqId}`,
+          kind: 'requirement',
+          title: item.requirement_title ?? item.title,
+          items: [item],
+          requirement_id: reqId,
+        });
+      }
+      continue;
+    }
+
+    groups.push({
+      key: `task:${item.id}`,
+      kind: 'requirement',
+      title: item.requirement_title ?? item.title,
+      items: [item],
+    });
+  }
+
+  return groups;
+}
