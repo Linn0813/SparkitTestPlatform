@@ -48,6 +48,10 @@ import { NCard, NEmpty, NGi, NGrid, NSelect, NSpace, NText } from 'naive-ui';
 import { computed, ref } from 'vue';
 import type { RouteLocationRaw } from 'vue-router';
 import { BUG_STATUS_COLORS, REQUIREMENT_STATUS_COLORS } from '@/constants/workbenchCharts';
+import {
+  versionFocusBugLink,
+  versionFocusRequirementLink,
+} from '@/navigation/workbenchLinks';
 import type { StatusCountItem, VersionFocus } from '@/types/business';
 import { formatVersionDisplay } from '@/utils/versionLabel';
 import WorkbenchFocusBarChart from './WorkbenchFocusBarChart.vue';
@@ -89,13 +93,13 @@ defineExpose({ resize });
 function reqLink(item: StatusCountItem): RouteLocationRaw | null {
   const vid = props.focus?.version?.id;
   if (!vid) return null;
-  return { name: 'requirements', query: { version_id: vid, status: item.key } };
+  return versionFocusRequirementLink(vid, item.key);
 }
 
 function bugLink(item: StatusCountItem): RouteLocationRaw | null {
   const vid = props.focus?.version?.id;
   if (!vid) return null;
-  return { name: 'bugs', query: { plan_version_id: vid, status_key: item.key } };
+  return versionFocusBugLink(vid, item.key);
 }
 
 function reqColor(key: string) {

@@ -27,7 +27,10 @@
 import { NCard, NGi, NGrid, NText } from 'naive-ui';
 import { ref } from 'vue';
 import type { RouteLocationRaw } from 'vue-router';
-import { FILTER_EMPTY_VALUE } from '@/constants/bugFilters';
+import {
+  bugFollowerChartCellLink,
+  bugOverviewChartCellLink,
+} from '@/navigation/workbenchLinks';
 import type { BugFocus, BugFollowerOverviewChart, BugOverviewChart } from '@/types/business';
 import WorkbenchBugFollowerChart from './WorkbenchBugFollowerChart.vue';
 import WorkbenchBugOverviewChart from './WorkbenchBugOverviewChart.vue';
@@ -53,19 +56,11 @@ const byVersionStatusRef = ref<{ resize?: () => void } | null>(null);
 const followerChartRef = ref<{ resize?: () => void } | null>(null);
 
 function bugOverviewLink(statusKey: string, versionId: string | null): RouteLocationRaw {
-  const query: Record<string, string> = { status_key: statusKey };
-  if (versionId) query.plan_version_id = versionId;
-  else query.plan_version_id = FILTER_EMPTY_VALUE;
-  return { name: 'bugs', query };
+  return bugOverviewChartCellLink(statusKey, versionId);
 }
 
 function followerLink(followerId: string | null, versionId: string | null): RouteLocationRaw {
-  const query: Record<string, string> = {};
-  if (followerId) query.follower_id = followerId;
-  else query.follower_id = FILTER_EMPTY_VALUE;
-  if (versionId) query.plan_version_id = versionId;
-  else query.plan_version_id = FILTER_EMPTY_VALUE;
-  return { name: 'bugs', query };
+  return bugFollowerChartCellLink(followerId, versionId);
 }
 
 function resize() {

@@ -3,10 +3,15 @@
     <template #header-extra>
       <n-button v-if="canPlans" type="primary" @click="showModal = true">新建计划</n-button>
     </template>
-    <n-space v-if="statusFilter || versionFilter" align="center" style="margin-bottom: 12px">
+    <n-space v-if="statusFilter.length || versionFilter" align="center" style="margin-bottom: 12px">
       <n-text depth="3">筛选：</n-text>
-      <n-tag v-if="statusFilter" closable @close="clearStatusFilter">
-        状态 {{ planStatusLabel(statusFilter) }}
+      <n-tag
+        v-for="st in statusFilter"
+        :key="st"
+        closable
+        @close="removeStatusFilter(st)"
+      >
+        状态 {{ planStatusLabel(st) }}
       </n-tag>
       <n-tag v-if="versionFilter" closable @close="clearVersionFilter">关联版本已筛选</n-tag>
     </n-space>
@@ -65,11 +70,12 @@ import {
 import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
 import type { TestPlan } from '@/types/business';
+import { decodeFilterQuery, encodeFilterValues } from '@/utils/filterQueryCodec';
 
 const router = useRouter();
 const route = useRoute();
 const ctx = useContextStore();
-const statusFilter = ref<string | null>(null);
+const statusFilter = ref<string[]>([]);
 const versionFilter = ref<string | null>(null);
 const { canManagePlans } = usePermissions();
 const canPlans = computed(() => canManagePlans(ctx.projectId));
@@ -88,16 +94,18 @@ const form = ref({
 const filteredPlans = computed(() => plans.value);
 
 function applyRouteQuery() {
-  const raw = route.query.status;
-  statusFilter.value = typeof raw === 'string' && raw ? raw : null;
+  statusFilter.value = decodeFilterQuery(route.query.status);
   const vid = route.query.version_id;
   versionFilter.value = typeof vid === 'string' && vid ? vid : null;
 }
 
-function clearStatusFilter() {
-  statusFilter.value = null;
+function removeStatusFilter(status: string) {
+  const next = statusFilter.value.filter((s) => s !== status);
+  statusFilter.value = next;
   const q = { ...route.query };
-  delete q.status;
+  const encoded = encodeFilterValues(next);
+  if (encoded) q.status = encoded;
+  else delete q.status;
   router.replace({ name: 'plans', query: q });
 }
 
@@ -220,9 +228,9 @@ async function load() {
     const params: { version_id?: string } = {};
     if (versionFilter.value) params.version_id = versionFilter.value;
     const { data } = await listPlans(params);
-    plans.value = statusFilter.value
-      ? data.filter((p) => p.status === statusFilter.value)
-      : data;
+    const statuses = statusFilter.value;
+    plans.value =
+      statuses.length > 0 ? data.filter((p) => statuses.includes(p.status)) : data;
   } finally {
     loading.value = false;
   }

@@ -52,7 +52,7 @@
                   title="计划"
                   :count="planTodoCount"
                   :empty="!planTodoCount"
-                  :view-all-to="{ name: 'plans' }"
+                  :view-all-to="planTodoViewAllLink()"
                 >
                   <div v-for="p in data?.todo.draft_plans" :key="`draft-${p.id}`" class="todo-item">
                     <WorkbenchTodoRow
@@ -81,7 +81,7 @@
                   title="需求"
                   :count="requirementTodoCount"
                   :empty="!requirementTodoCount"
-                  :view-all-to="{ name: 'requirements' }"
+                  :view-all-to="requirementTodoViewAllLink()"
                 >
                   <div
                     v-for="r in data?.todo.not_tested_requirements"
@@ -89,14 +89,14 @@
                     class="todo-item"
                   >
                     <WorkbenchTodoRow
-                      :to="{ name: 'requirements' }"
+                      :to="requirementTodoRowLink(r)"
                       :label="requirementTodoLabel(r)"
                       :columns="requirementTodoColumns(r)"
                     />
                   </div>
                   <div v-for="r in data?.todo.testing_requirements" :key="`testing-${r.id}`" class="todo-item">
                     <WorkbenchTodoRow
-                      :to="{ name: 'requirements' }"
+                      :to="requirementTodoRowLink(r)"
                       :label="requirementTodoLabel(r)"
                       :columns="requirementTodoColumns(r)"
                     />
@@ -109,7 +109,7 @@
                   title="已修复缺陷"
                   :count="data?.todo.fixed_bugs?.length ?? 0"
                   :empty="!data?.todo.fixed_bugs?.length"
-                  :view-all-to="{ name: 'bugs', query: { status_key: 'fixed' } }"
+                  :view-all-to="fixedBugsTodoViewAllLink()"
                 >
                   <div v-for="b in data?.todo.fixed_bugs" :key="b.id" class="todo-item">
                     <WorkbenchTodoRow
@@ -199,7 +199,6 @@ import {
   NText,
 } from 'naive-ui';
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, toRef, watch } from 'vue';
-import { type RouteLocationRaw } from 'vue-router';
 import { fetchWorkbench } from '@/api/dashboard';
 import { listBugStatuses } from '@/api/templates';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
@@ -232,6 +231,13 @@ import type { BugListColumn } from '@/utils/bugListLabels';
 import { requirementTodoDisplayLabel } from '@/utils/requirementLabel';
 import { formatVersionDisplay } from '@/utils/versionLabel';
 import { pickAdjacentItemId } from '@/utils/listNavigation';
+import {
+  fixedBugsTodoViewAllLink,
+  memberFollowerTodoViewAllLink,
+  planTodoViewAllLink,
+  requirementTodoRowLink,
+  requirementTodoViewAllLink,
+} from '@/navigation/workbenchLinks';
 import TodoSection from './components/TodoSection.vue';
 import WorkbenchBugSchedule from './components/WorkbenchBugSchedule.vue';
 import WorkbenchStatCards from './components/WorkbenchStatCards.vue';
@@ -396,17 +402,9 @@ function bugStatusTagTypeForKey(key: string) {
   return bugStatusTagType(key, bugStatuses.value);
 }
 
-const FOLLOWER_TODO_STATUS_KEYS = 'pending_confirm,in_progress,suspended';
-
-const bugsFollowerLink = computed<RouteLocationRaw | undefined>(() => {
+const bugsFollowerLink = computed(() => {
   if (!auth.user?.id) return undefined;
-  return {
-    name: 'bugs',
-    query: {
-      follower_id: auth.user.id,
-      status_key: FOLLOWER_TODO_STATUS_KEYS,
-    },
-  };
+  return memberFollowerTodoViewAllLink(auth.user.id);
 });
 
 function requirementTodoLabel(r: RequirementTodoBrief) {
