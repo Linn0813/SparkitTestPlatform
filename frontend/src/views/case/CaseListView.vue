@@ -22,6 +22,7 @@
     />
 
     <n-data-table
+      class="case-list-table"
       :columns="columns"
       :data="cases"
       :loading="loading"
@@ -168,7 +169,6 @@ import type { Requirement, TestCase } from '@/types/business';
 import { modulePathLabel } from '@/utils/moduleTree';
 import { decodeFilterQuery, encodeFilterValues, hasFilterValues } from '@/utils/filterQueryCodec';
 import { pickAdjacentItemId } from '@/utils/listNavigation';
-import { truncateForTable } from '@/utils/text';
 import { requirementOptionLabel } from '@/utils/requirementLabel';
 
 const ctx = useContextStore();
@@ -232,7 +232,12 @@ function moduleLabel(row: TestCase): string {
   return row.module_path || modulePathLabel(modules.value, row.module_id) || '—';
 }
 
-function requirementCell(row: TestCase): string {
+function tableLineText(text: string | null | undefined): string {
+  if (!text?.trim()) return '—';
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function requirementCell(row: TestCase) {
   const ids = row.requirement_ids ?? [];
   if (!ids.length) return '—';
   const labels = ids
@@ -241,20 +246,35 @@ function requirementCell(row: TestCase): string {
       return r ? r.title : null;
     })
     .filter(Boolean) as string[];
-  if (!labels.length) return `${ids.length} 项`;
-  if (labels.length === 1) return labels[0];
-  return `${labels[0]} 等 ${labels.length} 项`;
+  const display =
+    labels.length === 0
+      ? `${ids.length} 项`
+      : labels.length === 1
+        ? labels[0]
+        : `${labels[0]} 等 ${labels.length} 项`;
+  const full = labels.length ? labels.join('、') : display;
+  if (display === full) {
+    return h('span', { class: 'cell-ellipsis' }, display);
+  }
+  return h(
+    NTooltip,
+    { placement: 'top-start', style: { maxWidth: '480px' } },
+    {
+      trigger: () => h('span', { class: 'cell-ellipsis' }, display),
+      default: () => full,
+    }
+  );
 }
 
 function textCell(text: string | null | undefined) {
-  const display = truncateForTable(text);
+  const display = tableLineText(text);
   if (display === '—') return display;
   return h(
     NTooltip,
     { placement: 'top-start', style: { maxWidth: '480px' } },
     {
       trigger: () => h('span', { class: 'cell-ellipsis' }, display),
-      default: () => text,
+      default: () => text?.trim() ? text : display,
     }
   );
 }
@@ -318,18 +338,21 @@ const columns = computed<DataTableColumns<TestCase>>(() => [
     title: '前置条件',
     key: 'precondition',
     width: 140,
+    ellipsis: { tooltip: true },
     render: (row) => textCell(row.precondition),
   },
   {
     title: '步骤',
     key: 'step_text',
     width: 140,
+    ellipsis: { tooltip: true },
     render: (row) => textCell(row.step_text),
   },
   {
     title: '预期结果',
     key: 'expected_result',
     width: 140,
+    ellipsis: { tooltip: true },
     render: (row) => textCell(row.expected_result),
   },
   {
@@ -636,13 +659,18 @@ watch(page, () => {
 </script>
 
 <style scoped>
-.cell-ellipsis {
-  display: inline-block;
-  max-width: 100%;
+.case-list-table :deep(.n-data-table-td) {
+  overflow: hidden;
+}
+
+.case-list-table :deep(.cell-ellipsis),
+.case-list-table :deep(.case-title-link) {
+  display: block;
+  width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: bottom;
 }
 
 .case-title-link {
