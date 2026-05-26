@@ -155,7 +155,7 @@ import VersionSelect from '@/components/VersionSelect.vue';
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
-import type { RequirementPriority, RequirementType } from '@/types/business';
+import type { RequirementNodeState, RequirementPriority, RequirementType } from '@/types/business';
 import {
   expandWorkflowCanvasNodes,
   type WorkflowCanvasNode,
@@ -239,6 +239,13 @@ function isNodeEnabled(nodeKey: string): boolean {
   return props.enabledDraft[nodeKey] ?? node?.enabled ?? false;
 }
 
+/** 与后端 update_requirement_enabled_nodes 一致，用于编辑态画布预览 */
+function previewNodeState(n: WorkflowNodeSource, enabled: boolean): RequirementNodeState {
+  if (!enabled) return 'skipped';
+  if (n.state === 'skipped') return 'pending';
+  return n.state;
+}
+
 const workflowNodeOptions = computed(() => {
   const roleSet = new Set(props.selectedRoles);
   return props.workflowNodes.filter((n) => n.role_keys.some((rk) => roleSet.has(rk)));
@@ -246,10 +253,14 @@ const workflowNodeOptions = computed(() => {
 
 const editCanvasNodes = computed<WorkflowCanvasNode[]>(() =>
   expandWorkflowCanvasNodes(
-    props.workflowNodes.map((n) => ({
-      ...n,
-      enabled: props.enabledDraft[n.node_key] ?? n.enabled,
-    }))
+    props.workflowNodes.map((n) => {
+      const enabled = props.enabledDraft[n.node_key] ?? n.enabled;
+      return {
+        ...n,
+        enabled,
+        state: previewNodeState(n, enabled),
+      };
+    })
   )
 );
 
