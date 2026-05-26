@@ -156,6 +156,7 @@ import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
 import type { RequirementNodeState, RequirementPriority, RequirementType } from '@/types/business';
+import { syncEnabledDraftWithSelectedRoles } from '@/utils/requirementEditWorkflow';
 import {
   expandWorkflowCanvasNodes,
   type WorkflowCanvasNode,
@@ -283,10 +284,16 @@ const activeWorkflowRoles = computed(() => {
 });
 
 function toggleRole(roleKey: string, checked: boolean) {
-  const next = checked
+  const nextRoles = checked
     ? [...new Set([...props.selectedRoles, roleKey])]
     : props.selectedRoles.filter((k) => k !== roleKey);
-  emit('update:selectedRoles', next);
+  const nextEnabled = syncEnabledDraftWithSelectedRoles(
+    props.workflowNodes,
+    nextRoles,
+    props.enabledDraft
+  );
+  emit('update:selectedRoles', nextRoles);
+  emit('update:enabledDraft', nextEnabled);
 }
 
 function onToggleEnabled(nodeKey: string, enabled: boolean) {

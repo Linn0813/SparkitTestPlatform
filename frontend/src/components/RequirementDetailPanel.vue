@@ -204,6 +204,7 @@ import { useRequirementProjectConfig } from '@/composables/useRequirementProject
 import { buildRequirementDetailRows, type RequirementDetailFieldContext } from '@/schemas/entityFieldSchema';
 import { usePermissions } from '@/composables/usePermissions';
 import type { Requirement, RequirementActivity, RequirementComment } from '@/types/business';
+import { buildFullEnabledMap, syncEnabledDraftWithSelectedRoles } from '@/utils/requirementEditWorkflow';
 import {
   expandWorkflowCanvasNodes,
   type WorkflowCanvasNode,
@@ -386,14 +387,10 @@ function collectRoleKeysFromNodes(useEnabledOnly: boolean): Set<string> {
 }
 
 function deriveSelectedRolesFromRequirement() {
-  let keys = collectRoleKeysFromNodes(true);
-  if (!keys.size) {
-    keys = collectRoleKeysFromNodes(false);
-  }
-  const ordered = projectRoleFields.value.filter((r) => keys.has(r.key)).map((r) => r.key);
-  selectedRoles.value = ordered.length
-    ? ordered
-    : projectRoleFields.value.map((r) => r.key);
+  const keys = collectRoleKeysFromNodes(true);
+  selectedRoles.value = projectRoleFields.value
+    .filter((r) => keys.has(r.key))
+    .map((r) => r.key);
 }
 
 async function ensureProjectRolesLoaded() {
@@ -502,11 +499,21 @@ async function saveReq() {
   }
   saving.value = true;
   try {
+    const workflowSources = editWorkflowNodeSources.value;
+    enabledDraft.value = syncEnabledDraftWithSelectedRoles(
+      workflowSources,
+      selectedRoles.value,
+      enabledDraft.value
+    );
+    const enabledPayload = buildFullEnabledMap(
+      workflowSources,
+      selectedRoles.value,
+      enabledDraft.value
+    );
     const role_assignee_ids: Record<string, string[]> = {};
     const roleKeys = new Set<string>();
-    for (const node of req.value.nodes) {
-      const enabled = enabledDraft.value[node.node_key] ?? node.enabled;
-      if (!enabled) continue;
+    for (const node of workflowSources) {
+      if (!enabledPayload[node.node_key]) continue;
       for (const rk of node.role_keys) {
         if (selectedRoles.value.includes(rk)) roleKeys.add(rk);
       }
@@ -523,7 +530,7 @@ async function saveReq() {
       role_assignee_ids,
       custom_fields: customFields.value,
     });
-    await updateRequirementWorkflowEnabled(req.value.id, enabledDraft.value);
+    await updateRequirementWorkflowEnabled(req.value.id, enabledPayload);
     const { data: synced } = await syncRequirementStatus(req.value.id);
     req.value = synced;
     syncEnabledDraft();
