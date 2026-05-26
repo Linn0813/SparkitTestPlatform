@@ -13,6 +13,11 @@ from app.schemas.requirement import RequirementNodeProgressOut, RequirementNodeT
 from app.schemas.user import UserOut
 from app.schemas.version import VersionBrief
 from app.services.requirement_nodes import load_node_map
+from app.services.requirement_list_derived import (
+    build_developers_out,
+    collect_developer_user_ids,
+    compute_dev_handoff_date,
+)
 from app.services.requirement_node_tasks import aggregate_node_planned_schedule, load_tasks_for_requirement
 from app.services.requirement_workflow import def_lane_indexes, ensure_project_workflow_defs, load_project_workflow_defs
 
@@ -163,6 +168,9 @@ async def requirement_out(row: Requirement, db: AsyncSession) -> RequirementOut:
     tasks = await load_tasks_for_requirement(db, row.id)
     workflow = await build_requirement_workflow_out(row, db, tasks)
     node_tasks = await build_node_task_outs(tasks, db)
+    dev_handoff_date = compute_dev_handoff_date(workflow.nodes)
+    developer_ids = collect_developer_user_ids(row)
+    developers = build_developers_out(developer_ids, users_map)
 
     return RequirementOut(
         id=row.id,
@@ -191,6 +199,8 @@ async def requirement_out(row: Requirement, db: AsyncSession) -> RequirementOut:
         designer=users_map.get(row.designer_id) if row.designer_id else None,
         nodes=workflow.nodes,
         node_tasks=node_tasks,
+        dev_handoff_date=dev_handoff_date,
+        developers=developers,
         created_by=row.created_by,
         created_at=row.created_at,
         updated_at=row.updated_at,

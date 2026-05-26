@@ -106,7 +106,7 @@ const props = withDefaults(
     mode?: 'preview' | 'view' | 'edit';
     editable?: boolean;
     reqType?: RequirementType;
-    rejected?: boolean;
+    workflowFrozen?: boolean;
     selectedNodeKey?: string | null;
   }>(),
   {
@@ -114,7 +114,7 @@ const props = withDefaults(
     mode: 'view',
     editable: true,
     reqType: 'feature',
-    rejected: false,
+    workflowFrozen: false,
   }
 );
 

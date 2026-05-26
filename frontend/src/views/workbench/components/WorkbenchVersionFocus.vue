@@ -21,7 +21,7 @@
     </template>
     <n-empty v-if="!focus?.version" description="暂无版本，请先在版本管理创建" size="small" />
     <n-grid v-else :cols="24" :x-gap="12" responsive="screen">
-      <n-gi :span="8">
+      <n-gi :span="12">
         <WorkbenchFocusBarChart
           ref="reqChartRef"
           title="需求"
@@ -30,12 +30,11 @@
           :color-for="reqColor"
         />
       </n-gi>
-      <n-gi :span="16">
+      <n-gi :span="12">
         <WorkbenchFocusBarChart
           ref="bugChartRef"
           title="缺陷（规划版本）"
           :breakdown="focus.bugs"
-          :axis-label-rotate="0"
           :link-for="bugLink"
           :color-for="bugColor"
         />

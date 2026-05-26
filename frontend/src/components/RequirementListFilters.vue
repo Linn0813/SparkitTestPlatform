@@ -39,6 +39,40 @@
           <n-form-item label="关联版本" class="filter-item filter-item--version">
             <VersionSelect v-model="model.version_id" :project-id="projectId" />
           </n-form-item>
+          <n-form-item label="开发人员" class="filter-item filter-item--wide">
+            <n-select
+              v-model:value="model.developer_ids"
+              :options="memberOptions"
+              :loading="memberLoading"
+              clearable
+              filterable
+              multiple
+              max-tag-count="responsive"
+              placeholder="全部"
+            />
+          </n-form-item>
+          <n-form-item label="转测时间起" class="filter-item filter-item--date">
+            <n-date-picker
+              :formatted-value="model.dev_handoff_from"
+              value-format="yyyy-MM-dd"
+              type="date"
+              clearable
+              placeholder="不限"
+              style="width: 100%"
+              @update:formatted-value="model.dev_handoff_from = $event"
+            />
+          </n-form-item>
+          <n-form-item label="转测时间止" class="filter-item filter-item--date">
+            <n-date-picker
+              :formatted-value="model.dev_handoff_to"
+              value-format="yyyy-MM-dd"
+              type="date"
+              clearable
+              placeholder="不限"
+              style="width: 100%"
+              @update:formatted-value="model.dev_handoff_to = $event"
+            />
+          </n-form-item>
         </div>
         <div class="filter-toolbar">
           <n-button type="primary" size="small" attr-type="submit">查询</n-button>
@@ -50,10 +84,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { NButton, NForm, NFormItem, NInput, NSelect } from 'naive-ui';
+import { computed, toRef } from 'vue';
+import { NButton, NDatePicker, NForm, NFormItem, NInput, NSelect } from 'naive-ui';
 import VersionSelect from '@/components/VersionSelect.vue';
 import { REQUIREMENT_STATUS_OPTIONS } from '@/constants/requirementStatus';
+import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
 import type { RequirementListFilterState } from '@/composables/useRequirementListFilters';
 
@@ -69,6 +104,7 @@ const emit = defineEmits<{
 const statusOptions = [...REQUIREMENT_STATUS_OPTIONS];
 
 const projectConfig = useRequirementProjectConfig(() => props.projectId);
+const { options: memberOptions, loading: memberLoading } = useProjectMemberOptions(toRef(() => props.projectId));
 
 const priorityOptions = computed(() =>
   projectConfig.priorityOptions.value.map((o) => ({ label: o.label, value: o.option_key }))
@@ -111,6 +147,10 @@ const typeOptions = computed(() =>
 .filter-item--version {
   width: min(100%, 220px);
   min-width: 180px;
+}
+
+.filter-item--date {
+  width: 148px;
 }
 
 .filter-item :deep(.n-form-item-label) {

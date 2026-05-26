@@ -151,17 +151,20 @@ import {
 } from '@/composables/useRequirementListFilters';
 import { requirementPriorityTagType } from '@/constants/requirementPriority';
 import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
+import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
 import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
 import type { Requirement, RequirementPriority, RequirementType, ProjectVersion } from '@/types/business';
 import { decodeFilterQuery, encodeFilterValues, hasFilterValues } from '@/utils/filterQueryCodec';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
+import { formatDevHandoffDate, formatRequirementDevelopers } from '@/utils/requirementListDerived';
 
 const ctx = useContextStore();
 const { canManageCatalog } = usePermissions();
 const canCatalog = computed(() => canManageCatalog(ctx.projectId));
 const projectConfig = useRequirementProjectConfig(() => ctx.projectId);
+const { labelByUserId: memberLabelByUserId } = useProjectMemberOptions(computed(() => ctx.projectId));
 
 const prioritySelectOptions = computed(() =>
   projectConfig.priorityOptions.value.map((o) => ({ label: o.label, value: o.option_key }))
@@ -249,6 +252,31 @@ const filterTags = computed(() => {
       clear: () => clearFilterField('version_id'),
     });
   }
+  if (hasFilterValues(f.developer_ids)) {
+    const labels = f.developer_ids.map((id) => memberLabelByUserId.value.get(id) ?? id).join('、');
+    tags.push({
+      key: 'developer_ids',
+      label: `开发人员：${labels}`,
+      clear: () => clearFilterField('developer_ids'),
+    });
+  }
+  if (f.dev_handoff_from || f.dev_handoff_to) {
+    const from = f.dev_handoff_from ?? '…';
+    const to = f.dev_handoff_to ?? '…';
+    tags.push({
+      key: 'dev_handoff',
+      label: `转测时间：${from} ~ ${to}`,
+      clear: () => {
+        filters.value = {
+          ...filters.value,
+          dev_handoff_from: null,
+          dev_handoff_to: null,
+        };
+        syncQueryToRoute();
+        void load();
+      },
+    });
+  }
   return tags;
 });
 
@@ -266,6 +294,9 @@ function buildListParams() {
     status?: string;
     priority?: string;
     req_type?: string;
+    developer_id?: string;
+    dev_handoff_from?: string;
+    dev_handoff_to?: string;
   } = {};
   if (f.q.trim()) params.q = f.q.trim();
   if (f.version_id) params.version_id = f.version_id;
@@ -275,6 +306,10 @@ function buildListParams() {
   if (priority) params.priority = priority;
   const reqType = encodeFilterValues(f.req_types);
   if (reqType) params.req_type = reqType;
+  const developerId = encodeFilterValues(f.developer_ids);
+  if (developerId) params.developer_id = developerId;
+  if (f.dev_handoff_from) params.dev_handoff_from = f.dev_handoff_from;
+  if (f.dev_handoff_to) params.dev_handoff_to = f.dev_handoff_to;
   return params;
 }
 
@@ -289,6 +324,10 @@ function syncQueryToRoute() {
   if (priority) q.priority = priority;
   const reqType = encodeFilterValues(f.req_types);
   if (reqType) q.req_type = reqType;
+  const developerId = encodeFilterValues(f.developer_ids);
+  if (developerId) q.developer_id = developerId;
+  if (f.dev_handoff_from) q.dev_handoff_from = f.dev_handoff_from;
+  if (f.dev_handoff_to) q.dev_handoff_to = f.dev_handoff_to;
   if (activeReqId.value) q.id = activeReqId.value;
   router.replace({ name: 'requirements', query: q });
 }
@@ -302,6 +341,9 @@ function applyRouteQuery() {
     priorities: decodeFilterQuery(q.priority),
     req_types: decodeFilterQuery(q.req_type),
     version_id: typeof q.version_id === 'string' && q.version_id ? q.version_id : null,
+    developer_ids: decodeFilterQuery(q.developer_id),
+    dev_handoff_from: typeof q.dev_handoff_from === 'string' && q.dev_handoff_from ? q.dev_handoff_from : null,
+    dev_handoff_to: typeof q.dev_handoff_to === 'string' && q.dev_handoff_to ? q.dev_handoff_to : null,
   };
   const qid = typeof q.id === 'string' && q.id ? q.id : null;
   if (qid) {
@@ -384,6 +426,19 @@ const columns = computed<DataTableColumns<Requirement>>(() => [
     key: 'version',
     width: 120,
     render: (row) => row.version?.name ?? '—',
+  },
+  {
+    title: '开发人员',
+    key: 'developers',
+    width: 140,
+    ellipsis: { tooltip: true },
+    render: (row) => formatRequirementDevelopers(row),
+  },
+  {
+    title: '转测时间',
+    key: 'dev_handoff_date',
+    width: 110,
+    render: (row) => formatDevHandoffDate(row),
   },
   ...(canCatalog.value
     ? [

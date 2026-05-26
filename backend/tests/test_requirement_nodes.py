@@ -240,18 +240,26 @@ def test_derive_status_released():
     assert derive_requirement_status(req, nodes, defs) == RequirementStatus.released
 
 
-def test_derive_status_rejected_sticky():
-    req = _make_req(status=RequirementStatus.rejected)
-    defs = _default_defs()
-    nodes = _nodes({"req_review": RequirementNodeState.pending}, defs=defs)
-    assert derive_requirement_status(req, nodes, defs) == RequirementStatus.rejected
-
-
 def test_derive_status_closed_sticky():
     req = _make_req(status=RequirementStatus.closed)
     defs = _default_defs()
     nodes = _nodes({"frontend_dev": RequirementNodeState.in_progress}, defs=defs)
     assert derive_requirement_status(req, nodes, defs) == RequirementStatus.closed
+
+
+def test_derive_status_pending_review_when_review_lane_active():
+    """评审节点未完成时应为待评审（打回后不再使用 rejected 状态）。"""
+    req = _make_req(status=RequirementStatus.draft)
+    defs = _default_defs()
+    nodes = _nodes(
+        {
+            "prd_output": RequirementNodeState.completed,
+            "req_design": RequirementNodeState.completed,
+            "req_review": RequirementNodeState.pending,
+        },
+        defs=defs,
+    )
+    assert derive_requirement_status(req, nodes, defs) == RequirementStatus.pending_review
 
 
 def test_derive_status_developing_when_integration_pending_not_pending_release():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -33,7 +34,6 @@ from app.services.requirement_nodes import (
     close_requirement,
     load_node_map,
     reopen_from_closed,
-    reopen_from_rejected,
     sync_requirement_status_from_workflow,
     update_requirement_enabled_nodes,
 )
@@ -146,6 +146,9 @@ async def list_requirements(
     backend_rd_id: Optional[str] = None,
     pm_id: Optional[str] = None,
     qa_id: Optional[str] = None,
+    developer_id: Optional[str] = None,
+    dev_handoff_from: Optional[date] = None,
+    dev_handoff_to: Optional[date] = None,
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -161,6 +164,9 @@ async def list_requirements(
         backend_rd_id=backend_rd_id,
         pm_id=pm_id,
         qa_id=qa_id,
+        developer_id=developer_id,
+        dev_handoff_from=dev_handoff_from,
+        dev_handoff_to=dev_handoff_to,
     )
     result = await db.execute(stmt.order_by(Requirement.num.desc()))
     rows = result.scalars().all()
@@ -512,23 +518,6 @@ async def requirement_sync_status(
 ):
     row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
     await sync_requirement_status_from_workflow(db, row, actor_id=ctx.user.id)
-    await db.refresh(row)
-    return await requirement_out(row, db)
-
-
-@router.post("/{requirement_id}/reopen-rejected", response_model=RequirementOut)
-async def requirement_reopen_rejected(
-    requirement_id: str,
-    ctx: ProjectContext = Depends(require_project_context_catalog),
-    db: AsyncSession = Depends(get_db),
-):
-    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
-    defs = await load_project_workflow_defs(db, ctx.project_id)
-    nodes = await load_node_map(db, row.id)
-    try:
-        await reopen_from_rejected(db, row, nodes, defs, actor_id=ctx.user.id)
-    except RequirementNodeError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     await db.refresh(row)
     return await requirement_out(row, db)
 

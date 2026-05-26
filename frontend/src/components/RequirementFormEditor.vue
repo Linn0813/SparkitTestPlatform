@@ -138,7 +138,7 @@
           mode="view"
           :nodes="workflowCanvasNodes"
           :req-type="form.req_type"
-          :rejected="workflowFrozen"
+          :workflow-frozen="workflowFrozen"
           :selected-node-key="null"
         />
       </div>

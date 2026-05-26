@@ -55,6 +55,10 @@ TECH_OPTIMIZATION_SKIPPABLE_NODES: frozenset[str] = frozenset(
     {"product_experience", "ui_restoration", "req_design"}
 )
 
+DEVELOPMENT_NODE_KEYS: tuple[str, ...] = ("frontend_dev", "backend_dev", "integration")
+
+DEVELOPER_ROLE_KEYS: tuple[str, ...] = ("frontend_rd", "backend_rd", "tech_owner")
+
 REQUIREMENT_ROLE_KEYS: tuple[str, ...] = (
     "frontend_rd",
     "backend_rd",

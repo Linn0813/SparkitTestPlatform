@@ -160,9 +160,8 @@ def derive_requirement_status(
     *,
     rules: list[StatusRuleLike] | None = None,
 ) -> RequirementStatus:
-    # 评审打回：不进入可配置映射表，保持不通过直至重新打开
-    if req.status == RequirementStatus.rejected:
-        return RequirementStatus.rejected
+    if req.status == RequirementStatus.closed:
+        return RequirementStatus.closed
 
     rule_list = rules or default_status_rule_likes()
 
@@ -242,7 +241,7 @@ def auto_start_ready_nodes(
     actor_id: str | None = None,
 ) -> list[str]:
     """前置阶段 gate 已满足时，将 pending 节点自动置为进行中。"""
-    if req.status in (RequirementStatus.rejected, RequirementStatus.closed):
+    if req.status == RequirementStatus.closed:
         return []
 
     now = _utcnow()
@@ -345,8 +344,6 @@ async def apply_node_action(
     action: str,
     actor_id: str,
 ) -> RequirementStatus:
-    if req.status == RequirementStatus.rejected and action != "reopen":
-        raise RequirementNodeError("需求已打回，请先重新打开")
     if req.status == RequirementStatus.closed:
         raise RequirementNodeError("需求已关闭，请先重新打开")
 
@@ -399,16 +396,30 @@ async def apply_node_action(
         node.state = RequirementNodeState.pending
         node.started_at = None
         node.completed_at = None
-        req.status = RequirementStatus.rejected
+        node.operator_id = actor_id
+        await db.flush()
+        rules = await load_status_rules_for_derive(db, req.project_id)
+        new_status, _, _ = reconcile_workflow_nodes(
+            req, nodes, defs, rules=rules, actor_id=actor_id
+        )
         await log_requirement_activity(
             db,
             requirement_id=req.id,
             actor_id=actor_id,
             action_type="reject",
-            summary="需求评审不通过",
+            summary="需求评审打回",
             detail={"node_key": node_key},
         )
-        return RequirementStatus.rejected
+        if old_status != new_status:
+            await log_requirement_activity(
+                db,
+                requirement_id=req.id,
+                actor_id=actor_id,
+                action_type="status_change",
+                summary=f"状态变更：{requirement_status_label(old_status.value)} → {requirement_status_label(new_status.value)}",
+                detail={"from_status": old_status.value, "to_status": new_status.value},
+            )
+        return new_status
     else:
         raise RequirementNodeError("未知操作")
 
@@ -427,7 +438,7 @@ async def apply_node_action(
         detail={"node_key": node_key, "action": action},
     )
 
-    if old_status != new_status and old_status != RequirementStatus.rejected:
+    if old_status != new_status:
         await log_requirement_activity(
             db,
             requirement_id=req.id,
@@ -448,8 +459,6 @@ async def close_requirement(
 ) -> RequirementStatus:
     if req.status == RequirementStatus.closed:
         raise RequirementNodeError("需求已关闭")
-    if req.status == RequirementStatus.rejected:
-        raise RequirementNodeError("需求已打回，无法关闭")
     if req.status == RequirementStatus.released:
         raise RequirementNodeError("需求已发版，无法关闭")
 
@@ -489,47 +498,6 @@ async def reopen_from_closed(
         actor_id=actor_id,
         action_type="reopen_closed",
         summary="重新打开了需求（已关闭后）",
-    )
-    return new_status
-
-
-async def reopen_from_rejected(
-    db: AsyncSession,
-    req: Requirement,
-    nodes: NodeMap,
-    defs: list[RequirementWorkflowNodeDef],
-    *,
-    actor_id: str,
-) -> RequirementStatus:
-    if req.status != RequirementStatus.rejected:
-        raise RequirementNodeError("需求未处于不通过状态")
-
-    req.status = RequirementStatus.draft
-    lanes = build_lanes(defs)
-    if lanes:
-        first_lane_keys = {d.node_key for d in lanes[0]}
-        for key in first_lane_keys:
-            node = nodes.get(key)
-            if node and node.enabled and node.state != RequirementNodeState.pending:
-                node.state = RequirementNodeState.pending
-                node.started_at = None
-                node.completed_at = None
-        review = nodes.get("req_review")
-        if review and review.enabled and review.state != RequirementNodeState.pending:
-            review.state = RequirementNodeState.pending
-            review.started_at = None
-            review.completed_at = None
-
-    rules = await load_status_rules_for_derive(db, req.project_id)
-    new_status = derive_requirement_status(req, nodes, defs, rules=rules)
-    req.status = new_status
-
-    await log_requirement_activity(
-        db,
-        requirement_id=req.id,
-        actor_id=actor_id,
-        action_type="reopen_rejected",
-        summary="重新打开需求（评审不通过后）",
     )
     return new_status
 

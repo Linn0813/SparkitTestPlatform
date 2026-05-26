@@ -21,7 +21,7 @@ const props = defineProps<{
   breakdown: StatusBreakdown;
   colorFor?: (key: string, index: number) => string | undefined;
   linkFor?: (item: StatusCountItem) => RouteLocationRaw | null;
-  /** 横轴标签旋转角度；不传则状态较多时自动倾斜 */
+  /** 横轴标签旋转角度，默认 0（水平） */
   axisLabelRotate?: number;
 }>();
 
@@ -50,9 +50,9 @@ function render() {
 
   const xData = items.map((s) => s.label);
   const gridRight = workbenchCategoryGridRight(xData.length);
-  const labelRotate =
-    props.axisLabelRotate !== undefined ? props.axisLabelRotate : xData.length > 5 ? 24 : 0;
-  const labelHorizontal = labelRotate === 0;
+  const labelRotate = props.axisLabelRotate ?? 0;
+  const manyCategories = xData.length > 6;
+  const gridBottom = manyCategories ? 28 : 20;
 
   instance.setOption(
     {
@@ -61,7 +61,7 @@ function render() {
         left: 8,
         right: gridRight,
         top: 16,
-        bottom: labelHorizontal ? 20 : 8,
+        bottom: gridBottom,
       },
       xAxis: {
         type: 'category',
@@ -69,10 +69,10 @@ function render() {
         axisLabel: {
           interval: 0,
           rotate: labelRotate,
-          fontSize: 11,
-          ...(labelHorizontal
-            ? { hideOverlap: true, overflow: 'truncate' as const, width: 72 }
-            : {}),
+          fontSize: manyCategories ? 10 : 11,
+          hideOverlap: true,
+          overflow: 'truncate' as const,
+          width: manyCategories ? 52 : 72,
         },
       },
       yAxis: { type: 'value', minInterval: 1 },

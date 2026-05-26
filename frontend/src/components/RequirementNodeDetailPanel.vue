@@ -202,7 +202,7 @@ const props = defineProps<{
   nodeTasks: RequirementNodeTask[];
   memberOptions: { label: string; value: string }[];
   canEdit?: boolean;
-  rejected?: boolean;
+  workflowFrozen?: boolean;
   reqType?: RequirementType;
   loading?: boolean;
 }>();
@@ -218,7 +218,7 @@ const addingTask = ref(false);
 const titleDrafts = ref<Record<string, string>>({});
 const estimateDrafts = ref<Record<string, number | null>>({});
 
-const isTaskEditable = computed(() => Boolean(props.canEdit && !props.rejected && props.node.enabled));
+const isTaskEditable = computed(() => Boolean(props.canEdit && !props.workflowFrozen && props.node.enabled));
 
 const assigneeLabels = computed(() => {
   const labels: string[] = [];
@@ -262,7 +262,7 @@ const nodeScheduleLabel = computed(() => {
 const workflowNodes = computed(() => props.requirement.nodes ?? []);
 
 const gateHint = computed(() => {
-  if (!props.canEdit || props.rejected || !props.node.enabled) return null;
+  if (!props.canEdit || props.workflowFrozen || !props.node.enabled) return null;
   if (props.node.state !== 'pending') return null;
   return gateBlockedReason(workflowNodes.value, props.node.node_key);
 });
@@ -272,7 +272,7 @@ const actionButtons = computed((): {
   label: string;
   type?: 'primary' | 'error' | 'default';
 }[] => {
-  if (!props.canEdit || props.rejected || !props.node.enabled) return [];
+  if (!props.canEdit || props.workflowFrozen || !props.node.enabled) return [];
   const node = props.node;
   const nodes = workflowNodes.value;
   const list: { action: RequirementNodeAction; label: string; type?: 'primary' | 'error' | 'default' }[] = [];
@@ -281,7 +281,7 @@ const actionButtons = computed((): {
     if (isNodeActionable(nodes, node)) {
       list.push({ action: 'complete', label: '完成', type: 'primary' });
       if (node.node_key === 'req_review') {
-        list.push({ action: 'reject', label: '不通过', type: 'error' });
+        list.push({ action: 'reject', label: '打回', type: 'error' });
       }
     }
   } else if (node.state === 'completed' || node.state === 'skipped') {

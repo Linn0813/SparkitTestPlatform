@@ -49,13 +49,7 @@
 
     <div class="panel-body" :class="{ 'panel-body--edit': editMode }">
       <template v-if="!editMode">
-        <div v-if="req.status === 'rejected'" class="status-banner rejected-banner">
-          <n-text type="error">需求评审不通过</n-text>
-          <n-button v-if="canEdit" size="small" type="primary" :loading="nodeSaving" @click="onReopenRejected">
-            重新打开
-          </n-button>
-        </div>
-        <div v-else-if="req.status === 'closed'" class="status-banner closed-banner">
+        <div v-if="req.status === 'closed'" class="status-banner closed-banner">
           <n-text depth="2">需求已关闭</n-text>
           <n-button v-if="canEdit" size="small" type="primary" :loading="nodeSaving" @click="onReopenClosed">
             重新打开
@@ -67,7 +61,7 @@
             mode="view"
             :nodes="canvasNodes"
             :req-type="req.req_type"
-            :rejected="workflowFrozen"
+            :workflow-frozen="workflowFrozen"
             :selected-node-key="selectedNodeKey"
             @node-select="onNodeSelect"
           />
@@ -80,7 +74,7 @@
             :node-tasks="selectedNodeTasks"
             :member-options="memberOptions"
             :can-edit="!!canEdit"
-            :rejected="workflowFrozen"
+            :workflow-frozen="workflowFrozen"
             :req-type="req.req_type"
             :loading="nodeSaving"
             @node-action="onNodeAction"
@@ -185,7 +179,6 @@ import {
   listRequirementComments,
   closeRequirement,
   reopenClosedRequirement,
-  reopenRejectedRequirement,
   requirementNodeAction,
   syncRequirementStatus,
   updateRequirement,
@@ -284,14 +277,12 @@ const projectRoleFields = computed<ProjectRoleField[]>(() =>
 
 const canEdit = computed(() => req.value && canManageCatalog(req.value.project_id));
 
-const workflowFrozen = computed(
-  () => req.value?.status === 'rejected' || req.value?.status === 'closed'
-);
+const workflowFrozen = computed(() => req.value?.status === 'closed');
 
 const canCloseRequirement = computed(() => {
   if (!canEdit.value || !req.value) return false;
   const s = req.value.status;
-  return s !== 'closed' && s !== 'rejected' && s !== 'released';
+  return s !== 'closed' && s !== 'released';
 });
 
 const baseCanvasNodes = computed<WorkflowCanvasNode[]>(() =>
@@ -584,21 +575,6 @@ async function onNodeAction(nodeKey: string, action: RequirementNodeAction) {
   }
 }
 
-async function onReopenRejected() {
-  if (!req.value) return;
-  nodeSaving.value = true;
-  try {
-    const { data } = await reopenRejectedRequirement(req.value.id);
-    req.value = data;
-    const { data: acts } = await listRequirementActivities(req.value.id);
-    activities.value = acts;
-    message.success('已重新打开');
-    emit('updated', data);
-  } finally {
-    nodeSaving.value = false;
-  }
-}
-
 function onCloseRequirement() {
   if (!req.value) return;
   dialog.warning({
@@ -770,9 +746,6 @@ watch(() => props.requirementId, () => {
   margin-bottom: 12px;
   padding: 8px 12px;
   border-radius: 6px;
-}
-.rejected-banner {
-  background: rgba(208, 48, 80, 0.08);
 }
 .closed-banner {
   background: var(--n-color-modal);

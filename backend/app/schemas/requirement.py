@@ -197,6 +197,8 @@ class RequirementOut(ORMBase):
     designer: Optional[UserOut] = None
     nodes: list[RequirementNodeProgressOut] = Field(default_factory=list)
     node_tasks: list[RequirementNodeTaskOut] = Field(default_factory=list)
+    dev_handoff_date: Optional[date] = None
+    developers: list[UserOut] = Field(default_factory=list)
     created_by: str
     created_at: datetime
     updated_at: datetime

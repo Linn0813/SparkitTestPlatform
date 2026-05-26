@@ -4,6 +4,9 @@ export interface RequirementListFilterState {
   priorities: string[];
   req_types: string[];
   version_id: string | null;
+  developer_ids: string[];
+  dev_handoff_from: string | null;
+  dev_handoff_to: string | null;
 }
 
 export function emptyRequirementListFilters(): RequirementListFilterState {
@@ -13,6 +16,9 @@ export function emptyRequirementListFilters(): RequirementListFilterState {
     priorities: [],
     req_types: [],
     version_id: null,
+    developer_ids: [],
+    dev_handoff_from: null,
+    dev_handoff_to: null,
   };
 }
 
@@ -31,6 +37,12 @@ export function clearRequirementFilterField(
       return { ...state, req_types: [] };
     case 'version_id':
       return { ...state, version_id: null };
+    case 'developer_ids':
+      return { ...state, developer_ids: [] };
+    case 'dev_handoff_from':
+      return { ...state, dev_handoff_from: null };
+    case 'dev_handoff_to':
+      return { ...state, dev_handoff_to: null };
     default:
       return state;
   }

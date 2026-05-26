@@ -8,7 +8,6 @@ export const REQUIREMENT_STATUS_OPTIONS = [
   { label: '测试中', value: 'testing' },
   { label: '待发版', value: 'pending_release' },
   { label: '已发版', value: 'released' },
-  { label: '不通过', value: 'rejected' },
   { label: '已关闭', value: 'closed' },
 ] as const;
 
@@ -18,7 +17,6 @@ export function requirementStatusLabel(key: string): string {
 
 export function requirementStatusTagType(key: string): TagProps['type'] {
   if (key === 'released') return 'success';
-  if (key === 'rejected') return 'error';
   if (key === 'closed') return 'default';
   if (key === 'testing' || key === 'pending_release') return 'info';
   if (key === 'developing' || key === 'designing') return 'warning';

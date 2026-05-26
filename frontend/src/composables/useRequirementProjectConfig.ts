@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import {
   listRequirementOptions,
   listRequirementRoles,
@@ -93,6 +93,8 @@ export function useRequirementProjectConfig(projectId: () => string | null) {
   function roleLabel(key: string): string {
     return roles.value.find((r) => r.role_key === key)?.label ?? key;
   }
+
+  watch(projectId, () => void reload(), { immediate: true });
 
   return {
     roles,

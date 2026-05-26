@@ -98,7 +98,6 @@ export type RequirementStatus =
   | 'testing'
   | 'pending_release'
   | 'released'
-  | 'rejected'
   | 'closed';
 
 export type RequirementPriority = string;
@@ -209,6 +208,8 @@ export interface Requirement {
   designer?: UserBrief | null;
   role_assignee_ids?: Record<string, string[]>;
   custom_fields?: Record<string, unknown>;
+  dev_handoff_date?: string | null;
+  developers?: UserBrief[];
   nodes: RequirementNodeProgress[];
   node_tasks?: RequirementNodeTask[];
   created_by: string;

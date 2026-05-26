@@ -35,3 +35,31 @@ def test_apply_requirement_list_filters_version_empty():
     sql = _stmt_sql(stmt)
     assert "version_id" in sql.lower()
     assert "IS NULL" in sql.upper() or "is null" in sql.lower()
+
+
+def test_apply_requirement_list_filters_developer_id():
+    base = select(Requirement).where(Requirement.project_id == "proj-1")
+    stmt = apply_requirement_list_filters(base, developer_id="user-a,user-b")
+    sql = _stmt_sql(stmt)
+    assert "frontend_rd_id" in sql.lower()
+    assert "backend_rd_id" in sql.lower()
+    assert "tech_owner_id" in sql.lower()
+    assert "json_contains" in sql.lower()
+    assert "user-a" in sql
+    assert "user-b" in sql
+
+
+def test_apply_requirement_list_filters_dev_handoff_range():
+    from datetime import date
+
+    base = select(Requirement).where(Requirement.project_id == "proj-1")
+    stmt = apply_requirement_list_filters(
+        base,
+        dev_handoff_from=date(2024, 11, 1),
+        dev_handoff_to=date(2024, 11, 30),
+    )
+    sql = _stmt_sql(stmt)
+    assert "requirement_node_tasks" in sql.lower()
+    assert "frontend_dev" in sql
+    assert "2024-11-01" in sql
+    assert "2024-11-30" in sql

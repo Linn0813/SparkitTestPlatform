@@ -20,6 +20,9 @@ export function listRequirements(params?: {
   backend_rd_id?: string;
   pm_id?: string;
   qa_id?: string;
+  developer_id?: string;
+  dev_handoff_from?: string;
+  dev_handoff_to?: string;
 }) {
   return http.get<Requirement[]>('/requirements', { params });
 }
@@ -74,10 +77,6 @@ export function deleteRequirement(id: string) {
 
 export function requirementNodeAction(id: string, nodeKey: string, action: RequirementNodeAction) {
   return http.post<Requirement>(`/requirements/${id}/nodes/${nodeKey}`, { action });
-}
-
-export function reopenRejectedRequirement(id: string) {
-  return http.post<Requirement>(`/requirements/${id}/reopen-rejected`);
 }
 
 export function closeRequirement(id: string) {

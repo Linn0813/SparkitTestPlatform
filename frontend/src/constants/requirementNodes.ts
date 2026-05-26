@@ -16,6 +16,10 @@ export const LEGACY_ROLE_ID_FIELDS: Record<string, string> = {
   designer: 'designer_id',
 };
 
+export const DEVELOPMENT_NODE_KEYS = ['frontend_dev', 'backend_dev', 'integration'] as const;
+
+export const DEVELOPER_ROLE_KEYS = ['frontend_rd', 'backend_rd', 'tech_owner'] as const;
+
 export const REQUIREMENT_NODE_KEYS = [
   'prd_output',
   'req_design',
