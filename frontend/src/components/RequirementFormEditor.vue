@@ -87,7 +87,7 @@
           </n-grid>
         </template>
         <n-text v-else depth="3" class="empty-roles-hint">
-          请先启用工作流节点，再配置相关人员
+          请先勾选角色，再配置相关人员
         </n-text>
         <DynamicFieldForm
           v-if="templateUiFields.length"
@@ -156,7 +156,12 @@ import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
 import type { RequirementNodeState, RequirementPriority, RequirementType } from '@/types/business';
-import { syncEnabledDraftWithSelectedRoles } from '@/utils/requirementEditWorkflow';
+import {
+  applyRolesChecked,
+  assigneeFieldsForSelectedRoles,
+  mergeRolesForEnabledNode,
+  syncEnabledDraftWithSelectedRoles,
+} from '@/utils/requirementEditWorkflow';
 import {
   expandWorkflowCanvasNodes,
   type WorkflowCanvasNode,
@@ -247,10 +252,7 @@ function previewNodeState(n: WorkflowNodeSource, enabled: boolean): RequirementN
   return n.state;
 }
 
-const workflowNodeOptions = computed(() => {
-  const roleSet = new Set(props.selectedRoles);
-  return props.workflowNodes.filter((n) => n.role_keys.some((rk) => roleSet.has(rk)));
-});
+const workflowNodeOptions = computed(() => props.workflowNodes);
 
 const editCanvasNodes = computed<WorkflowCanvasNode[]>(() =>
   expandWorkflowCanvasNodes(
@@ -270,33 +272,33 @@ const workflowCanvasNodes = computed(() => {
   return editCanvasNodes.value.filter((n) => n.role_keys.some((rk) => roleSet.has(rk)));
 });
 
-const activeWorkflowRoles = computed(() => {
-  const roleSet = new Set(props.selectedRoles);
-  const keys = new Set<string>();
-  for (const node of props.workflowNodes) {
-    const enabled = props.enabledDraft[node.node_key] ?? node.enabled;
-    if (!enabled) continue;
-    for (const rk of node.role_keys) {
-      if (roleSet.has(rk)) keys.add(rk);
-    }
-  }
-  return projectRoleFields.value.filter((r) => keys.has(r.key));
-});
+const activeWorkflowRoles = computed(() =>
+  assigneeFieldsForSelectedRoles(projectRoleFields.value, props.selectedRoles)
+);
 
 function toggleRole(roleKey: string, checked: boolean) {
   const nextRoles = checked
     ? [...new Set([...props.selectedRoles, roleKey])]
     : props.selectedRoles.filter((k) => k !== roleKey);
-  const nextEnabled = syncEnabledDraftWithSelectedRoles(
-    props.workflowNodes,
-    nextRoles,
-    props.enabledDraft
-  );
+  let nextEnabled = props.enabledDraft;
+  if (checked) {
+    nextEnabled = applyRolesChecked(props.workflowNodes, nextEnabled, [roleKey]);
+  } else {
+    nextEnabled = syncEnabledDraftWithSelectedRoles(
+      props.workflowNodes,
+      nextRoles,
+      nextEnabled
+    );
+  }
   emit('update:selectedRoles', nextRoles);
   emit('update:enabledDraft', nextEnabled);
 }
 
 function onToggleEnabled(nodeKey: string, enabled: boolean) {
+  const node = props.workflowNodes.find((n) => n.node_key === nodeKey);
+  if (enabled && node) {
+    emit('update:selectedRoles', mergeRolesForEnabledNode(node, props.selectedRoles));
+  }
   emit('update:enabledDraft', { ...props.enabledDraft, [nodeKey]: enabled });
 }
 </script>
@@ -304,11 +306,11 @@ function onToggleEnabled(nodeKey: string, enabled: boolean) {
 <style scoped>
 .edit-layout {
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(260px, 1fr);
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 1fr);
   gap: 12px;
   align-items: start;
 }
-@media (max-width: 960px) {
+@media (max-width: 900px) {
   .edit-layout {
     grid-template-columns: 1fr;
   }

@@ -56,6 +56,10 @@ from app.services.requirement_node_tasks import (
 from app.services.field_validator import load_project_member_user_ids, validate_custom_fields
 from app.services.project_setup import ensure_project_defaults
 from app.services.requirement_config import validate_requirement_option
+from app.services.requirement_selected_roles import (
+    default_selected_role_keys_for_project,
+    validate_selected_role_keys,
+)
 from app.services.requirement_workflow import ensure_project_workflow_defs, init_requirement_progress_from_defs, load_project_workflow_defs
 
 from app.services.requirement_filters import apply_requirement_list_filters
@@ -198,6 +202,14 @@ async def create_requirement(
     defs = await ensure_project_workflow_defs(db, ctx.project_id)
     enabled_map = create_data.get("enabled")
     assignees = create_data.get("role_assignee_ids")
+    if "selected_role_keys" in create_data and create_data["selected_role_keys"] is not None:
+        create_data["selected_role_keys"] = await validate_selected_role_keys(
+            db, ctx.project_id, create_data["selected_role_keys"]
+        )
+    else:
+        create_data["selected_role_keys"] = await default_selected_role_keys_for_project(
+            db, ctx.project_id
+        )
     row = Requirement(
         project_id=ctx.project_id,
         num=await _next_req_num(ctx.project_id, db),
@@ -215,6 +227,7 @@ async def create_requirement(
         qa_id=create_data.get("qa_id"),
         designer_id=create_data.get("designer_id"),
         role_assignee_ids=assignees if isinstance(assignees, dict) else {},
+        selected_role_keys=create_data["selected_role_keys"],
         created_by=ctx.user.id,
     )
     db.add(row)
@@ -297,6 +310,10 @@ async def update_requirement(
     data = body.model_dump(exclude_unset=True)
     _sync_role_id_fields_from_assignees(data)
     try:
+        if "selected_role_keys" in data:
+            data["selected_role_keys"] = await validate_selected_role_keys(
+                db, ctx.project_id, data["selected_role_keys"]
+            )
         if "version_id" in data:
             await validate_version_id(db, ctx.project_id, data.get("version_id"))
         if _role_ids_from_body(data):

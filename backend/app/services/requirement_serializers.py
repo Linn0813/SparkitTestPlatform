@@ -19,6 +19,7 @@ from app.services.requirement_list_derived import (
     compute_dev_handoff_date,
 )
 from app.services.requirement_node_tasks import aggregate_node_planned_schedule, load_tasks_for_requirement
+from app.services.requirement_selected_roles import resolve_selected_role_keys
 from app.services.requirement_workflow import def_lane_indexes, ensure_project_workflow_defs, load_project_workflow_defs
 
 ROLE_KEY_TO_ID_FIELD = {
@@ -190,6 +191,7 @@ async def requirement_out(row: Requirement, db: AsyncSession) -> RequirementOut:
         qa_id=row.qa_id,
         designer_id=row.designer_id,
         role_assignee_ids=role_assignee_ids,
+        selected_role_keys=await resolve_selected_role_keys(db, row),
         custom_fields=row.custom_fields if isinstance(row.custom_fields, dict) else {},
         frontend_rd=users_map.get(row.frontend_rd_id) if row.frontend_rd_id else None,
         backend_rd=users_map.get(row.backend_rd_id) if row.backend_rd_id else None,

@@ -21,6 +21,7 @@ import { mergeCustomFields, validateCustomFields } from '@/constants/fieldTypes'
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
 import type { RequirementPriority, RequirementType, RequirementWorkflowNodeDef } from '@/types/business';
+import { applyRolesChecked, buildFullEnabledMap } from '@/utils/requirementEditWorkflow';
 import type { WorkflowNodeSource } from '@/utils/requirementWorkflowLayout';
 
 export interface RequirementCreatePayload {
@@ -31,6 +32,7 @@ export interface RequirementCreatePayload {
   req_type: RequirementType;
   custom_fields: Record<string, unknown>;
   role_assignee_ids: Record<string, string[]>;
+  selected_role_keys: string[];
   enabled: Record<string, boolean>;
 }
 
@@ -80,20 +82,6 @@ function defToSource(d: RequirementWorkflowNodeDef): WorkflowNodeSource {
 
 const workflowNodeSources = computed(() => workflowDefs.value.map(defToSource));
 
-const activeWorkflowRoles = computed(() => {
-  const keys = new Set<string>();
-  for (const node of workflowDefs.value) {
-    const enabled = createEnabledDraft.value[node.node_key] ?? defaultNodeEnabled(node.node_key);
-    if (!enabled) continue;
-    for (const rk of node.role_keys) {
-      if (selectedRoles.value.includes(rk)) keys.add(rk);
-    }
-  }
-  return projectConfig.roles.value
-    .filter((r) => keys.has(r.role_key))
-    .map((r) => r.role_key);
-});
-
 function syncCreateEnabledDraft() {
   const map: Record<string, boolean> = {};
   for (const d of workflowDefs.value) {
@@ -101,6 +89,16 @@ function syncCreateEnabledDraft() {
     map[d.node_key] = prev !== undefined ? prev : defaultNodeEnabled(d.node_key);
   }
   createEnabledDraft.value = map;
+  applySelectedRolesToNodes();
+}
+
+function applySelectedRolesToNodes() {
+  if (!workflowDefs.value.length || !selectedRoles.value.length) return;
+  createEnabledDraft.value = applyRolesChecked(
+    workflowNodeSources.value,
+    createEnabledDraft.value,
+    selectedRoles.value
+  );
 }
 
 function syncSelectedRoles() {
@@ -140,12 +138,13 @@ function validate(): string | null {
 }
 
 function getPayload(): RequirementCreatePayload {
-  const enabled: Record<string, boolean> = {};
-  for (const d of workflowDefs.value) {
-    enabled[d.node_key] = createEnabledDraft.value[d.node_key] ?? defaultNodeEnabled(d.node_key);
-  }
+  const enabled = buildFullEnabledMap(
+    workflowNodeSources.value,
+    selectedRoles.value,
+    createEnabledDraft.value
+  );
   const assignees: Record<string, string[]> = {};
-  for (const roleKey of activeWorkflowRoles.value) {
+  for (const roleKey of selectedRoles.value) {
     assignees[roleKey] = form.value.roleUserIds[roleKey] ?? [];
   }
   return {
@@ -156,6 +155,7 @@ function getPayload(): RequirementCreatePayload {
     req_type: form.value.req_type,
     custom_fields: { ...customFields.value },
     role_assignee_ids: assignees,
+    selected_role_keys: [...selectedRoles.value],
     enabled,
   };
 }

@@ -101,7 +101,7 @@
                 </div>
               </div>
               <n-text v-else depth="3" class="empty-roles-hint">
-                请先启用工作流节点，再配置相关人员
+                未选择角色
               </n-text>
             </n-tab-pane>
             <n-tab-pane name="comments" tab="评论">
@@ -204,7 +204,11 @@ import { useRequirementProjectConfig } from '@/composables/useRequirementProject
 import { buildRequirementDetailRows, type RequirementDetailFieldContext } from '@/schemas/entityFieldSchema';
 import { usePermissions } from '@/composables/usePermissions';
 import type { Requirement, RequirementActivity, RequirementComment } from '@/types/business';
-import { buildFullEnabledMap, syncEnabledDraftWithSelectedRoles } from '@/utils/requirementEditWorkflow';
+import {
+  assigneeFieldsForSelectedRoles,
+  buildFullEnabledMap,
+  syncEnabledDraftWithSelectedRoles,
+} from '@/utils/requirementEditWorkflow';
 import {
   expandWorkflowCanvasNodes,
   type WorkflowCanvasNode,
@@ -323,12 +327,11 @@ const editWorkflowNodeSources = computed<WorkflowNodeSource[]>(() =>
 );
 
 const activeWorkflowRoles = computed(() => {
-  const keys = new Set<string>();
-  for (const node of req.value?.nodes ?? []) {
-    if (!node.enabled) continue;
-    for (const rk of node.role_keys) keys.add(rk);
-  }
-  return projectRoleFields.value.filter((r) => keys.has(r.key));
+  const stored = req.value?.selected_role_keys;
+  const keys = stored?.length
+    ? stored
+    : [...collectRoleKeysFromNodes(true)];
+  return assigneeFieldsForSelectedRoles(projectRoleFields.value, keys);
 });
 
 const selectedNode = computed(() => {
@@ -387,6 +390,12 @@ function collectRoleKeysFromNodes(useEnabledOnly: boolean): Set<string> {
 }
 
 function deriveSelectedRolesFromRequirement() {
+  const stored = req.value?.selected_role_keys;
+  if (stored?.length) {
+    const allowed = new Set(projectRoleFields.value.map((r) => r.key));
+    selectedRoles.value = stored.filter((k) => allowed.has(k));
+    return;
+  }
   const keys = collectRoleKeysFromNodes(true);
   selectedRoles.value = projectRoleFields.value
     .filter((r) => keys.has(r.key))
@@ -482,8 +491,8 @@ async function enterEdit() {
 async function cancelEdit() {
   syncEnabledDraft();
   await ensureProjectRolesLoaded();
-  deriveSelectedRolesFromRequirement();
   syncFormFromReq();
+  deriveSelectedRolesFromRequirement();
   editMode.value = false;
 }
 
@@ -511,14 +520,7 @@ async function saveReq() {
       enabledDraft.value
     );
     const role_assignee_ids: Record<string, string[]> = {};
-    const roleKeys = new Set<string>();
-    for (const node of workflowSources) {
-      if (!enabledPayload[node.node_key]) continue;
-      for (const rk of node.role_keys) {
-        if (selectedRoles.value.includes(rk)) roleKeys.add(rk);
-      }
-    }
-    for (const roleKey of roleKeys) {
+    for (const roleKey of selectedRoles.value) {
       role_assignee_ids[roleKey] = form.value.roleUserIds[roleKey] ?? [];
     }
     await updateRequirement(req.value.id, {
@@ -528,6 +530,7 @@ async function saveReq() {
       priority: form.value.priority,
       req_type: form.value.req_type,
       role_assignee_ids,
+      selected_role_keys: selectedRoles.value,
       custom_fields: customFields.value,
     });
     await updateRequirementWorkflowEnabled(req.value.id, enabledPayload);

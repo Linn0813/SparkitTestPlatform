@@ -211,6 +211,7 @@ export interface Requirement {
   qa?: UserBrief | null;
   designer?: UserBrief | null;
   role_assignee_ids?: Record<string, string[]>;
+  selected_role_keys?: string[];
   custom_fields?: Record<string, unknown>;
   dev_handoff_date?: string | null;
   developers?: UserBrief[];

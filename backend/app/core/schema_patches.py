@@ -44,6 +44,11 @@ async def ensure_schema_patches() -> None:
             "entity_type",
             "ALTER TABLE bug_wecom_notify_rules ADD COLUMN entity_type VARCHAR(16) NOT NULL DEFAULT 'bug'",
         ),
+        (
+            "requirements",
+            "selected_role_keys",
+            "ALTER TABLE requirements ADD COLUMN selected_role_keys JSON NULL",
+        ),
     )
     async with engine.begin() as conn:
         for table, column, ddl in column_patches:
@@ -79,3 +84,17 @@ async def ensure_schema_patches() -> None:
                     """
                 )
             )
+
+    async with engine.begin() as conn:
+        if await _column_exists(conn, "requirements", "selected_role_keys"):
+            from app.core.database import async_session_factory
+            from app.services.requirement_selected_roles import backfill_requirement_selected_role_keys
+
+            async with async_session_factory() as session:
+                count = await backfill_requirement_selected_role_keys(session)
+                await session.commit()
+                if count:
+                    logger.info(
+                        "Schema patch: backfilled selected_role_keys for %s requirements",
+                        count,
+                    )

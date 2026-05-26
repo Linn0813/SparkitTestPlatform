@@ -188,6 +188,7 @@ class RequirementOut(ORMBase):
     qa_id: Optional[str] = None
     designer_id: Optional[str] = None
     role_assignee_ids: dict[str, list[str]] = Field(default_factory=dict)
+    selected_role_keys: list[str] = Field(default_factory=list)
     custom_fields: dict = Field(default_factory=dict)
     frontend_rd: Optional[UserOut] = None
     backend_rd: Optional[UserOut] = None
@@ -217,6 +218,7 @@ class RequirementCreate(BaseModel):
     qa_id: Optional[str] = None
     designer_id: Optional[str] = None
     role_assignee_ids: Optional[dict[str, list[str]]] = None
+    selected_role_keys: Optional[list[str]] = None
     enabled: Optional[dict[str, bool]] = None
     custom_fields: dict = Field(default_factory=dict)
 
@@ -234,6 +236,7 @@ class RequirementUpdate(BaseModel):
     qa_id: Optional[str] = None
     designer_id: Optional[str] = None
     role_assignee_ids: Optional[dict[str, list[str]]] = None
+    selected_role_keys: Optional[list[str]] = None
     custom_fields: Optional[dict] = None
 
 

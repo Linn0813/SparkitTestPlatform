@@ -69,6 +69,7 @@ class Requirement(Base):
     qa_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     designer_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     role_assignee_ids: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    selected_role_keys: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

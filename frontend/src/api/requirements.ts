@@ -44,6 +44,7 @@ export function createRequirement(data: {
   qa_id?: string | null;
   designer_id?: string | null;
   role_assignee_ids?: Record<string, string[]>;
+  selected_role_keys?: string[];
   enabled?: Record<string, boolean>;
   custom_fields?: Record<string, unknown>;
 }) {
@@ -65,6 +66,7 @@ export function updateRequirement(
     qa_id?: string | null;
     designer_id?: string | null;
     role_assignee_ids?: Record<string, string[]>;
+    selected_role_keys?: string[];
     custom_fields?: Record<string, unknown>;
   }
 ) {

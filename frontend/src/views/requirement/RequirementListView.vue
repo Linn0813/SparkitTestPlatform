@@ -30,42 +30,9 @@
       style="margin-top: 8px"
     />
 
-    <n-modal
-      v-model:show="showEditModal"
-      preset="dialog"
-      title="编辑需求"
-      positive-text="保存"
-      class="requirement-form-modal"
-      @positive-click="onSaveEdit"
-    >
-      <n-form label-placement="top">
-        <n-form-item label="标题" required>
-          <n-input v-model:value="editForm.title" placeholder="需求标题" />
-        </n-form-item>
-        <n-grid :cols="2" :x-gap="12">
-          <n-gi>
-            <n-form-item label="优先级">
-              <n-select v-model:value="editForm.priority" :options="prioritySelectOptions" />
-            </n-form-item>
-          </n-gi>
-          <n-gi>
-            <n-form-item label="需求类型">
-              <n-select v-model:value="editForm.req_type" :options="typeSelectOptions" />
-            </n-form-item>
-          </n-gi>
-        </n-grid>
-        <n-form-item label="PRD 链接">
-          <n-input v-model:value="editForm.external_url" placeholder="可选" />
-        </n-form-item>
-        <n-form-item label="关联版本">
-          <VersionSelect v-model="editForm.version_id" :project-id="ctx.projectId" />
-        </n-form-item>
-      </n-form>
-    </n-modal>
-
     <n-drawer
       v-model:show="createDrawerVisible"
-      :width="'min(1280px, 92vw)'"
+      :width="REQUIREMENT_DRAWER_WIDTH"
       placement="right"
       :trap-focus="false"
     >
@@ -86,7 +53,7 @@
 
     <n-drawer
       v-model:show="drawerVisible"
-      :width="'min(1280px, 92vw)'"
+      :width="REQUIREMENT_DRAWER_WIDTH"
       placement="right"
       :trap-focus="false"
       @update:show="onDrawerShowChange"
@@ -117,13 +84,6 @@ import {
   NDataTable,
   NDrawer,
   NDrawerContent,
-  NForm,
-  NFormItem,
-  NGi,
-  NGrid,
-  NInput,
-  NModal,
-  NSelect,
   NSpace,
   NTag,
   NText,
@@ -136,13 +96,11 @@ import {
   createRequirement,
   deleteRequirement,
   listRequirements,
-  updateRequirement,
 } from '@/api/requirements';
 import RequirementCreateForm from '@/components/RequirementCreateForm.vue';
 import RequirementListFilters from '@/components/RequirementListFilters.vue';
 import type { ComponentPublicInstance } from 'vue';
 import RequirementDetailPanel from '@/components/RequirementDetailPanel.vue';
-import VersionSelect from '@/components/VersionSelect.vue';
 import { listVersions } from '@/api/versions';
 import {
   clearRequirementFilterField,
@@ -155,7 +113,7 @@ import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
 import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
-import type { Requirement, RequirementPriority, RequirementType, ProjectVersion } from '@/types/business';
+import type { Requirement, ProjectVersion } from '@/types/business';
 import { decodeFilterQuery, encodeFilterValues, hasFilterValues } from '@/utils/filterQueryCodec';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
 import { formatDevHandoffDate, formatRequirementDevelopers } from '@/utils/requirementListDerived';
@@ -166,22 +124,17 @@ const canCatalog = computed(() => canManageCatalog(ctx.projectId));
 const projectConfig = useRequirementProjectConfig(() => ctx.projectId);
 const { labelByUserId: memberLabelByUserId } = useProjectMemberOptions(computed(() => ctx.projectId));
 
-const prioritySelectOptions = computed(() =>
-  projectConfig.priorityOptions.value.map((o) => ({ label: o.label, value: o.option_key }))
-);
-const typeSelectOptions = computed(() =>
-  projectConfig.typeOptions.value.map((o) => ({ label: o.label, value: o.option_key }))
-);
+/** 需求新建 / 查看 / 编辑 共用抽屉宽度 */
+const REQUIREMENT_DRAWER_WIDTH = 'min(1080px, 90vw)';
+
 const route = useRoute();
 const router = useRouter();
 const message = useMessage();
 const dialog = useDialog();
 const rows = ref<Requirement[]>([]);
 const loading = ref(false);
-const showEditModal = ref(false);
 const createDrawerVisible = ref(false);
 const creating = ref(false);
-const editing = ref<Requirement | null>(null);
 const drawerVisible = ref(false);
 const activeReqId = ref<string | null>(null);
 const applyingRoute = ref(false);
@@ -194,14 +147,6 @@ const createFormRef = ref<ComponentPublicInstance<{
   getPayload: () => import('@/components/RequirementCreateForm.vue').RequirementCreatePayload;
   prepare: () => Promise<void>;
 }> | null>(null);
-
-const editForm = ref({
-  title: '',
-  external_url: '' as string,
-  version_id: null as string | null,
-  priority: 'p1' as RequirementPriority,
-  req_type: 'feature' as RequirementType,
-});
 
 const activeIndex = computed(() =>
   activeReqId.value ? rows.value.findIndex((r) => r.id === activeReqId.value) : -1
@@ -445,35 +390,21 @@ const columns = computed<DataTableColumns<Requirement>>(() => [
         {
           title: '操作',
           key: 'actions',
-          width: 140,
+          width: 72,
           render: (row: Requirement) =>
-            h('div', { style: { display: 'flex', gap: '4px' } }, [
-              h(
-                NButton,
-                {
-                  size: 'small',
-                  quaternary: true,
-                  onClick: (e: Event) => {
-                    e.stopPropagation();
-                    openEditModal(row);
-                  },
+            h(
+              NButton,
+              {
+                size: 'small',
+                quaternary: true,
+                type: 'error',
+                onClick: (e: Event) => {
+                  e.stopPropagation();
+                  onRemove(row);
                 },
-                () => '编辑'
-              ),
-              h(
-                NButton,
-                {
-                  size: 'small',
-                  quaternary: true,
-                  type: 'error',
-                  onClick: (e: Event) => {
-                    e.stopPropagation();
-                    onRemove(row);
-                  },
-                },
-                () => '删除'
-              ),
-            ]),
+              },
+              () => '删除'
+            ),
         },
       ]
     : []),
@@ -559,18 +490,6 @@ function openCreateDrawer() {
   });
 }
 
-function openEditModal(row: Requirement) {
-  editing.value = row;
-  editForm.value = {
-    title: row.title,
-    external_url: row.external_url ?? '',
-    version_id: row.version_id,
-    priority: row.priority,
-    req_type: row.req_type,
-  };
-  showEditModal.value = true;
-}
-
 async function onCreate() {
   const form = createFormRef.value;
   if (!form) return;
@@ -591,25 +510,6 @@ async function onCreate() {
   } finally {
     creating.value = false;
   }
-}
-
-async function onSaveEdit() {
-  if (!editForm.value.title.trim()) {
-    message.warning('请填写标题');
-    return false;
-  }
-  if (!editing.value) return false;
-  await updateRequirement(editing.value.id, {
-    title: editForm.value.title.trim(),
-    external_url: editForm.value.external_url.trim() || null,
-    version_id: editForm.value.version_id,
-    priority: editForm.value.priority,
-    req_type: editForm.value.req_type,
-  });
-  message.success('已保存');
-  showEditModal.value = false;
-  await load();
-  return true;
 }
 
 function onRemove(row: Requirement) {
@@ -653,10 +553,6 @@ watch(
 </script>
 
 <style scoped>
-:global(.requirement-form-modal) {
-  width: min(640px, 92vw);
-}
-
 :deep(.prd-link) {
   display: inline-block;
   max-width: 100%;
