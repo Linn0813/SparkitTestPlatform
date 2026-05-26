@@ -6,9 +6,11 @@ import re
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.public_url import build_bug_detail_url
+from app.constants.requirement_status import requirement_status_label
+from app.core.public_url import build_bug_detail_url, build_requirement_detail_url
 from app.models.bug import Bug
 from app.models.project import Project
+from app.models.requirement import Requirement, RequirementNodeTask
 from app.models.template import BugStatus, ProjectIntegration
 from app.models.user import User
 from app.models.wecom_rule import BugWecomNotifyRule
@@ -37,6 +39,25 @@ DEFAULT_CREATE_TEMPLATE = (
     "{link}"
 )
 
+DEFAULT_BUG_COMMENT_TEMPLATE = (
+    "【缺陷 {num} 新评论】{title}\n"
+    "项目：{project}\n"
+    "评论人：{commenter}\n"
+    "内容：{comment}\n"
+    "{link}"
+)
+
+DEFAULT_REQUIREMENT_COMMENT_TEMPLATE = (
+    "【需求 {num} 新评论】{title}\n"
+    "项目：{project}\n"
+    "状态：{status}\n"
+    "评论人：{commenter}\n"
+    "内容：{comment}\n"
+    "{link}"
+)
+
+_COMMENT_PREVIEW_MAX_LEN = 300
+
 
 def _safe_template_render(tpl: str, mapping: dict[str, str]) -> str:
     def repl(match: re.Match[str]) -> str:
@@ -53,6 +74,23 @@ async def _user_names(db: AsyncSession, user_ids: list[str]) -> str:
         u = await db.get(User, uid)
         names.append(u.name if u else uid)
     return "、".join(names)
+
+
+def _truncate_comment_body(body: str, *, max_len: int = _COMMENT_PREVIEW_MAX_LEN) -> str:
+    text = re.sub(r"\s+", " ", (body or "").strip())
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
+
+
+def _dedupe_user_ids(ids: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for uid in ids:
+        if uid and uid not in seen:
+            seen.add(uid)
+            out.append(uid)
+    return out
 
 
 def _collect_user_ids_for_roles(
@@ -74,6 +112,44 @@ def _collect_user_ids_for_roles(
             seen.add(uid)
             out.append(uid)
     return out
+
+
+async def _collect_requirement_user_ids_for_roles(
+    db: AsyncSession,
+    req: Requirement,
+    roles: list[str],
+) -> list[str]:
+    ids: list[str] = []
+    if "creator" in roles and req.created_by:
+        ids.append(req.created_by)
+    field_map = {
+        "pm": req.pm_id,
+        "qa": req.qa_id,
+        "tech_owner": req.tech_owner_id,
+        "frontend_rd": req.frontend_rd_id,
+        "backend_rd": req.backend_rd_id,
+        "designer": req.designer_id,
+    }
+    for role in roles:
+        uid = field_map.get(role)
+        if uid:
+            ids.append(uid)
+    if "role_assignees" in roles:
+        assignees = req.role_assignee_ids if isinstance(req.role_assignee_ids, dict) else {}
+        for value in assignees.values():
+            if isinstance(value, list):
+                ids.extend(v for v in value if v)
+            elif value:
+                ids.append(str(value))
+    if "task_assignees" in roles:
+        result = await db.execute(
+            select(RequirementNodeTask.assignee_id).where(
+                RequirementNodeTask.requirement_id == req.id,
+                RequirementNodeTask.assignee_id.isnot(None),
+            )
+        )
+        ids.extend(row[0] for row in result.all() if row[0])
+    return _dedupe_user_ids(ids)
 
 
 def _is_phone_number(value: str) -> bool:
@@ -122,6 +198,53 @@ async def _build_mentions(
 
     prefix = (" ".join(prefix_parts) + "\n") if prefix_parts else ""
     return prefix, mobiles, unbound, mention_count
+
+
+async def _send_wecom_with_mentions(
+    db: AsyncSession,
+    *,
+    project_id: str,
+    template: str,
+    context: dict[str, str],
+    target_ids: list[str],
+    log_entity: str,
+    log_entity_id: str,
+) -> int | None:
+    if not await is_wecom_configured(db, project_id):
+        return None
+
+    integ_q = await db.execute(
+        select(ProjectIntegration).where(ProjectIntegration.project_id == project_id)
+    )
+    integ = integ_q.scalar_one_or_none()
+    if not integ or not integ.wecom_webhook_url:
+        return None
+
+    content = _safe_template_render(template, context)
+    mention_count = 0
+    if target_ids:
+        prefix, mentioned_mobiles, unbound_names, mention_count = await _build_mentions(
+            db, target_ids
+        )
+        if prefix:
+            content = prefix + content
+        if unbound_names:
+            logger.warning(
+                "WeCom notify: target(s) have no wecom mobile bound (%s=%s, names=%s)",
+                log_entity,
+                log_entity_id,
+                "、".join(unbound_names),
+            )
+    else:
+        mentioned_mobiles = []
+    ok = await send_wecom_text(
+        integ.wecom_webhook_url,
+        content,
+        mentioned_mobiles=mentioned_mobiles or None,
+    )
+    if not ok:
+        return None
+    return mention_count if target_ids else 0
 
 
 async def _build_context(
@@ -214,6 +337,44 @@ async def send_bug_wecom_notification(
     return mention_count if target_ids else 0
 
 
+async def _build_bug_comment_context(
+    db: AsyncSession,
+    bug: Bug,
+    *,
+    comment_body: str,
+    actor_id: str,
+    project_public_url: str | None = None,
+) -> dict[str, str]:
+    follower_ids = await get_bug_follower_ids(db, bug.id)
+    ctx = await _build_context(db, bug, follower_ids, project_public_url=project_public_url)
+    actor = await db.get(User, actor_id)
+    ctx["commenter"] = actor.name if actor else "-"
+    ctx["comment"] = _truncate_comment_body(comment_body)
+    return ctx
+
+
+async def _build_requirement_comment_context(
+    db: AsyncSession,
+    req: Requirement,
+    *,
+    comment_body: str,
+    actor_id: str,
+    project_public_url: str | None = None,
+) -> dict[str, str]:
+    project = await db.get(Project, req.project_id)
+    actor = await db.get(User, actor_id)
+    status_key = req.status.value if hasattr(req.status, "value") else str(req.status)
+    return {
+        "project": project.name if project else req.project_id,
+        "num": str(req.num),
+        "title": req.title,
+        "status": requirement_status_label(status_key),
+        "commenter": actor.name if actor else "-",
+        "comment": _truncate_comment_body(comment_body),
+        "link": build_requirement_detail_url(req.id, project_url=project_public_url),
+    }
+
+
 async def notify_bug_created(db: AsyncSession, bug: Bug) -> int | None:
     if not await is_wecom_configured(db, bug.project_id):
         return None
@@ -221,6 +382,7 @@ async def notify_bug_created(db: AsyncSession, bug: Bug) -> int | None:
     result = await db.execute(
         select(BugWecomNotifyRule).where(
             BugWecomNotifyRule.project_id == bug.project_id,
+            BugWecomNotifyRule.entity_type == "bug",
             BugWecomNotifyRule.kind == "create",
             BugWecomNotifyRule.enabled.is_(True),
         )
@@ -262,6 +424,7 @@ async def notify_bug_status_change(
         select(BugWecomNotifyRule)
         .where(
             BugWecomNotifyRule.project_id == bug.project_id,
+            BugWecomNotifyRule.entity_type == "bug",
             BugWecomNotifyRule.kind == "transition",
             BugWecomNotifyRule.enabled.is_(True),
         )
@@ -297,4 +460,103 @@ async def notify_bug_status_change(
         roles=roles,
         from_label=from_label,
         to_label=to_label,
+    )
+
+
+async def notify_bug_comment(
+    db: AsyncSession,
+    bug: Bug,
+    comment_body: str,
+    actor_id: str,
+) -> int | None:
+    if not await is_wecom_configured(db, bug.project_id):
+        return None
+
+    result = await db.execute(
+        select(BugWecomNotifyRule).where(
+            BugWecomNotifyRule.project_id == bug.project_id,
+            BugWecomNotifyRule.entity_type == "bug",
+            BugWecomNotifyRule.kind == "comment",
+            BugWecomNotifyRule.enabled.is_(True),
+        )
+    )
+    rule = result.scalar_one_or_none()
+    if not rule:
+        return None
+
+    integ_q = await db.execute(
+        select(ProjectIntegration).where(ProjectIntegration.project_id == bug.project_id)
+    )
+    integ = integ_q.scalar_one_or_none()
+    follower_ids = await get_bug_follower_ids(db, bug.id)
+    roles = rule.notify_roles if isinstance(rule.notify_roles, list) else [
+        "reporter",
+        "followers",
+        "assignee",
+    ]
+    target_ids = _collect_user_ids_for_roles(bug, follower_ids, roles)
+    ctx = await _build_bug_comment_context(
+        db,
+        bug,
+        comment_body=comment_body,
+        actor_id=actor_id,
+        project_public_url=integ.app_public_url if integ else None,
+    )
+    return await _send_wecom_with_mentions(
+        db,
+        project_id=bug.project_id,
+        template=rule.message_template,
+        context=ctx,
+        target_ids=target_ids,
+        log_entity="bug",
+        log_entity_id=bug.id,
+    )
+
+
+async def notify_requirement_comment(
+    db: AsyncSession,
+    req: Requirement,
+    comment_body: str,
+    actor_id: str,
+) -> int | None:
+    if not await is_wecom_configured(db, req.project_id):
+        return None
+
+    result = await db.execute(
+        select(BugWecomNotifyRule).where(
+            BugWecomNotifyRule.project_id == req.project_id,
+            BugWecomNotifyRule.entity_type == "requirement",
+            BugWecomNotifyRule.kind == "comment",
+            BugWecomNotifyRule.enabled.is_(True),
+        )
+    )
+    rule = result.scalar_one_or_none()
+    if not rule:
+        return None
+
+    integ_q = await db.execute(
+        select(ProjectIntegration).where(ProjectIntegration.project_id == req.project_id)
+    )
+    integ = integ_q.scalar_one_or_none()
+    roles = rule.notify_roles if isinstance(rule.notify_roles, list) else [
+        "creator",
+        "role_assignees",
+        "task_assignees",
+    ]
+    target_ids = await _collect_requirement_user_ids_for_roles(db, req, roles)
+    ctx = await _build_requirement_comment_context(
+        db,
+        req,
+        comment_body=comment_body,
+        actor_id=actor_id,
+        project_public_url=integ.app_public_url if integ else None,
+    )
+    return await _send_wecom_with_mentions(
+        db,
+        project_id=req.project_id,
+        template=rule.message_template,
+        context=ctx,
+        target_ids=target_ids,
+        log_entity="requirement",
+        log_entity_id=req.id,
     )

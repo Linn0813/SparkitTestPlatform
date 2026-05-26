@@ -70,7 +70,11 @@ from app.services.file_storage import build_file_download_url, delete_object_saf
 from app.services.project_setup import ensure_project_defaults
 from app.services.versions import validate_version_id
 from app.services.serializers import bug_out, bug_out_list_batch
-from app.services.wecom_notify import notify_bug_created, notify_bug_status_change
+from app.services.wecom_notify import (
+    notify_bug_comment,
+    notify_bug_created,
+    notify_bug_status_change,
+)
 
 router = APIRouter(prefix="/bugs", tags=["bugs"])
 
@@ -635,6 +639,20 @@ async def create_comment(
         summary="发表了评论",
         detail={"comment_id": comment.id},
     )
+    mention_count = await notify_bug_comment(db, bug, comment.body, ctx.user.id)
+    if mention_count is not None:
+        summary = (
+            f"已发送企微通知（@{mention_count} 人）"
+            if mention_count > 0
+            else "已发送企微通知（未 @ 任何人）"
+        )
+        await log_bug_activity(
+            db,
+            bug_id=bug_id,
+            actor_id=ctx.user.id,
+            action_type="wecom_notify",
+            summary=summary,
+        )
     await db.refresh(comment)
     user = await db.get(User, ctx.user.id)
     return BugCommentOut(

@@ -17,7 +17,12 @@ from app.services.requirement_status_rules import ensure_project_status_rules
 from app.services.requirement_workflow import ensure_project_workflow_defs
 from app.models.wecom_rule import BugWecomNotifyRule
 from app.services.defaults import DEFAULT_BUG_FIELDS, DEFAULT_BUG_STATUSES, DEFAULT_CASE_FIELDS, DEFAULT_REQUIREMENT_FIELDS
-from app.services.wecom_notify import DEFAULT_CREATE_TEMPLATE, DEFAULT_STATUS_TEMPLATE
+from app.services.wecom_notify import (
+    DEFAULT_BUG_COMMENT_TEMPLATE,
+    DEFAULT_CREATE_TEMPLATE,
+    DEFAULT_REQUIREMENT_COMMENT_TEMPLATE,
+    DEFAULT_STATUS_TEMPLATE,
+)
 
 
 async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
@@ -73,6 +78,7 @@ async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
     create_rule = await db.execute(
         select(BugWecomNotifyRule).where(
             BugWecomNotifyRule.project_id == project_id,
+            BugWecomNotifyRule.entity_type == "bug",
             BugWecomNotifyRule.kind == "create",
         )
     )
@@ -80,12 +86,40 @@ async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
         db.add(
             BugWecomNotifyRule(
                 project_id=project_id,
+                entity_type="bug",
                 kind="create",
                 message_template=DEFAULT_CREATE_TEMPLATE,
                 notify_roles=["reporter", "followers"],
                 enabled=False,
             )
         )
+
+    for entity_type, template, roles in (
+        ("bug", DEFAULT_BUG_COMMENT_TEMPLATE, ["reporter", "followers", "assignee"]),
+        (
+            "requirement",
+            DEFAULT_REQUIREMENT_COMMENT_TEMPLATE,
+            ["creator", "role_assignees", "task_assignees"],
+        ),
+    ):
+        comment_rule = await db.execute(
+            select(BugWecomNotifyRule).where(
+                BugWecomNotifyRule.project_id == project_id,
+                BugWecomNotifyRule.entity_type == entity_type,
+                BugWecomNotifyRule.kind == "comment",
+            )
+        )
+        if not comment_rule.scalar_one_or_none():
+            db.add(
+                BugWecomNotifyRule(
+                    project_id=project_id,
+                    entity_type=entity_type,
+                    kind="comment",
+                    message_template=template,
+                    notify_roles=roles,
+                    enabled=False,
+                )
+            )
 
     await ensure_project_workflow_defs(db, project_id)
     await ensure_project_status_rules(db, project_id)

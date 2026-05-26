@@ -1,11 +1,20 @@
 """Tests for WeCom notification template rendering."""
 
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from app.models.requirement import Requirement
 from app.services.wecom_notify import (
+    DEFAULT_BUG_COMMENT_TEMPLATE,
     DEFAULT_CREATE_TEMPLATE,
+    DEFAULT_REQUIREMENT_COMMENT_TEMPLATE,
     DEFAULT_STATUS_TEMPLATE,
+    _collect_requirement_user_ids_for_roles,
     _is_phone_number,
     _normalize_mobile,
     _safe_template_render,
+    _truncate_comment_body,
 )
 
 
@@ -67,3 +76,84 @@ def test_is_phone_number():
     assert _is_phone_number("+86 138-0013-8000")
     assert not _is_phone_number("yuxiaoling")
     assert not _is_phone_number("123456")
+
+
+def test_truncate_comment_body():
+    assert _truncate_comment_body("  hello\n\nworld  ") == "hello world"
+    long = "x" * 400
+    out = _truncate_comment_body(long)
+    assert len(out) == 300
+    assert out.endswith("…")
+
+
+def test_bug_comment_template_render():
+    mapping = {
+        "num": "3",
+        "title": "闪退",
+        "project": "Demo",
+        "commenter": "李四",
+        "comment": "复现步骤见附件",
+        "link": "http://example.com/bugs/3",
+    }
+    out = _safe_template_render(DEFAULT_BUG_COMMENT_TEMPLATE, mapping)
+    assert "【缺陷 3 新评论】闪退" in out
+    assert "评论人：李四" in out
+    assert "内容：复现步骤见附件" in out
+
+
+def test_requirement_comment_template_render():
+    mapping = {
+        "num": "9",
+        "title": "登录优化",
+        "project": "Demo",
+        "status": "开发中",
+        "commenter": "王五",
+        "comment": "请确认接口文档",
+        "link": "http://example.com/requirements?id=9",
+    }
+    out = _safe_template_render(DEFAULT_REQUIREMENT_COMMENT_TEMPLATE, mapping)
+    assert "【需求 9 新评论】登录优化" in out
+    assert "状态：开发中" in out
+    assert "评论人：王五" in out
+
+
+@pytest.mark.asyncio
+async def test_collect_requirement_user_ids_for_roles():
+    req = MagicMock(spec=Requirement)
+    req.id = "req-1"
+    req.created_by = "u1"
+    req.pm_id = "u2"
+    req.qa_id = None
+    req.tech_owner_id = None
+    req.frontend_rd_id = None
+    req.backend_rd_id = None
+    req.designer_id = None
+    req.role_assignee_ids = {"dev": ["u3", "u4"], "qa": "u5"}
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+
+    ids = await _collect_requirement_user_ids_for_roles(
+        db, req, ["creator", "pm", "role_assignees"]
+    )
+    assert ids == ["u1", "u2", "u3", "u4", "u5"]
+
+
+@pytest.mark.asyncio
+async def test_collect_requirement_task_assignees():
+    req = MagicMock(spec=Requirement)
+    req.id = "req-2"
+    req.created_by = None
+    req.pm_id = None
+    req.qa_id = None
+    req.tech_owner_id = None
+    req.frontend_rd_id = None
+    req.backend_rd_id = None
+    req.designer_id = None
+    req.role_assignee_ids = {}
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[("u10",), ("u10",), ("u11",)])))
+
+    ids = await _collect_requirement_user_ids_for_roles(db, req, ["task_assignees"])
+    assert ids == ["u10", "u11"]

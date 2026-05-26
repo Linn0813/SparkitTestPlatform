@@ -9,12 +9,17 @@ from app.core.deps import ProjectContext, require_project_context, require_proje
 from app.models.template import BugStatus
 from app.models.wecom_rule import BugWecomNotifyRule
 from app.schemas.wecom_rule import (
+    WecomCommentRuleUpsert,
     WecomCreateRuleUpsert,
     WecomNotifyRuleCreate,
     WecomNotifyRuleOut,
     WecomNotifyRuleUpdate,
 )
-from app.services.wecom_notify import DEFAULT_CREATE_TEMPLATE
+from app.services.wecom_notify import (
+    DEFAULT_BUG_COMMENT_TEMPLATE,
+    DEFAULT_CREATE_TEMPLATE,
+    DEFAULT_REQUIREMENT_COMMENT_TEMPLATE,
+)
 from app.services.wecom_rule_utils import (
     keys_signature,
     resolve_transition_keys_from_body,
@@ -22,6 +27,11 @@ from app.services.wecom_rule_utils import (
 )
 
 router = APIRouter(prefix="/projects", tags=["wecom-rules"])
+
+_DEFAULT_COMMENT_ROLES: dict[str, list[str]] = {
+    "bug": ["reporter", "followers", "assignee"],
+    "requirement": ["creator", "role_assignees", "task_assignees"],
+}
 
 
 async def _status_labels(db: AsyncSession, project_id: str) -> dict[str, str]:
@@ -35,11 +45,16 @@ def _labels_join(keys: list[str], labels: dict[str, str]) -> str | None:
     return "、".join(labels.get(k, k) for k in keys)
 
 
+def _rule_entity_type(rule: BugWecomNotifyRule) -> str:
+    return getattr(rule, "entity_type", None) or "bug"
+
+
 def _rule_out(rule: BugWecomNotifyRule, labels: dict[str, str]) -> WecomNotifyRuleOut:
     from_keys, to_keys = rule_transition_keys(rule)
     return WecomNotifyRuleOut(
         id=rule.id,
         project_id=rule.project_id,
+        entity_type=_rule_entity_type(rule),
         kind=rule.kind,
         from_status_key=from_keys[0] if len(from_keys) == 1 else None,
         to_status_key=to_keys[0] if len(to_keys) == 1 else None,
@@ -66,6 +81,7 @@ async def _ensure_unique_transition_rule(
     result = await db.execute(
         select(BugWecomNotifyRule).where(
             BugWecomNotifyRule.project_id == project_id,
+            BugWecomNotifyRule.entity_type == "bug",
             BugWecomNotifyRule.kind == "transition",
         )
     )
@@ -78,6 +94,28 @@ async def _ensure_unique_transition_rule(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Rule already exists for this transition set",
             )
+
+
+async def _ensure_unique_singleton_rule(
+    db: AsyncSession,
+    project_id: str,
+    *,
+    entity_type: str,
+    kind: str,
+) -> None:
+    existing = await db.execute(
+        select(BugWecomNotifyRule).where(
+            BugWecomNotifyRule.project_id == project_id,
+            BugWecomNotifyRule.entity_type == entity_type,
+            BugWecomNotifyRule.kind == kind,
+        )
+    )
+    if existing.scalar_one_or_none():
+        endpoint = "create" if kind == "create" else "comment"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{kind} rule already exists; use PUT /wecom-notify-rules/{endpoint}",
+        )
 
 
 def _apply_transition_keys(row: BugWecomNotifyRule, from_keys: list[str], to_keys: list[str]) -> None:
@@ -99,7 +137,7 @@ async def list_wecom_notify_rules(
     result = await db.execute(
         select(BugWecomNotifyRule)
         .where(BugWecomNotifyRule.project_id == project_id)
-        .order_by(BugWecomNotifyRule.kind, BugWecomNotifyRule.created_at)
+        .order_by(BugWecomNotifyRule.entity_type, BugWecomNotifyRule.kind, BugWecomNotifyRule.created_at)
     )
     return [_rule_out(r, labels) for r in result.scalars().all()]
 
@@ -117,6 +155,12 @@ async def create_wecom_notify_rule(
 ):
     if ctx.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    entity_type = body.entity_type
+    if body.kind in ("create", "transition") and entity_type != "bug":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="create and transition rules are only supported for bugs",
+        )
     from_keys: list[str] = []
     to_keys: list[str] = []
     if body.kind == "transition":
@@ -130,21 +174,14 @@ async def create_wecom_notify_rule(
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
         await _ensure_unique_transition_rule(db, project_id, from_keys, to_keys)
-    elif body.kind == "create":
-        existing = await db.execute(
-            select(BugWecomNotifyRule).where(
-                BugWecomNotifyRule.project_id == project_id,
-                BugWecomNotifyRule.kind == "create",
-            )
+    elif body.kind in ("create", "comment"):
+        await _ensure_unique_singleton_rule(
+            db, project_id, entity_type=entity_type, kind=body.kind
         )
-        if existing.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Create rule already exists; use PUT /wecom-notify-rules/create",
-            )
 
     row = BugWecomNotifyRule(
         project_id=project_id,
+        entity_type=entity_type,
         kind=body.kind,
         message_template=body.message_template.strip(),
         notify_roles=body.notify_roles,
@@ -173,7 +210,7 @@ async def update_wecom_notify_rule(
     if not row or row.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
     data = body.model_dump(exclude_unset=True)
-    if row.kind == "create":
+    if row.kind in ("create", "comment"):
         data.pop("from_status_key", None)
         data.pop("to_status_key", None)
         data.pop("from_status_keys", None)
@@ -240,6 +277,7 @@ async def upsert_create_rule(
     result = await db.execute(
         select(BugWecomNotifyRule).where(
             BugWecomNotifyRule.project_id == project_id,
+            BugWecomNotifyRule.entity_type == "bug",
             BugWecomNotifyRule.kind == "create",
         )
     )
@@ -248,6 +286,7 @@ async def upsert_create_rule(
         tpl = body.message_template or DEFAULT_CREATE_TEMPLATE
         row = BugWecomNotifyRule(
             project_id=project_id,
+            entity_type="bug",
             kind="create",
             message_template=tpl.strip(),
             notify_roles=body.notify_roles or ["reporter", "followers"],
@@ -256,6 +295,55 @@ async def upsert_create_rule(
         db.add(row)
     else:
         data = body.model_dump(exclude_unset=True)
+        for k, v in data.items():
+            if k == "message_template" and v is not None:
+                row.message_template = v.strip()
+            elif k == "enabled":
+                row.enabled = v
+            elif v is not None:
+                setattr(row, k, v)
+    await db.flush()
+    labels = await _status_labels(db, project_id)
+    await db.refresh(row)
+    return _rule_out(row, labels)
+
+
+@router.put("/{project_id}/wecom-notify-rules/comment", response_model=WecomNotifyRuleOut)
+async def upsert_comment_rule(
+    project_id: str,
+    body: WecomCommentRuleUpsert,
+    ctx: ProjectContext = Depends(require_project_context_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    entity_type = body.entity_type
+    default_tpl = (
+        DEFAULT_BUG_COMMENT_TEMPLATE
+        if entity_type == "bug"
+        else DEFAULT_REQUIREMENT_COMMENT_TEMPLATE
+    )
+    result = await db.execute(
+        select(BugWecomNotifyRule).where(
+            BugWecomNotifyRule.project_id == project_id,
+            BugWecomNotifyRule.entity_type == entity_type,
+            BugWecomNotifyRule.kind == "comment",
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        row = BugWecomNotifyRule(
+            project_id=project_id,
+            entity_type=entity_type,
+            kind="comment",
+            message_template=(body.message_template or default_tpl).strip(),
+            notify_roles=body.notify_roles or _DEFAULT_COMMENT_ROLES[entity_type],
+            enabled=body.enabled if body.enabled is not None else False,
+        )
+        db.add(row)
+    else:
+        data = body.model_dump(exclude_unset=True)
+        data.pop("entity_type", None)
         for k, v in data.items():
             if k == "message_template" and v is not None:
                 row.message_template = v.strip()

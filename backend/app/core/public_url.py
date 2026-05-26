@@ -26,3 +26,7 @@ def resolve_public_base_url(project_url: str | None = None) -> str:
 
 def build_bug_detail_url(bug_id: str, *, project_url: str | None = None) -> str:
     return f"{resolve_public_base_url(project_url)}/bugs/{bug_id}"
+
+
+def build_requirement_detail_url(requirement_id: str, *, project_url: str | None = None) -> str:
+    return f"{resolve_public_base_url(project_url)}/requirements?id={requirement_id}"

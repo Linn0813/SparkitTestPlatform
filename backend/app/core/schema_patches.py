@@ -39,6 +39,11 @@ async def ensure_schema_patches() -> None:
         ("project_integrations", "app_public_url", "ALTER TABLE project_integrations ADD COLUMN app_public_url TEXT NULL"),
         ("bug_wecom_notify_rules", "from_status_keys", "ALTER TABLE bug_wecom_notify_rules ADD COLUMN from_status_keys JSON NULL"),
         ("bug_wecom_notify_rules", "to_status_keys", "ALTER TABLE bug_wecom_notify_rules ADD COLUMN to_status_keys JSON NULL"),
+        (
+            "bug_wecom_notify_rules",
+            "entity_type",
+            "ALTER TABLE bug_wecom_notify_rules ADD COLUMN entity_type VARCHAR(16) NOT NULL DEFAULT 'bug'",
+        ),
     )
     async with engine.begin() as conn:
         for table, column, ddl in column_patches:
@@ -60,6 +65,17 @@ async def ensure_schema_patches() -> None:
                     WHERE kind = 'transition'
                       AND from_status_key IS NOT NULL
                       AND (from_status_keys IS NULL OR JSON_LENGTH(from_status_keys) = 0)
+                    """
+                )
+            )
+
+        if await _column_exists(conn, "bug_wecom_notify_rules", "entity_type"):
+            await conn.execute(
+                text(
+                    """
+                    UPDATE bug_wecom_notify_rules
+                    SET entity_type = 'bug'
+                    WHERE entity_type IS NULL OR entity_type = ''
                     """
                 )
             )

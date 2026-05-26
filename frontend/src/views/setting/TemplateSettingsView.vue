@@ -84,7 +84,7 @@
           <n-divider title-placement="left">通知规则</n-divider>
           <n-alert type="info" :bordered="false" style="margin-bottom: 12px">
             每条规则在编辑弹窗中保存后立即生效。占位符：{project} {num} {title} {from_status} {to_status}
-            {reporter} {followers} {link}。
+            {reporter} {followers} {link}；评论另含 {commenter} {comment}，需求评论含 {status}。
             @ 提醒需通知对象本人在右上角「我的资料」填写企微 userid 或绑定手机号；未绑定则只发群消息、不会 @ 任何人。
           </n-alert>
           <n-data-table :columns="wecomRuleColumns" :data="sortedWecomRules" size="small" />
@@ -143,6 +143,14 @@
       @positive-click="onSaveRule"
     >
       <n-form label-width="100">
+        <n-form-item label="模块">
+          <n-select
+            v-model:value="ruleForm.entity_type"
+            :options="entityTypeOptions"
+            :disabled="!!editingRule"
+            style="width: 100%"
+          />
+        </n-form-item>
         <n-form-item label="触发类型">
           <n-select
             v-model:value="ruleForm.kind"
@@ -225,6 +233,7 @@ import {
   deleteWecomNotifyRule,
   listWecomNotifyRules,
   updateWecomNotifyRule,
+  upsertCommentWecomRule,
   upsertCreateWecomRule,
 } from '@/api/wecomRules';
 import TemplateEditPreview from '@/components/TemplateEditPreview.vue';
@@ -245,7 +254,13 @@ import { usePermissions } from '@/composables/usePermissions';
 import { validateTemplateFieldNames } from '@/schemas/entityFieldSchema';
 import { apiErrorMessage } from '@/utils/apiError';
 import { useContextStore } from '@/stores/context';
-import type { BugStatusDef, TemplateField, WecomNotifyRule } from '@/types/business';
+import type {
+  BugStatusDef,
+  TemplateField,
+  WecomEntityType,
+  WecomNotifyRule,
+  WecomRuleKind,
+} from '@/types/business';
 
 withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false });
 
@@ -254,6 +269,12 @@ const DEFAULT_CREATE_TEMPLATE =
 
 const DEFAULT_TRANSITION_TEMPLATE =
   '【缺陷 {num}】{title}\n项目：{project}\n提出人：{reporter}\n跟进人：{followers}\n状态：{from_status} → {to_status}\n{link}';
+
+const DEFAULT_BUG_COMMENT_TEMPLATE =
+  '【缺陷 {num} 新评论】{title}\n项目：{project}\n评论人：{commenter}\n内容：{comment}\n{link}';
+
+const DEFAULT_REQUIREMENT_COMMENT_TEMPLATE =
+  '【需求 {num} 新评论】{title}\n项目：{project}\n状态：{status}\n评论人：{commenter}\n内容：{comment}\n{link}';
 
 const ctx = useContextStore();
 const { canManageProjectConfig } = usePermissions();
@@ -279,7 +300,8 @@ const wecomRules = ref<WecomNotifyRule[]>([]);
 const showRuleModal = ref(false);
 const editingRule = ref<WecomNotifyRule | null>(null);
 const ruleForm = ref({
-  kind: 'transition' as 'create' | 'transition',
+  entity_type: 'bug' as WecomEntityType,
+  kind: 'transition' as WecomRuleKind,
   from_status_keys: [] as string[],
   to_status_keys: [] as string[],
   message_template: DEFAULT_TRANSITION_TEMPLATE,
@@ -287,11 +309,34 @@ const ruleForm = ref({
   enabled: true,
 });
 
-const notifyRoleOptions = [
+const entityTypeOptions = [
+  { label: '缺陷', value: 'bug' as const },
+  { label: '需求', value: 'requirement' as const },
+];
+
+const bugNotifyRoleOptions = [
   { label: '提出人', value: 'reporter' },
   { label: '跟进人', value: 'followers' },
   { label: '处理人', value: 'assignee' },
 ];
+
+const requirementNotifyRoleOptions = [
+  { label: '创建人', value: 'creator' },
+  { label: '产品经理', value: 'pm' },
+  { label: '测试', value: 'qa' },
+  { label: '技术负责人', value: 'tech_owner' },
+  { label: '前端研发', value: 'frontend_rd' },
+  { label: '后端研发', value: 'backend_rd' },
+  { label: '设计师', value: 'designer' },
+  { label: '各角色负责人', value: 'role_assignees' },
+  { label: '节点任务处理人', value: 'task_assignees' },
+];
+
+const notifyRoleOptions = computed(() =>
+  ruleForm.value.entity_type === 'requirement'
+    ? requirementNotifyRoleOptions
+    : bugNotifyRoleOptions
+);
 
 const showFieldDrawer = ref(false);
 const fieldEditKind = ref<'case' | 'bug' | 'requirement'>('case');
@@ -311,22 +356,39 @@ const statusKeyOptions = computed(() =>
   statuses.value.map((s) => ({ label: s.label, value: s.key }))
 );
 
-const hasCreateRule = computed(() => wecomRules.value.some((r) => r.kind === 'create'));
+const hasCreateRule = computed(() =>
+  wecomRules.value.some((r) => r.entity_type === 'bug' && r.kind === 'create')
+);
+
+function hasCommentRule(entityType: WecomEntityType) {
+  return wecomRules.value.some((r) => r.entity_type === entityType && r.kind === 'comment');
+}
 
 const ruleKindOptions = computed(() => {
-  const opts: { label: string; value: 'transition' | 'create' }[] = [
-    { label: '状态流转', value: 'transition' },
-  ];
-  if (!hasCreateRule.value || editingRule.value?.kind === 'create') {
-    opts.unshift({ label: '新建缺陷', value: 'create' });
+  const entity = ruleForm.value.entity_type;
+  const opts: { label: string; value: WecomRuleKind }[] = [];
+  if (entity === 'bug') {
+    if (!hasCreateRule.value || editingRule.value?.kind === 'create') {
+      opts.push({ label: '新建缺陷', value: 'create' });
+    }
+    opts.push({ label: '状态流转', value: 'transition' });
+  }
+  if (!hasCommentRule(entity) || editingRule.value?.kind === 'comment') {
+    opts.push({ label: '新评论', value: 'comment' });
   }
   return opts;
 });
 
 const sortedWecomRules = computed(() =>
   [...wecomRules.value].sort((a, b) => {
-    if (a.kind === 'create' && b.kind !== 'create') return -1;
-    if (a.kind !== 'create' && b.kind === 'create') return 1;
+    const entityOrder = (r: WecomNotifyRule) => (r.entity_type === 'bug' ? 0 : 1);
+    if (entityOrder(a) !== entityOrder(b)) return entityOrder(a) - entityOrder(b);
+    const kindOrder = (r: WecomNotifyRule) => {
+      if (r.kind === 'create') return 0;
+      if (r.kind === 'comment') return 1;
+      return 2;
+    };
+    if (kindOrder(a) !== kindOrder(b)) return kindOrder(a) - kindOrder(b);
     const af = a.from_status_key ?? '';
     const bf = b.from_status_key ?? '';
     if (af !== bf) return af.localeCompare(bf);
@@ -334,13 +396,53 @@ const sortedWecomRules = computed(() =>
   })
 );
 
+function formatEntityType(entityType: WecomEntityType | undefined) {
+  if (entityType === 'requirement') return '需求';
+  return '缺陷';
+}
+
+function formatRuleKind(row: WecomNotifyRule) {
+  if (row.kind === 'create') return '新建缺陷';
+  if (row.kind === 'comment') return '新评论';
+  return '状态流转';
+}
+
 function formatNotifyRoles(roles: string[]) {
   const map: Record<string, string> = {
     reporter: '提出人',
     followers: '跟进人',
     assignee: '处理人',
+    creator: '创建人',
+    pm: '产品经理',
+    qa: '测试',
+    tech_owner: '技术负责人',
+    frontend_rd: '前端研发',
+    backend_rd: '后端研发',
+    designer: '设计师',
+    role_assignees: '各角色负责人',
+    task_assignees: '节点任务处理人',
   };
   return roles.map((r) => map[r] ?? r).join('、') || '-';
+}
+
+function defaultTemplateForRule(entityType: WecomEntityType, kind: WecomRuleKind) {
+  if (kind === 'create') return DEFAULT_CREATE_TEMPLATE;
+  if (kind === 'comment') {
+    return entityType === 'requirement'
+      ? DEFAULT_REQUIREMENT_COMMENT_TEMPLATE
+      : DEFAULT_BUG_COMMENT_TEMPLATE;
+  }
+  return DEFAULT_TRANSITION_TEMPLATE;
+}
+
+function defaultRolesForRule(entityType: WecomEntityType, kind: WecomRuleKind) {
+  if (kind === 'comment') {
+    return entityType === 'requirement'
+      ? ['creator', 'role_assignees', 'task_assignees']
+      : ['reporter', 'followers', 'assignee'];
+  }
+  if (kind === 'create') return ['reporter', 'followers'];
+  return ['reporter', 'followers'];
 }
 
 /** 字段编辑抽屉内：将当前表单草稿合并进列表，供右侧实时预览 */
@@ -378,10 +480,16 @@ const draftPreviewFields = computed<TemplateField[]>(() => {
 const wecomRuleColumns = computed<DataTableColumns<WecomNotifyRule>>(() => {
   const cols: DataTableColumns<WecomNotifyRule> = [
   {
+    title: '模块',
+    key: 'entity_type',
+    width: 72,
+    render: (r) => formatEntityType(r.entity_type),
+  },
+  {
     title: '触发',
     key: 'kind',
     width: 100,
-    render: (r) => (r.kind === 'create' ? '新建缺陷' : '状态流转'),
+    render: (r) => formatRuleKind(r),
   },
   {
     title: '原状态',
@@ -416,7 +524,7 @@ const wecomRuleColumns = computed<DataTableColumns<WecomNotifyRule>>(() => {
       render: (row) =>
         h(NSpace, { size: 4 }, () => [
           h(NButton, { size: 'tiny', quaternary: true, type: 'primary', onClick: () => openRuleModal(row) }, () => '编辑'),
-          row.kind === 'transition'
+          row.kind !== 'create'
             ? h(NButton, { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeRule(row) }, () => '删除')
             : null,
         ]),
@@ -511,21 +619,26 @@ function openRuleModal(row?: WecomNotifyRule) {
   editingRule.value = row ?? null;
   if (row) {
     ruleForm.value = {
+      entity_type: row.entity_type ?? 'bug',
       kind: row.kind,
       from_status_keys: [...ruleStatusKeys(row, 'from')],
       to_status_keys: [...ruleStatusKeys(row, 'to')],
       message_template: row.message_template,
-      notify_roles: [...(row.notify_roles ?? ['reporter', 'followers'])],
+      notify_roles: [...(row.notify_roles ?? defaultRolesForRule(row.entity_type ?? 'bug', row.kind))],
       enabled: row.enabled,
     };
   } else {
-    const kind = hasCreateRule.value ? 'transition' : 'create';
+    const entity_type: WecomEntityType = 'bug';
+    let kind: WecomRuleKind = 'transition';
+    if (!hasCreateRule.value) kind = 'create';
+    else if (!hasCommentRule(entity_type)) kind = 'comment';
     ruleForm.value = {
+      entity_type,
       kind,
       from_status_keys: [],
       to_status_keys: [],
-      message_template: kind === 'create' ? DEFAULT_CREATE_TEMPLATE : DEFAULT_TRANSITION_TEMPLATE,
-      notify_roles: ['reporter', 'followers'],
+      message_template: defaultTemplateForRule(entity_type, kind),
+      notify_roles: defaultRolesForRule(entity_type, kind),
       enabled: true,
     };
   }
@@ -537,9 +650,13 @@ function removeRule(row: WecomNotifyRule) {
     message.warning('新建缺陷规则不可删除，请编辑后关闭启用');
     return;
   }
+  const desc =
+    row.kind === 'transition'
+      ? `删除流转规则「${row.from_status_label ?? row.from_status_key} → ${row.to_status_label ?? row.to_status_key}」？`
+      : `删除${formatEntityType(row.entity_type)}评论通知规则？`;
   dialog.warning({
     title: '确认删除',
-    content: `删除流转规则「${row.from_status_label ?? row.from_status_key} → ${row.to_status_label ?? row.to_status_key}」？`,
+    content: desc,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -587,6 +704,15 @@ async function onSaveRule() {
       } else {
         await upsertCreateWecomRule(projectId, payload);
       }
+    } else if (f.kind === 'comment') {
+      if (editingRule.value) {
+        await updateWecomNotifyRule(projectId, editingRule.value.id, payload);
+      } else {
+        await upsertCommentWecomRule(projectId, {
+          entity_type: f.entity_type,
+          ...payload,
+        });
+      }
     } else if (editingRule.value) {
       await updateWecomNotifyRule(projectId, editingRule.value.id, {
         ...payload,
@@ -595,6 +721,7 @@ async function onSaveRule() {
       });
     } else {
       await createWecomNotifyRule(projectId, {
+        entity_type: f.entity_type,
         kind: 'transition',
         from_status_keys: f.from_status_keys,
         to_status_keys: f.to_status_keys,
@@ -706,6 +833,19 @@ async function onTestWecom() {
     message.error(apiErrorMessage(e, '发送失败，请确认 Webhook URL 已保存且有效'));
   }
 }
+
+watch(
+  () => ruleForm.value.entity_type,
+  (entityType) => {
+    if (!showRuleModal.value || editingRule.value) return;
+    const { kind } = ruleForm.value;
+    if (entityType === 'requirement' && (kind === 'create' || kind === 'transition')) {
+      ruleForm.value.kind = 'comment';
+      ruleForm.value.message_template = defaultTemplateForRule(entityType, 'comment');
+      ruleForm.value.notify_roles = defaultRolesForRule(entityType, 'comment');
+    }
+  }
+);
 
 watch(() => ctx.projectId, () => {
   void load();

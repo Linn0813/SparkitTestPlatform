@@ -1,7 +1,7 @@
 import type { WorkflowNodeSource } from '@/utils/requirementWorkflowLayout';
 
 /**
- * 按已选角色同步节点启用：无交集则禁用；节点所需角色全部选中则启用；否则保持当前值。
+ * 按已选角色同步节点启用：与已选角色无交集则自动禁用；有交集时保留用户在 enabledDraft 中的选择。
  */
 export function syncEnabledDraftWithSelectedRoles(
   workflowNodes: WorkflowNodeSource[],
@@ -19,11 +19,6 @@ export function syncEnabledDraftWithSelectedRoles(
 
     if (!roleKeys.some((rk) => selected.has(rk))) {
       next[node.node_key] = false;
-      continue;
-    }
-
-    if (roleKeys.every((rk) => selected.has(rk))) {
-      next[node.node_key] = true;
       continue;
     }
 

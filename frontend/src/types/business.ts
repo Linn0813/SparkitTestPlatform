@@ -34,10 +34,14 @@ export interface WecomIntegration {
   notify_on_create: boolean;
 }
 
+export type WecomEntityType = 'bug' | 'requirement';
+export type WecomRuleKind = 'create' | 'transition' | 'comment';
+
 export interface WecomNotifyRule {
   id: string;
   project_id: string;
-  kind: 'create' | 'transition';
+  entity_type: WecomEntityType;
+  kind: WecomRuleKind;
   from_status_key: string | null;
   to_status_key: string | null;
   from_status_keys?: string[];

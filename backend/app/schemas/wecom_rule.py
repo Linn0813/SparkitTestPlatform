@@ -1,16 +1,18 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from app.schemas.common import ORMBase
 
-WecomRuleKind = Literal["create", "transition"]
+WecomRuleKind = Literal["create", "transition", "comment"]
+WecomEntityType = Literal["bug", "requirement"]
 
 
 class WecomNotifyRuleOut(ORMBase):
     id: str
     project_id: str
+    entity_type: WecomEntityType = "bug"
     kind: WecomRuleKind
     from_status_key: Optional[str] = None
     to_status_key: Optional[str] = None
@@ -25,6 +27,7 @@ class WecomNotifyRuleOut(ORMBase):
 
 
 class WecomNotifyRuleCreate(BaseModel):
+    entity_type: WecomEntityType = "bug"
     kind: WecomRuleKind = "transition"
     from_status_key: Optional[str] = Field(default=None, max_length=64)
     to_status_key: Optional[str] = Field(default=None, max_length=64)
@@ -46,6 +49,13 @@ class WecomNotifyRuleUpdate(BaseModel):
 
 
 class WecomCreateRuleUpsert(BaseModel):
+    message_template: Optional[str] = None
+    notify_roles: Optional[list[str]] = None
+    enabled: Optional[bool] = None
+
+
+class WecomCommentRuleUpsert(BaseModel):
+    entity_type: WecomEntityType
     message_template: Optional[str] = None
     notify_roles: Optional[list[str]] = None
     enabled: Optional[bool] = None

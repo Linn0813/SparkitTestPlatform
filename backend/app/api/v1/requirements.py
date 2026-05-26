@@ -28,6 +28,7 @@ from app.schemas.requirement import (
 )
 from app.schemas.user import UserOut
 from app.services.requirement_activity import log_requirement_activity
+from app.services.wecom_notify import notify_requirement_comment
 from app.services.requirement_nodes import (
     RequirementNodeError,
     apply_node_action,
@@ -591,7 +592,7 @@ async def create_requirement_comment(
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
-    await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    req = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
     comment = RequirementComment(
         requirement_id=requirement_id,
         user_id=ctx.user.id,
@@ -607,6 +608,20 @@ async def create_requirement_comment(
         summary="发表了评论",
         detail={"comment_id": comment.id},
     )
+    mention_count = await notify_requirement_comment(db, req, comment.body, ctx.user.id)
+    if mention_count is not None:
+        summary = (
+            f"已发送企微通知（@{mention_count} 人）"
+            if mention_count > 0
+            else "已发送企微通知（未 @ 任何人）"
+        )
+        await log_requirement_activity(
+            db,
+            requirement_id=requirement_id,
+            actor_id=ctx.user.id,
+            action_type="wecom_notify",
+            summary=summary,
+        )
     await db.refresh(comment)
     user = await db.get(User, ctx.user.id)
     return RequirementCommentOut(

@@ -1,5 +1,5 @@
 import http from './http';
-import type { WecomNotifyRule } from '@/types/business';
+import type { WecomEntityType, WecomNotifyRule, WecomRuleKind } from '@/types/business';
 
 export function listWecomNotifyRules(projectId: string) {
   return http.get<WecomNotifyRule[]>(`/projects/${projectId}/wecom-notify-rules`);
@@ -8,7 +8,8 @@ export function listWecomNotifyRules(projectId: string) {
 export function createWecomNotifyRule(
   projectId: string,
   data: {
-    kind?: 'create' | 'transition';
+    entity_type?: WecomEntityType;
+    kind?: WecomRuleKind;
     from_status_key?: string;
     to_status_key?: string;
     from_status_keys?: string[];
@@ -50,4 +51,16 @@ export function upsertCreateWecomRule(
   }
 ) {
   return http.put<WecomNotifyRule>(`/projects/${projectId}/wecom-notify-rules/create`, data);
+}
+
+export function upsertCommentWecomRule(
+  projectId: string,
+  data: {
+    entity_type: WecomEntityType;
+    message_template?: string;
+    notify_roles?: string[];
+    enabled?: boolean;
+  }
+) {
+  return http.put<WecomNotifyRule>(`/projects/${projectId}/wecom-notify-rules/comment`, data);
 }

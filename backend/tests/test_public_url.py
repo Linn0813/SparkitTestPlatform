@@ -1,6 +1,10 @@
 """Tests for public URL resolution."""
 
-from app.core.public_url import build_bug_detail_url, resolve_public_base_url
+from app.core.public_url import (
+    build_bug_detail_url,
+    build_requirement_detail_url,
+    resolve_public_base_url,
+)
 
 
 def test_resolve_prefers_project_url(monkeypatch):
@@ -30,3 +34,8 @@ def test_resolve_falls_back_to_cors_when_env_is_localhost(monkeypatch):
 def test_build_bug_detail_url():
     url = build_bug_detail_url("bug-123", project_url="http://example.com:5174")
     assert url == "http://example.com:5174/bugs/bug-123"
+
+
+def test_build_requirement_detail_url():
+    url = build_requirement_detail_url("req-456", project_url="http://example.com:5174")
+    assert url == "http://example.com:5174/requirements?id=req-456"

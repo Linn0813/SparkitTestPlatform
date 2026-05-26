@@ -14,6 +14,12 @@ from app.core.database import Base
 class WecomNotifyRuleKind(str, enum.Enum):
     create = "create"
     transition = "transition"
+    comment = "comment"
+
+
+class WecomNotifyEntityType(str, enum.Enum):
+    bug = "bug"
+    requirement = "requirement"
 
 
 class BugWecomNotifyRule(Base):
@@ -21,6 +27,7 @@ class BugWecomNotifyRule(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(16), nullable=False, default="bug", index=True)
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     from_status_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     to_status_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
