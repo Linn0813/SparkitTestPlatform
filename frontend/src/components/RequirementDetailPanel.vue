@@ -424,17 +424,21 @@ function syncEnabledDraft() {
   enabledDraft.value = map;
 }
 
+async function refreshActivities(requirementId?: string) {
+  const id = requirementId ?? req.value?.id;
+  if (!id) return;
+  const { data: acts } = await listRequirementActivities(id);
+  activities.value = acts;
+}
+
 async function load() {
   loading.value = true;
   try {
-    const [{ data: acts }, { data: cmts }] = await Promise.all([
-      listRequirementActivities(props.requirementId),
-      listRequirementComments(props.requirementId),
-    ]);
     const { data: synced } = await syncRequirementStatus(props.requirementId);
     req.value = synced;
-    activities.value = acts;
+    const { data: cmts } = await listRequirementComments(props.requirementId);
     comments.value = cmts;
+    await refreshActivities(props.requirementId);
     await Promise.all([projectConfig.reload(), fieldSchema.reload()]);
     customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, synced.custom_fields);
     emit('updated', synced);
@@ -542,6 +546,7 @@ async function saveReq() {
       selectedNodeKey.value = null;
     }
     editMode.value = false;
+    await refreshActivities();
     message.success('已保存');
     emit('updated', synced);
   } catch (e: unknown) {
@@ -573,8 +578,7 @@ async function onNodeAction(nodeKey: string, action: RequirementNodeAction) {
   try {
     const { data } = await requirementNodeAction(req.value.id, nodeKey, action);
     req.value = data;
-    const { data: acts } = await listRequirementActivities(req.value.id);
-    activities.value = acts;
+    await refreshActivities();
     message.success('已更新');
     emit('updated', data);
   } catch (e: unknown) {
@@ -598,8 +602,7 @@ function onCloseRequirement() {
         const { data } = await closeRequirement(req.value!.id);
         req.value = data;
         clearNodeSelection();
-        const { data: acts } = await listRequirementActivities(req.value.id);
-        activities.value = acts;
+        await refreshActivities();
         message.success('需求已关闭');
         emit('updated', data);
       } catch (e: unknown) {
@@ -618,8 +621,7 @@ async function onReopenClosed() {
   try {
     const { data } = await reopenClosedRequirement(req.value.id);
     req.value = data;
-    const { data: acts } = await listRequirementActivities(req.value.id);
-    activities.value = acts;
+    await refreshActivities();
     message.success('已重新打开');
     emit('updated', data);
   } catch (e: unknown) {
@@ -637,8 +639,7 @@ async function submitComment() {
     const { data } = await createRequirementComment(req.value.id, newComment.value.trim());
     comments.value = [...comments.value, data];
     newComment.value = '';
-    const { data: acts } = await listRequirementActivities(req.value.id);
-    activities.value = acts;
+    await refreshActivities();
     message.success('评论已发表');
   } finally {
     commentSaving.value = false;
