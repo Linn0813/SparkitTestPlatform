@@ -9,7 +9,23 @@
           :loading="loading"
           @prev="shiftRange(-1)"
           @next="shiftRange(1)"
-        />
+        >
+          <template v-if="ctx.projectId && apiMembers.length" #extra>
+            <n-popover trigger="click" placement="bottom-end">
+              <template #trigger>
+                <n-button size="small" quaternary>人员设置</n-button>
+              </template>
+              <ScheduleMemberSettingsPanel
+                :members="orderedMembers"
+                :is-visible="isMemberVisible"
+                @update-visible="setMemberVisible"
+                @move="moveMember"
+                @select-all="setAllVisible(true)"
+                @select-none="setAllVisible(false)"
+              />
+            </n-popover>
+          </template>
+        </ScheduleToolbar>
       </template>
       <n-spin :show="loading">
         <template v-if="!ctx.projectId">
@@ -17,9 +33,18 @@
         </template>
         <template v-else>
 
-          <div v-if="!data?.members.length && !loading" class="schedule-empty">
+          <div v-if="!apiMembers.length && !loading" class="schedule-empty">
             <n-empty description="暂无项目成员" />
           </div>
+
+          <n-alert
+            v-else-if="!hasVisibleMember"
+            type="info"
+            :bordered="false"
+            class="schedule-hidden-all"
+          >
+            已隐藏全部成员，可通过「人员设置」恢复显示
+          </n-alert>
 
           <div v-else class="schedule-board">
             <div class="schedule-board__head">
@@ -30,7 +55,7 @@
               <ScheduleTimelineGrid
                 ref="headGridRef"
                 header-only
-                :members="data?.members ?? []"
+                :members="displayMembers"
                 :range-start="rangeStart"
                 :range-end="rangeEnd"
                 :today="today"
@@ -41,7 +66,7 @@
               <div class="schedule-body">
                 <ScheduleMemberSidebar
                   hide-corner
-                  :members="data?.members ?? []"
+                  :members="displayMembers"
                   :range-start="rangeStart"
                   :range-end="rangeEnd"
                   :expanded-group-keys="expandedGroupKeys"
@@ -50,7 +75,7 @@
                 <ScheduleTimelineGrid
                   ref="bodyGridRef"
                   body-only
-                  :members="data?.members ?? []"
+                  :members="displayMembers"
                   :range-start="rangeStart"
                   :range-end="rangeEnd"
                   :today="today"
@@ -104,12 +129,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import { NCard, NDrawer, NDrawerContent, NEmpty, NSpin, useMessage } from 'naive-ui';
+import { computed, ref, toRef, watch } from 'vue';
+import { NAlert, NButton, NCard, NDrawer, NDrawerContent, NEmpty, NPopover, NSpin, useMessage } from 'naive-ui';
 import RequirementDetailPanel from '@/components/RequirementDetailPanel.vue';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
 import { fetchMemberSchedule } from '@/api/memberSchedule';
 import type { MemberSchedule, MemberScheduleItem, MemberScheduleRow, Requirement } from '@/types/business';
+import { useMemberScheduleMemberPrefs } from '@/composables/useMemberScheduleMemberPrefs';
 import { useContextStore } from '@/stores/context';
 import {
   addDays,
@@ -126,6 +152,7 @@ import {
   SCHEDULE_SIDEBAR_WIDTH,
 } from './scheduleMetrics';
 import { scheduleGroupKey } from '@/utils/scheduleLayout';
+import ScheduleMemberSettingsPanel from './components/ScheduleMemberSettingsPanel.vue';
 import ScheduleToolbar from './components/ScheduleToolbar.vue';
 import ScheduleUnscheduledDrawer from './components/ScheduleUnscheduledDrawer.vue';
 import './scheduleTheme.css';
@@ -143,6 +170,18 @@ const rangeEnd = ref(initial.end);
 
 const rangeTitle = computed(() => formatRangeTitle(rangeStart.value, rangeEnd.value));
 const rangeSubtitle = computed(() => formatRangeSubtitle(rangeStart.value, rangeEnd.value));
+
+const apiMembers = computed(() => data.value?.members ?? []);
+
+const {
+  orderedMembers,
+  displayMembers,
+  hasVisibleMember,
+  isMemberVisible,
+  setMemberVisible,
+  setAllVisible,
+  moveMember,
+} = useMemberScheduleMemberPrefs(toRef(ctx, 'projectId'), apiMembers);
 
 const unscheduledVisible = ref(false);
 const unscheduledMember = ref<MemberScheduleRow | null>(null);
@@ -315,7 +354,8 @@ watch([() => ctx.projectId, rangeStart, rangeEnd], load, { immediate: true });
   width: 100%;
   min-height: min-content;
 }
-.schedule-empty {
+.schedule-empty,
+.schedule-hidden-all {
   padding: 48px 0;
 }
 </style>

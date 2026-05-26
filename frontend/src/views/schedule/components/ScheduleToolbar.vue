@@ -8,10 +8,13 @@
         <n-button quaternary :disabled="loading" @click="emit('next')">下一段</n-button>
       </n-button-group>
     </div>
-    <div v-if="title || subtitle" class="schedule-toolbar__range">
-      <span v-if="title" class="schedule-toolbar__range-title">{{ title }}</span>
-      <span v-if="title && subtitle" class="schedule-toolbar__range-dot">·</span>
-      <span v-if="subtitle" class="schedule-toolbar__range-sub">{{ subtitle }}</span>
+    <div class="schedule-toolbar__right">
+      <div v-if="title || subtitle" class="schedule-toolbar__range">
+        <span v-if="title" class="schedule-toolbar__range-title">{{ title }}</span>
+        <span v-if="title && subtitle" class="schedule-toolbar__range-dot">·</span>
+        <span v-if="subtitle" class="schedule-toolbar__range-sub">{{ subtitle }}</span>
+      </div>
+      <slot name="extra" />
     </div>
   </div>
 </template>
@@ -58,6 +61,12 @@ const emit = defineEmits<{
   width: 1px;
   height: 18px;
   background: var(--schedule-border, #e5e6eb);
+  flex-shrink: 0;
+}
+.schedule-toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex-shrink: 0;
 }
 .schedule-toolbar__range {
