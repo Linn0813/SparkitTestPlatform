@@ -215,7 +215,10 @@ const caseForm = ref({
 const priorityOptions = ['P0', 'P1', 'P2', 'P3'].map((v) => ({ label: v, value: v }));
 
 const requirementOptions = computed(() =>
-  requirements.value.map((r) => ({ label: requirementOptionLabel(r), value: r.id }))
+  requirements.value.map((r) => ({
+    label: requirementOptionLabel(r, { showNum: false }),
+    value: r.id,
+  }))
 );
 
 const reqById = computed(() => new Map(requirements.value.map((r) => [r.id, r])));

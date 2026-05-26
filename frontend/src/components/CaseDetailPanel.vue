@@ -242,7 +242,10 @@ const moreMenuOptions = [
 ];
 
 const requirementOptions = computed(() =>
-  requirements.value.map((r) => ({ label: requirementOptionLabel(r), value: r.id }))
+  requirements.value.map((r) => ({
+    label: requirementOptionLabel(r, { showNum: false }),
+    value: r.id,
+  }))
 );
 
 const moduleLabel = computed(() => {

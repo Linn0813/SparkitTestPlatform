@@ -437,7 +437,10 @@ function formatActivitySummary(a: BugActivity): string {
 }
 
 const requirementOptions = computed(() =>
-  requirements.value.map((r) => ({ label: requirementOptionLabel(r), value: r.id }))
+  requirements.value.map((r) => ({
+    label: requirementOptionLabel(r, { showNum: false }),
+    value: r.id,
+  }))
 );
 const planOptions = computed(() => plans.value.map((p) => ({ label: p.name, value: p.id })));
 
