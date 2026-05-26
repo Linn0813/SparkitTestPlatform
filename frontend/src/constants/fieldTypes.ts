@@ -57,6 +57,11 @@ export function isRichtextType(type: string): boolean {
   return type === 'richtext';
 }
 
+/** 与 PRD 链接等系统字段一致的 URL/链接类自定义字段 */
+export function isLinkLikeTemplateField(field: TemplateField): boolean {
+  return field.name.includes('链接');
+}
+
 export function isOptionFieldType(type: string): boolean {
   return type === 'select' || type === 'multi_select';
 }

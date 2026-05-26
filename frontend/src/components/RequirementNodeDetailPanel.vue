@@ -4,12 +4,26 @@
       <div class="node-detail-title-row">
         <span class="status-dot" :class="nodeStateDotClass(node.state, node.enabled)" />
         <n-text strong>{{ node.label }}</n-text>
-        <n-tag size="small" round :bordered="false">{{ nodeStateLabel(node.state) }}</n-tag>
+        <n-tag
+          :type="nodeStateTagType(node.state, node.enabled)"
+          size="small"
+          round
+          :bordered="false"
+        >
+          {{ nodeStateLabel(node.state) }}
+        </n-tag>
         <span class="node-meta-divider" aria-hidden="true" />
         <div class="node-meta-item">
           <n-text depth="3" class="meta-label">负责人</n-text>
           <n-space v-if="assigneeLabels.length" :size="4" class="meta-value">
-            <n-tag v-for="(name, i) in assigneeLabels" :key="i" size="small" round :bordered="false">
+            <n-tag
+              v-for="(name, i) in assigneeLabels"
+              :key="i"
+              type="info"
+              size="small"
+              round
+              :bordered="false"
+            >
               {{ name }}
             </n-tag>
           </n-space>
@@ -71,7 +85,7 @@
             <div class="task-grid-cell">
               <n-select
                 v-if="isTaskEditable"
-                class="task-field"
+                class="task-field task-field--assignee"
                 :value="effectiveAssigneeId(task)"
                 :options="memberOptions"
                 size="small"
@@ -81,7 +95,17 @@
                 :disabled="isTaskSaving(task.id)"
                 @update:value="(v: string | null) => onTaskFieldChange(task, { assignee_id: v })"
               />
-              <span v-else class="task-cell-text">{{ assigneeLabel(task) }}</span>
+              <n-tag
+                v-else-if="assigneeLabel(task) !== '—'"
+                type="info"
+                size="small"
+                round
+                :bordered="false"
+                class="task-assignee-tag"
+              >
+                {{ assigneeLabel(task) }}
+              </n-tag>
+              <span v-else class="task-cell-text">—</span>
             </div>
             <div class="task-grid-cell task-grid-cell--estimate">
               <n-input-number
@@ -170,7 +194,7 @@ import type {
   RequirementType,
 } from '@/types/business';
 import { gateBlockedReason, isNodeActionable } from '@/utils/requirementNodeGate';
-import { nodeStateDotClass, nodeStateLabel } from '@/utils/requirementWorkflowLayout';
+import { nodeStateDotClass, nodeStateLabel, nodeStateTagType } from '@/utils/requirementWorkflowLayout';
 
 const props = defineProps<{
   requirement: Requirement;
@@ -588,6 +612,19 @@ async function onDeleteTask(task: RequirementNodeTask) {
 
 .task-field--estimate :deep(.n-input__input-el) {
   text-align: center;
+}
+
+.task-field--assignee :deep(.n-base-selection) {
+  background-color: var(--n-info-color-suppl);
+  border-color: var(--n-info-color-hover);
+}
+
+.task-field--assignee :deep(.n-base-selection-label) {
+  color: var(--n-info-color);
+}
+
+.task-assignee-tag {
+  max-width: 100%;
 }
 
 .task-empty {

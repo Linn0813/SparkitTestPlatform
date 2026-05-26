@@ -57,11 +57,11 @@
 
     <n-drawer
       v-model:show="createDrawerVisible"
-      :width="'min(720px, 92vw)'"
+      :width="'min(1280px, 92vw)'"
       placement="right"
       :trap-focus="false"
     >
-      <n-drawer-content title="新建需求" closable body-content-style="padding: 12px 16px">
+      <n-drawer-content title="新建需求" closable body-content-style="padding: 8px 12px 16px">
         <RequirementCreateForm
           v-if="ctx.projectId && createDrawerVisible"
           ref="createFormRef"
@@ -134,6 +134,7 @@ import RequirementCreateForm from '@/components/RequirementCreateForm.vue';
 import type { ComponentPublicInstance } from 'vue';
 import RequirementDetailPanel from '@/components/RequirementDetailPanel.vue';
 import VersionSelect from '@/components/VersionSelect.vue';
+import { requirementPriorityTagType } from '@/constants/requirementPriority';
 import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
 import { usePermissions } from '@/composables/usePermissions';
@@ -254,7 +255,12 @@ const columns = computed<DataTableColumns<Requirement>>(() => [
     title: '优先级',
     key: 'priority',
     width: 80,
-    render: (row) => projectConfig.priorityLabel(row.priority),
+    render: (row) =>
+      h(
+        NTag,
+        { size: 'small', round: true, bordered: false, type: requirementPriorityTagType(row.priority) },
+        () => projectConfig.priorityLabel(row.priority)
+      ),
   },
   {
     title: '类型',

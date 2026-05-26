@@ -1,3 +1,4 @@
+import type { TagProps } from 'naive-ui';
 import type { RequirementNodeState } from '@/types/business';
 
 export interface WorkflowNodeSource {
@@ -191,4 +192,12 @@ export function nodeStateLabel(state: RequirementNodeState): string {
     skipped: '已跳过',
   };
   return map[state] ?? state;
+}
+
+export function nodeStateTagType(state: RequirementNodeState, enabled: boolean): TagProps['type'] {
+  if (!enabled) return 'default';
+  if (state === 'completed') return 'success';
+  if (state === 'in_progress') return 'warning';
+  if (state === 'skipped') return 'default';
+  return 'default';
 }

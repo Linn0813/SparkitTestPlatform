@@ -7,6 +7,14 @@
     :placeholder="placeholder"
     @update:model-value="emitValue"
   />
+  <n-input
+    v-else-if="isLinkLikeTemplateField(field)"
+    :value="textValue"
+    :disabled="disabled"
+    :size="inputSize"
+    :placeholder="placeholder"
+    @update:value="(v) => emitValue(v)"
+  />
   <PasteImageTextarea
     v-else-if="isTextLikeType(field.type)"
     :model-value="textValue"
@@ -85,6 +93,7 @@
     v-else
     :value="textValue"
     :disabled="disabled"
+    :size="inputSize"
     :placeholder="placeholder"
     @update:value="(v) => emitValue(v)"
   />
@@ -97,7 +106,7 @@ import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
 import RichTextFieldInput from '@/components/RichTextFieldInput.vue';
 import SelectRadioField from '@/components/SelectRadioField.vue';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
-import { isRichtextType, isTextLikeType } from '@/constants/fieldTypes';
+import { isLinkLikeTemplateField, isRichtextType, isTextLikeType } from '@/constants/fieldTypes';
 import { isPromotedRadioSelectField } from '@/schemas/entityFieldSchema';
 import type { TemplateField } from '@/types/business';
 
@@ -108,9 +117,12 @@ const props = withDefaults(
     projectId?: string | null;
     disabled?: boolean;
     placeholder?: string;
+    size?: 'small' | 'medium' | 'large';
   }>(),
   { disabled: false }
 );
+
+const inputSize = computed(() => props.size);
 
 const emit = defineEmits<{
   'update:modelValue': [value: unknown];

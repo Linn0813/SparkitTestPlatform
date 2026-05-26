@@ -33,7 +33,14 @@
 
       <div v-if="!editMode" class="panel-title-row">
         <n-text strong>{{ req.title }}</n-text>
-        <n-tag size="small" round :bordered="false">{{ projectConfig.priorityLabel(req.priority) }}</n-tag>
+        <n-tag
+          :type="requirementPriorityTagType(req.priority)"
+          size="small"
+          round
+          :bordered="false"
+        >
+          {{ projectConfig.priorityLabel(req.priority) }}
+        </n-tag>
         <n-tag :type="requirementStatusTagType(req.status)" size="small" round :bordered="false">
           {{ requirementStatusLabel(req.status) }}
         </n-tag>
@@ -141,137 +148,16 @@
         </div>
       </template>
 
-      <template v-else>
-        <div class="edit-layout">
-          <section class="edit-layout__form">
-            <n-form
-              label-placement="left"
-              label-width="80"
-              size="small"
-              class="requirement-edit-form"
-            >
-              <n-form-item label="标题" required>
-                <n-input v-model:value="form.title" size="small" />
-              </n-form-item>
-              <n-grid :cols="2" :x-gap="12" :y-gap="0">
-                <n-gi>
-                  <n-form-item label="优先级">
-                    <n-space :size="4" wrap>
-                      <n-tag
-                        v-for="opt in priorityTagOptions"
-                        :key="opt.value"
-                        checkable
-                        size="small"
-                        :checked="form.priority === opt.value"
-                        @update:checked="(v: boolean) => v && (form.priority = opt.value)"
-                      >
-                        {{ opt.label }}
-                      </n-tag>
-                    </n-space>
-                  </n-form-item>
-                </n-gi>
-                <n-gi>
-                  <n-form-item label="需求类型">
-                    <n-space :size="4" wrap>
-                      <n-tag
-                        v-for="opt in typeTagOptions"
-                        :key="opt.value"
-                        checkable
-                        size="small"
-                        :checked="form.req_type === opt.value"
-                        @update:checked="(v: boolean) => v && (form.req_type = opt.value)"
-                      >
-                        {{ opt.label }}
-                      </n-tag>
-                    </n-space>
-                  </n-form-item>
-                </n-gi>
-                <n-gi :span="2">
-                  <n-form-item label="PRD 链接">
-                    <n-input v-model:value="form.external_url" size="small" placeholder="可选" />
-                  </n-form-item>
-                </n-gi>
-                <n-gi :span="2">
-                  <n-form-item label="关联版本">
-                    <VersionSelect v-model="form.version_id" :project-id="req.project_id" />
-                  </n-form-item>
-                </n-gi>
-              </n-grid>
-              <template v-if="editActiveWorkflowRoles.length">
-                <n-grid :cols="2" :x-gap="12" :y-gap="0">
-                  <n-gi v-for="role in editActiveWorkflowRoles" :key="role.key">
-                    <n-form-item :label="role.label">
-                      <n-select
-                        v-model:value="form.roleUserIds[role.key]"
-                        :options="memberOptions"
-                        multiple
-                        filterable
-                        clearable
-                        size="small"
-                        placeholder="选择负责人"
-                      />
-                    </n-form-item>
-                  </n-gi>
-                </n-grid>
-              </template>
-              <n-text v-else depth="3" class="empty-roles-hint">
-                请先启用工作流节点，再配置相关人员
-              </n-text>
-              <DynamicFieldForm
-                v-if="templateUiFields.length"
-                v-model="customFields"
-                :fields="templateUiFields"
-                :project-id="req.project_id"
-                :columns="2"
-                compact
-              />
-            </n-form>
-          </section>
-          <section class="edit-layout__workflow">
-            <div class="filter-block filter-block--compact">
-              <div class="filter-row">
-                <n-text depth="3" class="filter-label">角色</n-text>
-                <n-space :size="6" wrap class="filter-tags">
-                  <n-tag
-                    v-for="role in projectRoleFields"
-                    :key="role.key"
-                    checkable
-                    size="small"
-                    :checked="selectedRoles.includes(role.key)"
-                    @update:checked="(v: boolean) => toggleRole(role.key, v)"
-                  >
-                    {{ role.label }}
-                  </n-tag>
-                </n-space>
-              </div>
-              <div class="filter-row">
-                <n-text depth="3" class="filter-label">节点</n-text>
-                <n-space :size="6" wrap class="filter-tags">
-                  <n-tag
-                    v-for="node in workflowEditNodeOptions"
-                    :key="node.node_key"
-                    checkable
-                    size="small"
-                    :checked="enabledDraft[node.node_key] ?? node.enabled"
-                    @update:checked="(v: boolean) => onToggleEnabled(node.node_key, v)"
-                  >
-                    {{ node.label }}
-                  </n-tag>
-                </n-space>
-              </div>
-            </div>
-            <div class="workflow-block workflow-block--compact">
-              <RequirementWorkflowCanvas
-                mode="view"
-                :nodes="workflowEditCanvasNodes"
-                :req-type="req.req_type"
-                :rejected="workflowFrozen"
-                :selected-node-key="null"
-              />
-            </div>
-          </section>
-        </div>
-      </template>
+      <RequirementFormEditor
+        v-else-if="req"
+        :project-id="req.project_id"
+        v-model:form="form"
+        v-model:custom-fields="customFields"
+        v-model:selected-roles="selectedRoles"
+        v-model:enabled-draft="enabledDraft"
+        :workflow-nodes="editWorkflowNodeSources"
+        :workflow-frozen="workflowFrozen"
+      />
     </div>
   </div>
 </template>
@@ -281,12 +167,6 @@ import { computed, ref, watch } from 'vue';
 import {
   NButton,
   NEmpty,
-  NForm,
-  NFormItem,
-  NGi,
-  NGrid,
-  NInput,
-  NSelect,
   NSpace,
   NSpin,
   NTabPane,
@@ -312,14 +192,14 @@ import {
   type RequirementNodeAction,
 } from '@/api/requirements';
 import { updateRequirementWorkflowEnabled } from '@/api/requirementWorkflow';
-import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
 import EntityDetailFieldList from '@/components/EntityDetailFieldList.vue';
 import InlineMarkdownContent from '@/components/InlineMarkdownContent.vue';
 import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
+import RequirementFormEditor, { type RequirementFormModel } from '@/components/RequirementFormEditor.vue';
 import RequirementNodeDetailPanel from '@/components/RequirementNodeDetailPanel.vue';
 import RequirementWorkflowCanvas from '@/components/RequirementWorkflowCanvas.vue';
-import VersionSelect from '@/components/VersionSelect.vue';
 import { LEGACY_ROLE_ID_FIELDS } from '@/constants/requirementNodes';
+import { requirementPriorityTagType } from '@/constants/requirementPriority';
 import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
 import {
   mergeCustomFields,
@@ -374,8 +254,6 @@ const projectConfig = useRequirementProjectConfig(() => req.value?.project_id ??
 const schemaProjectId = computed(() => req.value?.project_id ?? null);
 const fieldSchema = useProjectFieldSchema('requirement', schemaProjectId);
 const customFields = ref<Record<string, unknown>>({});
-const templateUiFields = computed(() => fieldSchema.templateFieldsForUi.value);
-
 const detailRows = computed(() => buildRequirementDetailRows(fieldSchema.templateFields.value));
 
 const detailFieldContext = computed<RequirementDetailFieldContext | null>(() => {
@@ -389,13 +267,6 @@ const detailFieldContext = computed<RequirementDetailFieldContext | null>(() => 
     memberLabel: (userId: string) => memberOptions.value.find((o) => o.value === userId)?.label ?? userId,
   };
 });
-
-const priorityTagOptions = computed(() =>
-  projectConfig.priorityOptions.value.map((o) => ({ label: o.label, value: o.option_key }))
-);
-const typeTagOptions = computed(() =>
-  projectConfig.typeOptions.value.map((o) => ({ label: o.label, value: o.option_key }))
-);
 
 interface ProjectRoleField {
   key: string;
@@ -445,45 +316,25 @@ const canvasNodes = computed<WorkflowCanvasNode[]>(() =>
   baseCanvasNodes.value.filter((n) => n.enabled)
 );
 
-const editCanvasNodes = computed<WorkflowCanvasNode[]>(() =>
-  baseCanvasNodes.value.map((n) => ({
-    ...n,
-    enabled: enabledDraft.value[n.node_key] ?? n.enabled,
+const editWorkflowNodeSources = computed<WorkflowNodeSource[]>(() =>
+  (req.value?.nodes ?? []).map((n) => ({
+    node_key: n.node_key,
+    label: n.label,
+    role_keys: n.role_keys,
+    lane_index: n.lane_index,
+    lane_indexes: n.lane_indexes,
+    blocks_lane_gate: n.blocks_lane_gate,
+    sort_in_lane: n.sort_in_lane,
+    enabled: n.enabled,
+    state: n.state,
   }))
 );
-
-const workflowEditNodeOptions = computed(() => {
-  const roleSet = new Set(selectedRoles.value);
-  return (req.value?.nodes ?? []).filter((n) =>
-    n.role_keys.some((rk) => roleSet.has(rk))
-  );
-});
-
-const workflowEditCanvasNodes = computed<WorkflowCanvasNode[]>(() => {
-  const roleSet = new Set(selectedRoles.value);
-  return editCanvasNodes.value.filter((n) =>
-    n.role_keys.some((rk) => roleSet.has(rk))
-  );
-});
 
 const activeWorkflowRoles = computed(() => {
   const keys = new Set<string>();
   for (const node of req.value?.nodes ?? []) {
     if (!node.enabled) continue;
     for (const rk of node.role_keys) keys.add(rk);
-  }
-  return projectRoleFields.value.filter((r) => keys.has(r.key));
-});
-
-const editActiveWorkflowRoles = computed(() => {
-  const roleSet = new Set(selectedRoles.value);
-  const keys = new Set<string>();
-  for (const node of req.value?.nodes ?? []) {
-    const enabled = enabledDraft.value[node.node_key] ?? node.enabled;
-    if (!enabled) continue;
-    for (const rk of node.role_keys) {
-      if (roleSet.has(rk)) keys.add(rk);
-    }
   }
   return projectRoleFields.value.filter((r) => keys.has(r.key));
 });
@@ -533,25 +384,31 @@ function formatTime(iso: string): string {
   return iso.replace('T', ' ').slice(0, 16);
 }
 
-function syncSelectedRoles() {
-  selectedRoles.value = projectRoleFields.value.map((r) => r.key);
-}
-
-function onRolesChange(roles: string[]) {
-  const roleSet = new Set(roles);
+function collectRoleKeysFromNodes(useEnabledOnly: boolean): Set<string> {
+  const keys = new Set<string>();
   for (const node of req.value?.nodes ?? []) {
-    if (!node.role_keys.some((rk) => roleSet.has(rk))) {
-      enabledDraft.value = { ...enabledDraft.value, [node.node_key]: false };
-    }
+    const enabled = enabledDraft.value[node.node_key] ?? node.enabled;
+    if (useEnabledOnly && !enabled) continue;
+    for (const rk of node.role_keys) keys.add(rk);
   }
+  return keys;
 }
 
-function toggleRole(roleKey: string, checked: boolean) {
-  const next = checked
-    ? [...new Set([...selectedRoles.value, roleKey])]
-    : selectedRoles.value.filter((k) => k !== roleKey);
-  selectedRoles.value = next;
-  onRolesChange(next);
+function deriveSelectedRolesFromRequirement() {
+  let keys = collectRoleKeysFromNodes(true);
+  if (!keys.size) {
+    keys = collectRoleKeysFromNodes(false);
+  }
+  const ordered = projectRoleFields.value.filter((r) => keys.has(r.key)).map((r) => r.key);
+  selectedRoles.value = ordered.length
+    ? ordered
+    : projectRoleFields.value.map((r) => r.key);
+}
+
+async function ensureProjectRolesLoaded() {
+  if (!projectRoleFields.value.length && req.value?.project_id) {
+    await projectConfig.reload();
+  }
 }
 
 function onNodeSelect(nodeKey: string) {
@@ -560,10 +417,6 @@ function onNodeSelect(nodeKey: string) {
 
 function clearNodeSelection() {
   selectedNodeKey.value = null;
-}
-
-function onToggleEnabled(nodeKey: string, enabled: boolean) {
-  enabledDraft.value = { ...enabledDraft.value, [nodeKey]: enabled };
 }
 
 function syncEnabledDraft() {
@@ -620,26 +473,28 @@ function syncFormFromReq() {
   customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, req.value.custom_fields);
 }
 
-const form = ref({
+const form = ref<RequirementFormModel>({
   title: '',
-  external_url: '' as string,
-  version_id: null as string | null,
-  priority: 'p1' as Requirement['priority'],
-  req_type: 'feature' as Requirement['req_type'],
-  roleUserIds: {} as Record<string, string[]>,
+  external_url: '',
+  version_id: null,
+  priority: 'p1',
+  req_type: 'feature',
+  roleUserIds: {},
 });
 
-function enterEdit() {
+async function enterEdit() {
   clearNodeSelection();
-  syncFormFromReq();
   syncEnabledDraft();
-  syncSelectedRoles();
+  await ensureProjectRolesLoaded();
+  syncFormFromReq();
+  deriveSelectedRolesFromRequirement();
   editMode.value = true;
 }
 
-function cancelEdit() {
+async function cancelEdit() {
   syncEnabledDraft();
-  syncSelectedRoles();
+  await ensureProjectRolesLoaded();
+  deriveSelectedRolesFromRequirement();
   syncFormFromReq();
   editMode.value = false;
 }
@@ -657,8 +512,16 @@ async function saveReq() {
   saving.value = true;
   try {
     const role_assignee_ids: Record<string, string[]> = {};
-    for (const role of editActiveWorkflowRoles.value) {
-      role_assignee_ids[role.key] = form.value.roleUserIds[role.key] ?? [];
+    const roleKeys = new Set<string>();
+    for (const node of req.value.nodes) {
+      const enabled = enabledDraft.value[node.node_key] ?? node.enabled;
+      if (!enabled) continue;
+      for (const rk of node.role_keys) {
+        if (selectedRoles.value.includes(rk)) roleKeys.add(rk);
+      }
+    }
+    for (const roleKey of roleKeys) {
+      role_assignee_ids[roleKey] = form.value.roleUserIds[roleKey] ?? [];
     }
     await updateRequirement(req.value.id, {
       title: form.value.title.trim(),
@@ -846,58 +709,6 @@ watch(() => props.requirementId, () => {
 }
 .panel-body--edit {
   padding: 8px 12px 16px;
-}
-.edit-layout {
-  display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(260px, 1fr);
-  gap: 12px;
-  align-items: start;
-}
-@media (max-width: 960px) {
-  .edit-layout {
-    grid-template-columns: 1fr;
-  }
-}
-.edit-layout__form {
-  min-width: 0;
-}
-.edit-layout__workflow {
-  min-width: 0;
-}
-.requirement-edit-form :deep(.n-form-item) {
-  margin-bottom: 6px;
-}
-.filter-block--compact {
-  margin-bottom: 8px;
-  padding: 6px 8px;
-}
-.workflow-block--compact {
-  padding: 8px;
-}
-.filter-block {
-  margin-bottom: 12px;
-  padding: 8px 10px;
-  border: 1px solid var(--n-border-color);
-  border-radius: 8px;
-  background: var(--n-color-modal);
-}
-.filter-tags {
-  flex: 1;
-  min-width: 0;
-}
-.filter-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-.filter-row + .filter-row {
-  margin-top: 8px;
-}
-.filter-label {
-  flex-shrink: 0;
-  width: 36px;
-  padding-top: 2px;
-  font-size: 12px;
 }
 .workflow-block {
   padding: 12px;
