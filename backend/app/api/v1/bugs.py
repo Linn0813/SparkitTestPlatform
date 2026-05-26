@@ -17,6 +17,7 @@ from app.core.deps import (
     require_project_context_tester,
     user_can_full_edit_project,
 )
+from app.core.project_permissions import user_can_update_bug_followers
 from app.models.bug import (
     Bug,
     BugAttachment,
@@ -352,10 +353,13 @@ async def patch_bug_follower_schedule(
     if not bug or bug.project_id != ctx.project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
     can_full_edit = await user_can_full_edit_project(ctx.user, ctx.project_id, db)
-    if ctx.user.id != user_id and not can_full_edit:
+    can_edit_schedule = can_full_edit or await user_can_update_bug_followers(
+        ctx.user, ctx.project_id, db
+    )
+    if ctx.user.id != user_id and not can_edit_schedule:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the follower or testers may update this schedule",
+            detail="Insufficient permission to update this follower schedule",
         )
     try:
         link = await get_bug_follower_link_or_raise(db, bug_id, user_id)
@@ -404,11 +408,14 @@ async def update_bug(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
     can_full_edit = await user_can_full_edit_project(ctx.user, ctx.project_id, db)
     if not can_full_edit:
-        disallowed = set(data.keys()) - {"status_key"}
+        allowed = {"status_key"}
+        if await user_can_update_bug_followers(ctx.user, ctx.project_id, db):
+            allowed.add("follower_ids")
+        disallowed = set(data.keys()) - allowed
         if disallowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only testers may edit bug details; members may change status only",
+                detail="Insufficient permission to edit these bug fields",
             )
     old_status = bug.status_key
     old_file_keys = file_keys_from_bug(bug)

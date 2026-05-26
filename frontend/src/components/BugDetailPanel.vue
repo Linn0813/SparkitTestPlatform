@@ -64,7 +64,22 @@
           <template v-else>{{ formatTemplateFieldValue(field, customFields[field.id], templateFieldCtx) }}</template>
         </n-descriptions-item>
         <n-descriptions-item label="提出人">{{ reporterLabel }}</n-descriptions-item>
-        <n-descriptions-item label="跟进人">{{ followersLabel }}</n-descriptions-item>
+        <n-descriptions-item label="跟进人">
+          <n-select
+            v-if="canEditFollowers"
+            :value="bug.follower_ids ?? []"
+            :options="memberOptions"
+            multiple
+            filterable
+            clearable
+            size="small"
+            :loading="followerIdsSaving"
+            placeholder="选择跟进人"
+            style="min-width: 220px; max-width: 100%"
+            @update:value="onFollowersUpdate"
+          />
+          <template v-else>{{ followersLabel }}</template>
+        </n-descriptions-item>
         <n-descriptions-item label="规划迭代">{{ planVersionLabel }}</n-descriptions-item>
         <n-descriptions-item label="发现版本">{{ foundVersionLabel }}</n-descriptions-item>
         <n-descriptions-item label="关联需求" :span="2">{{ requirementsLabel }}</n-descriptions-item>
@@ -249,6 +264,7 @@ import {
   NDropdown,
   NEmpty,
   NImage,
+  NSelect,
   NSpace,
   NSpin,
   NTabPane,
@@ -325,13 +341,14 @@ const emit = defineEmits<{
 const message = useMessage();
 const dialog = useDialog();
 const auth = useAuthStore();
-const { canManageBugs, canChangeBugStatus, canCommentBug } = usePermissions();
+const { canManageBugs, canChangeBugStatus, canCommentBug, canEditBugFollowers } = usePermissions();
 
 const bug = ref<BugItem | null>(null);
 const loading = ref(false);
 const editMode = ref(false);
 const saving = ref(false);
 const statusSaving = ref(false);
+const followerIdsSaving = ref(false);
 const viewStatusKey = ref<string | null>(null);
 const scheduleSavingUserId = ref<string | null>(null);
 const scheduleEstimateDrafts = ref<Record<string, number | null>>({});
@@ -369,6 +386,9 @@ const templateUiFields = computed(() => fieldSchema.templateFieldsForUi.value);
 const canEdit = computed(() => canManageBugs(bug.value?.project_id));
 const canChangeStatus = computed(() => canChangeBugStatus(bug.value?.project_id));
 const canComment = computed(() => canCommentBug(bug.value?.project_id));
+const canEditFollowers = computed(
+  () => !editMode.value && canEditBugFollowers(bug.value?.project_id)
+);
 
 const statusOptions = computed(() => statuses.value.map((x) => ({ label: x.label, value: x.key })));
 
@@ -486,12 +506,18 @@ const editFollowerScheduleRows = computed(() =>
   buildFollowerScheduleRows(editForm.value.follower_ids ?? [])
 );
 
-function canEditFollowerScheduleRow(userId: string): boolean {
-  if (canEdit.value) return true;
-  const followerIds = editMode.value
+function currentFollowerIds(): string[] {
+  return editMode.value
     ? (editForm.value.follower_ids ?? [])
     : (bug.value?.follower_ids ?? []);
-  return auth.user?.id === userId && followerIds.includes(userId);
+}
+
+function canEditFollowerScheduleRow(userId: string): boolean {
+  if (canEdit.value) return true;
+  const followerIds = currentFollowerIds();
+  if (!followerIds.includes(userId)) return false;
+  if (canEditBugFollowers(bug.value?.project_id)) return true;
+  return auth.user?.id === userId;
 }
 
 function onFollowerEstimateInput(userId: string, value: number | null) {
@@ -635,6 +661,31 @@ async function onStatusChange(key: string) {
     message.error('状态更新失败');
   } finally {
     statusSaving.value = false;
+  }
+}
+
+function followerIdsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((id, i) => id === sb[i]);
+}
+
+async function onFollowersUpdate(ids: string[]) {
+  if (!bug.value || followerIdsSaving.value) return;
+  const next = ids ?? [];
+  const prev = bug.value.follower_ids ?? [];
+  if (followerIdsEqual(prev, next)) return;
+  followerIdsSaving.value = true;
+  try {
+    await updateBug(props.bugId, { follower_ids: next });
+    message.success('跟进人已更新');
+    await load();
+    emit('updated');
+  } catch {
+    message.error('跟进人更新失败');
+  } finally {
+    followerIdsSaving.value = false;
   }
 }
 

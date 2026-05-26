@@ -100,6 +100,11 @@ export function usePermissions() {
     return canChangeBugStatus(projectId);
   }
 
+  /** 缺陷跟进人（开发 / 测试 / 产品） */
+  function canEditBugFollowers(projectId: string | null | undefined): boolean {
+    return canChangeBugStatus(projectId);
+  }
+
   function canAccessBugsModule(projectId: string | null | undefined): boolean {
     return (
       isSystemAdmin.value ||
@@ -129,6 +134,7 @@ export function usePermissions() {
     canManageBugs,
     canChangeBugStatus,
     canCommentBug,
+    canEditBugFollowers,
     canAccessBugsModule,
     canAccessCasesModule,
   };

@@ -78,7 +78,7 @@
 
     <n-drawer
       v-model:show="drawerVisible"
-      :width="'min(1200px, 85vw)'"
+      :width="'min(1280px, 92vw)'"
       placement="right"
       :trap-focus="false"
       @update:show="onDrawerShowChange"

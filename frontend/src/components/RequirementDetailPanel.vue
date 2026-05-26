@@ -14,13 +14,8 @@
             <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
             <n-button size="small" type="primary" :loading="saving" @click="saveReq">保存</n-button>
           </template>
-          <template v-else-if="workflowEditMode">
-            <n-button quaternary size="small" @click="cancelWorkflowEdit">取消</n-button>
-            <n-button size="small" type="primary" :loading="workflowSaving" @click="saveWorkflow">保存</n-button>
-          </template>
           <template v-else-if="canEdit">
-            <n-button quaternary size="small" @click="enterEdit">编辑需求</n-button>
-            <n-button quaternary size="small" @click="enterWorkflowEdit">编辑节点</n-button>
+            <n-button quaternary size="small" @click="enterEdit">编辑</n-button>
             <n-button
               v-if="canCloseRequirement"
               quaternary
@@ -45,7 +40,7 @@
       </div>
     </div>
 
-    <div class="panel-body">
+    <div class="panel-body" :class="{ 'panel-body--edit': editMode }">
       <template v-if="!editMode">
         <div v-if="req.status === 'rejected'" class="status-banner rejected-banner">
           <n-text type="error">需求评审不通过</n-text>
@@ -60,51 +55,18 @@
           </n-button>
         </div>
 
-        <div v-if="workflowEditMode" class="filter-block">
-          <div class="filter-row">
-            <n-text depth="3" class="filter-label">角色</n-text>
-            <n-space :size="6" wrap class="filter-tags">
-              <n-tag
-                v-for="role in projectRoleFields"
-                :key="role.key"
-                checkable
-                size="small"
-                :checked="selectedRoles.includes(role.key)"
-                @update:checked="(v: boolean) => toggleRole(role.key, v)"
-              >
-                {{ role.label }}
-              </n-tag>
-            </n-space>
-          </div>
-          <div class="filter-row">
-            <n-text depth="3" class="filter-label">节点</n-text>
-            <n-space :size="6" wrap class="filter-tags">
-              <n-tag
-                v-for="node in workflowEditNodeOptions"
-                :key="node.node_key"
-                checkable
-                size="small"
-                :checked="enabledDraft[node.node_key] ?? node.enabled"
-                @update:checked="(v: boolean) => onToggleEnabled(node.node_key, v)"
-              >
-                {{ node.label }}
-              </n-tag>
-            </n-space>
-          </div>
-        </div>
-
         <div class="workflow-block" @click.self="clearNodeSelection">
           <RequirementWorkflowCanvas
             mode="view"
-            :nodes="workflowEditMode ? workflowEditCanvasNodes : canvasNodes"
+            :nodes="canvasNodes"
             :req-type="req.req_type"
             :rejected="workflowFrozen"
-            :selected-node-key="workflowEditMode ? null : selectedNodeKey"
+            :selected-node-key="selectedNodeKey"
             @node-select="onNodeSelect"
           />
         </div>
 
-        <div v-if="selectedNode && !workflowEditMode" class="node-detail-block">
+        <div v-if="selectedNode" class="node-detail-block">
           <RequirementNodeDetailPanel
             :requirement="req"
             :node="selectedNode"
@@ -119,7 +81,7 @@
           />
         </div>
 
-        <div v-if="!workflowEditMode" class="tabs-block">
+        <div class="tabs-block">
           <n-tabs type="line" animated>
             <n-tab-pane name="info" tab="需求信息">
               <EntityDetailFieldList
@@ -138,7 +100,7 @@
                 </div>
               </div>
               <n-text v-else depth="3" class="empty-roles-hint">
-                请先在「编辑节点」中启用工作流节点，再配置相关人员
+                请先启用工作流节点，再配置相关人员
               </n-text>
             </n-tab-pane>
             <n-tab-pane name="comments" tab="评论">
@@ -180,76 +142,135 @@
       </template>
 
       <template v-else>
-        <n-form label-placement="top">
-          <n-form-item label="标题" required>
-            <n-input v-model:value="form.title" />
-          </n-form-item>
-          <n-grid :cols="2" :x-gap="12">
-            <n-gi>
-              <n-form-item label="优先级">
-                <n-space :size="6" wrap>
+        <div class="edit-layout">
+          <section class="edit-layout__form">
+            <n-form
+              label-placement="left"
+              label-width="80"
+              size="small"
+              class="requirement-edit-form"
+            >
+              <n-form-item label="标题" required>
+                <n-input v-model:value="form.title" size="small" />
+              </n-form-item>
+              <n-grid :cols="2" :x-gap="12" :y-gap="0">
+                <n-gi>
+                  <n-form-item label="优先级">
+                    <n-space :size="4" wrap>
+                      <n-tag
+                        v-for="opt in priorityTagOptions"
+                        :key="opt.value"
+                        checkable
+                        size="small"
+                        :checked="form.priority === opt.value"
+                        @update:checked="(v: boolean) => v && (form.priority = opt.value)"
+                      >
+                        {{ opt.label }}
+                      </n-tag>
+                    </n-space>
+                  </n-form-item>
+                </n-gi>
+                <n-gi>
+                  <n-form-item label="需求类型">
+                    <n-space :size="4" wrap>
+                      <n-tag
+                        v-for="opt in typeTagOptions"
+                        :key="opt.value"
+                        checkable
+                        size="small"
+                        :checked="form.req_type === opt.value"
+                        @update:checked="(v: boolean) => v && (form.req_type = opt.value)"
+                      >
+                        {{ opt.label }}
+                      </n-tag>
+                    </n-space>
+                  </n-form-item>
+                </n-gi>
+                <n-gi :span="2">
+                  <n-form-item label="PRD 链接">
+                    <n-input v-model:value="form.external_url" size="small" placeholder="可选" />
+                  </n-form-item>
+                </n-gi>
+                <n-gi :span="2">
+                  <n-form-item label="关联版本">
+                    <VersionSelect v-model="form.version_id" :project-id="req.project_id" />
+                  </n-form-item>
+                </n-gi>
+              </n-grid>
+              <template v-if="editActiveWorkflowRoles.length">
+                <n-grid :cols="2" :x-gap="12" :y-gap="0">
+                  <n-gi v-for="role in editActiveWorkflowRoles" :key="role.key">
+                    <n-form-item :label="role.label">
+                      <n-select
+                        v-model:value="form.roleUserIds[role.key]"
+                        :options="memberOptions"
+                        multiple
+                        filterable
+                        clearable
+                        size="small"
+                        placeholder="选择负责人"
+                      />
+                    </n-form-item>
+                  </n-gi>
+                </n-grid>
+              </template>
+              <n-text v-else depth="3" class="empty-roles-hint">
+                请先启用工作流节点，再配置相关人员
+              </n-text>
+              <DynamicFieldForm
+                v-if="templateUiFields.length"
+                v-model="customFields"
+                :fields="templateUiFields"
+                :project-id="req.project_id"
+                :columns="2"
+                compact
+              />
+            </n-form>
+          </section>
+          <section class="edit-layout__workflow">
+            <div class="filter-block filter-block--compact">
+              <div class="filter-row">
+                <n-text depth="3" class="filter-label">角色</n-text>
+                <n-space :size="6" wrap class="filter-tags">
                   <n-tag
-                    v-for="opt in priorityTagOptions"
-                    :key="opt.value"
+                    v-for="role in projectRoleFields"
+                    :key="role.key"
                     checkable
                     size="small"
-                    :checked="form.priority === opt.value"
-                    @update:checked="(v: boolean) => v && (form.priority = opt.value)"
+                    :checked="selectedRoles.includes(role.key)"
+                    @update:checked="(v: boolean) => toggleRole(role.key, v)"
                   >
-                    {{ opt.label }}
+                    {{ role.label }}
                   </n-tag>
                 </n-space>
-              </n-form-item>
-            </n-gi>
-            <n-gi>
-              <n-form-item label="需求类型">
-                <n-space :size="6" wrap>
+              </div>
+              <div class="filter-row">
+                <n-text depth="3" class="filter-label">节点</n-text>
+                <n-space :size="6" wrap class="filter-tags">
                   <n-tag
-                    v-for="opt in typeTagOptions"
-                    :key="opt.value"
+                    v-for="node in workflowEditNodeOptions"
+                    :key="node.node_key"
                     checkable
                     size="small"
-                    :checked="form.req_type === opt.value"
-                    @update:checked="(v: boolean) => v && (form.req_type = opt.value)"
+                    :checked="enabledDraft[node.node_key] ?? node.enabled"
+                    @update:checked="(v: boolean) => onToggleEnabled(node.node_key, v)"
                   >
-                    {{ opt.label }}
+                    {{ node.label }}
                   </n-tag>
                 </n-space>
-              </n-form-item>
-            </n-gi>
-          </n-grid>
-          <n-form-item label="PRD / 外部链接">
-            <n-input v-model:value="form.external_url" placeholder="可选" />
-          </n-form-item>
-          <n-form-item label="关联版本">
-            <VersionSelect v-model="form.version_id" :project-id="req.project_id" />
-          </n-form-item>
-          <template v-if="activeWorkflowRoles.length">
-            <n-grid :cols="2" :x-gap="12">
-              <n-gi v-for="role in activeWorkflowRoles" :key="role.key">
-                <n-form-item :label="role.label">
-                  <n-select
-                    v-model:value="form.roleUserIds[role.key]"
-                    :options="memberOptions"
-                    multiple
-                    filterable
-                    clearable
-                    placeholder="选择负责人"
-                  />
-                </n-form-item>
-              </n-gi>
-            </n-grid>
-          </template>
-          <n-text v-else depth="3" class="empty-roles-hint">
-            请先在「编辑节点」中启用工作流节点，再配置相关人员
-          </n-text>
-          <DynamicFieldForm
-            v-if="templateUiFields.length"
-            v-model="customFields"
-            :fields="templateUiFields"
-            :project-id="req.project_id"
-          />
-        </n-form>
+              </div>
+            </div>
+            <div class="workflow-block workflow-block--compact">
+              <RequirementWorkflowCanvas
+                mode="view"
+                :nodes="workflowEditCanvasNodes"
+                :req-type="req.req_type"
+                :rejected="workflowFrozen"
+                :selected-node-key="null"
+              />
+            </div>
+          </section>
+        </div>
       </template>
     </div>
   </div>
@@ -344,8 +365,6 @@ const closeSaving = ref(false);
 const commentSaving = ref(false);
 const newComment = ref('');
 const editMode = ref(false);
-const workflowEditMode = ref(false);
-const workflowSaving = ref(false);
 const enabledDraft = ref<Record<string, boolean>>({});
 const selectedRoles = ref<string[]>([]);
 const selectedNodeKey = ref<string | null>(null);
@@ -456,6 +475,19 @@ const activeWorkflowRoles = computed(() => {
   return projectRoleFields.value.filter((r) => keys.has(r.key));
 });
 
+const editActiveWorkflowRoles = computed(() => {
+  const roleSet = new Set(selectedRoles.value);
+  const keys = new Set<string>();
+  for (const node of req.value?.nodes ?? []) {
+    const enabled = enabledDraft.value[node.node_key] ?? node.enabled;
+    if (!enabled) continue;
+    for (const rk of node.role_keys) {
+      if (roleSet.has(rk)) keys.add(rk);
+    }
+  }
+  return projectRoleFields.value.filter((r) => keys.has(r.key));
+});
+
 const selectedNode = computed(() => {
   if (!selectedNodeKey.value || !req.value) return null;
   return req.value.nodes.find((n) => n.node_key === selectedNodeKey.value) ?? null;
@@ -523,7 +555,6 @@ function toggleRole(roleKey: string, checked: boolean) {
 }
 
 function onNodeSelect(nodeKey: string) {
-  if (workflowEditMode.value) return;
   selectedNodeKey.value = selectedNodeKey.value === nodeKey ? null : nodeKey;
 }
 
@@ -599,51 +630,18 @@ const form = ref({
 });
 
 function enterEdit() {
-  workflowEditMode.value = false;
   clearNodeSelection();
   syncFormFromReq();
+  syncEnabledDraft();
+  syncSelectedRoles();
   editMode.value = true;
 }
 
 function cancelEdit() {
-  editMode.value = false;
-}
-
-function enterWorkflowEdit() {
-  editMode.value = false;
-  clearNodeSelection();
   syncEnabledDraft();
   syncSelectedRoles();
-  workflowEditMode.value = true;
-}
-
-function cancelWorkflowEdit() {
-  syncEnabledDraft();
-  syncSelectedRoles();
-  workflowEditMode.value = false;
-}
-
-async function saveWorkflow() {
-  if (!req.value) return;
-  workflowSaving.value = true;
-  try {
-    await updateRequirementWorkflowEnabled(req.value.id, enabledDraft.value);
-    const { data: synced } = await syncRequirementStatus(req.value.id);
-    req.value = synced;
-    workflowEditMode.value = false;
-    syncEnabledDraft();
-    const selected = req.value.nodes.find((n) => n.node_key === selectedNodeKey.value);
-    if (!selected?.enabled) {
-      selectedNodeKey.value = null;
-    }
-    message.success('工作流已保存');
-    emit('updated', synced);
-  } catch (e: unknown) {
-    const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-    message.error(typeof detail === 'string' ? detail : '保存失败');
-  } finally {
-    workflowSaving.value = false;
-  }
+  syncFormFromReq();
+  editMode.value = false;
 }
 
 async function saveReq() {
@@ -651,18 +649,18 @@ async function saveReq() {
     message.warning('请填写标题');
     return;
   }
+  const fieldErr = validateCustomFields(fieldSchema.templateFieldsForUi.value, customFields.value);
+  if (fieldErr) {
+    message.warning(fieldErr);
+    return;
+  }
   saving.value = true;
   try {
-    const fieldErr = validateCustomFields(fieldSchema.templateFieldsForUi.value, customFields.value);
-    if (fieldErr) {
-      message.warning(fieldErr);
-      return;
-    }
     const role_assignee_ids: Record<string, string[]> = {};
-    for (const role of activeWorkflowRoles.value) {
+    for (const role of editActiveWorkflowRoles.value) {
       role_assignee_ids[role.key] = form.value.roleUserIds[role.key] ?? [];
     }
-    const { data } = await updateRequirement(req.value.id, {
+    await updateRequirement(req.value.id, {
       title: form.value.title.trim(),
       external_url: form.value.external_url.trim() || null,
       version_id: form.value.version_id,
@@ -671,10 +669,20 @@ async function saveReq() {
       role_assignee_ids,
       custom_fields: customFields.value,
     });
-    req.value = data;
+    await updateRequirementWorkflowEnabled(req.value.id, enabledDraft.value);
+    const { data: synced } = await syncRequirementStatus(req.value.id);
+    req.value = synced;
+    syncEnabledDraft();
+    const selected = req.value.nodes.find((n) => n.node_key === selectedNodeKey.value);
+    if (!selected?.enabled) {
+      selectedNodeKey.value = null;
+    }
     editMode.value = false;
     message.success('已保存');
-    emit('updated', req.value);
+    emit('updated', synced);
+  } catch (e: unknown) {
+    const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+    message.error(typeof detail === 'string' ? detail : '保存失败');
   } finally {
     saving.value = false;
   }
@@ -790,7 +798,6 @@ async function submitComment() {
 
 watch(() => props.requirementId, () => {
   editMode.value = false;
-  workflowEditMode.value = false;
   selectedNodeKey.value = null;
   newComment.value = '';
   void load();
@@ -836,6 +843,36 @@ watch(() => props.requirementId, () => {
   min-height: 0;
   overflow: auto;
   padding: 12px 16px 24px;
+}
+.panel-body--edit {
+  padding: 8px 12px 16px;
+}
+.edit-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(260px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .edit-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.edit-layout__form {
+  min-width: 0;
+}
+.edit-layout__workflow {
+  min-width: 0;
+}
+.requirement-edit-form :deep(.n-form-item) {
+  margin-bottom: 6px;
+}
+.filter-block--compact {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+}
+.workflow-block--compact {
+  padding: 8px;
 }
 .filter-block {
   margin-bottom: 12px;
