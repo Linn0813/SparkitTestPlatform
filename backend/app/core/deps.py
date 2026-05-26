@@ -137,6 +137,20 @@ async def require_project_context_cases_plans(
     return ProjectContext(user=user, project_id=x_project_id)
 
 
+async def require_project_context_bugs_full(
+    x_project_id: Optional[str] = Header(default=None, alias="X-Project-Id"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ProjectContext:
+    """缺陷完整写操作：tester / product（与 user_can_manage_bugs_full 一致）。"""
+    if not x_project_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-Project-Id header required")
+    await _resolve_project(x_project_id, db)
+    if not await user_can_manage_bugs_full(user, x_project_id, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient project role")
+    return ProjectContext(user=user, project_id=x_project_id)
+
+
 async def user_can_full_edit_project(user: User, project_id: str, db: AsyncSession) -> bool:
     return await user_can_manage_bugs_full(user, project_id, db)
 

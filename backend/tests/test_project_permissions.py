@@ -35,6 +35,18 @@ def test_roles_include_union():
     assert not roles_include(roles, ProjectRole.product)
 
 
+def test_product_can_manage_bugs_not_cases():
+    product_roles = [ProjectRole.product]
+    assert roles_include(product_roles, ProjectRole.tester, ProjectRole.product)
+    assert not roles_include(product_roles, ProjectRole.tester)
+
+
+def test_tester_can_manage_bugs_and_cases():
+    tester_roles = [ProjectRole.tester]
+    assert roles_include(tester_roles, ProjectRole.tester, ProjectRole.product)
+    assert roles_include(tester_roles, ProjectRole.tester)
+
+
 def test_parse_business_role_rejects_admin():
     with pytest.raises(ValueError):
         parse_business_role(ProjectRole.project_admin, for_http=False)

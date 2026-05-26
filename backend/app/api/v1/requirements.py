@@ -57,6 +57,7 @@ from app.services.project_setup import ensure_project_defaults
 from app.services.requirement_config import validate_requirement_option
 from app.services.requirement_workflow import ensure_project_workflow_defs, init_requirement_progress_from_defs, load_project_workflow_defs
 
+from app.services.requirement_filters import apply_requirement_list_filters
 from app.services.versions import validate_version_id
 
 router = APIRouter(prefix="/requirements", tags=["requirements"])
@@ -136,8 +137,9 @@ async def _validate_requirement_fields(db: AsyncSession, project_id: str, data: 
 
 @router.get("", response_model=list[RequirementOut])
 async def list_requirements(
+    q: Optional[str] = None,
     version_id: Optional[str] = None,
-    status: Optional[RequirementStatus] = None,
+    status: Optional[str] = None,
     priority: Optional[str] = None,
     req_type: Optional[str] = None,
     frontend_rd_id: Optional[str] = None,
@@ -148,22 +150,18 @@ async def list_requirements(
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(Requirement).where(Requirement.project_id == ctx.project_id)
-    if version_id is not None:
-        stmt = stmt.where(Requirement.version_id == version_id)
-    if status is not None:
-        stmt = stmt.where(Requirement.status == status)
-    if priority is not None:
-        stmt = stmt.where(Requirement.priority == priority)
-    if req_type is not None:
-        stmt = stmt.where(Requirement.req_type == req_type)
-    if frontend_rd_id is not None:
-        stmt = stmt.where(Requirement.frontend_rd_id == frontend_rd_id)
-    if backend_rd_id is not None:
-        stmt = stmt.where(Requirement.backend_rd_id == backend_rd_id)
-    if pm_id is not None:
-        stmt = stmt.where(Requirement.pm_id == pm_id)
-    if qa_id is not None:
-        stmt = stmt.where(Requirement.qa_id == qa_id)
+    stmt = apply_requirement_list_filters(
+        stmt,
+        q=q,
+        version_id=version_id,
+        status=status,
+        priority=priority,
+        req_type=req_type,
+        frontend_rd_id=frontend_rd_id,
+        backend_rd_id=backend_rd_id,
+        pm_id=pm_id,
+        qa_id=qa_id,
+    )
     result = await db.execute(stmt.order_by(Requirement.num.desc()))
     rows = result.scalars().all()
     return [await requirement_out(r, db) for r in rows]

@@ -14,7 +14,7 @@ from app.core.database import get_db
 from app.core.deps import (
     ProjectContext,
     require_project_context,
-    require_project_context_tester,
+    require_project_context_bugs_full,
     user_can_full_edit_project,
 )
 from app.core.project_permissions import user_can_update_bug_followers
@@ -221,7 +221,7 @@ async def download_bug_import_template(
 @router.post("/import", response_model=BugImportResultOut)
 async def import_bugs(
     file: UploadFile = File(...),
-    ctx: ProjectContext = Depends(require_project_context_tester),
+    ctx: ProjectContext = Depends(require_project_context_bugs_full),
     db: AsyncSession = Depends(get_db),
 ):
     filename = (file.filename or "").lower()
@@ -247,7 +247,7 @@ async def import_bugs(
 @router.post("", response_model=BugOut, status_code=status.HTTP_201_CREATED)
 async def create_bug(
     body: BugCreate,
-    ctx: ProjectContext = Depends(require_project_context_tester),
+    ctx: ProjectContext = Depends(require_project_context_bugs_full),
     db: AsyncSession = Depends(get_db),
 ):
     await ensure_project_defaults(ctx.project_id, db)
@@ -570,7 +570,7 @@ async def update_bug(
 @router.delete("/{bug_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_bug(
     bug_id: str,
-    ctx: ProjectContext = Depends(require_project_context_tester),
+    ctx: ProjectContext = Depends(require_project_context_bugs_full),
     db: AsyncSession = Depends(get_db),
 ):
     bug = await db.get(Bug, bug_id)
@@ -677,7 +677,7 @@ async def list_bug_cases(
 async def link_case(
     bug_id: str,
     case_id: str,
-    ctx: ProjectContext = Depends(require_project_context_tester),
+    ctx: ProjectContext = Depends(require_project_context_bugs_full),
     db: AsyncSession = Depends(get_db),
 ):
     bug = await db.get(Bug, bug_id)
@@ -698,7 +698,7 @@ async def link_case(
 async def unlink_case(
     bug_id: str,
     case_id: str,
-    ctx: ProjectContext = Depends(require_project_context_tester),
+    ctx: ProjectContext = Depends(require_project_context_bugs_full),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -727,7 +727,7 @@ async def list_attachments(
 async def upload_attachment(
     bug_id: str,
     file: UploadFile = File(...),
-    ctx: ProjectContext = Depends(require_project_context_tester),
+    ctx: ProjectContext = Depends(require_project_context_bugs_full),
     db: AsyncSession = Depends(get_db),
 ):
     bug = await db.get(Bug, bug_id)
@@ -756,7 +756,7 @@ async def upload_attachment(
 async def delete_attachment(
     bug_id: str,
     attachment_id: str,
-    ctx: ProjectContext = Depends(require_project_context_tester),
+    ctx: ProjectContext = Depends(require_project_context_bugs_full),
     db: AsyncSession = Depends(get_db),
 ):
     bug = await db.get(Bug, bug_id)

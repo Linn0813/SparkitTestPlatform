@@ -10,6 +10,14 @@
         新建需求
       </n-button>
     </template>
+
+    <RequirementListFilters
+      :model="filters"
+      :project-id="ctx.projectId"
+      @apply="applyFilters"
+      @reset="resetFilters"
+    />
+
     <n-space v-if="filterTags.length" align="center" style="margin-top: 8px; margin-bottom: 8px">
       <n-text depth="3">筛选：</n-text>
       <n-tag v-for="t in filterTags" :key="t.key" closable @close="t.clear">{{ t.label }}</n-tag>
@@ -131,15 +139,23 @@ import {
   updateRequirement,
 } from '@/api/requirements';
 import RequirementCreateForm from '@/components/RequirementCreateForm.vue';
+import RequirementListFilters from '@/components/RequirementListFilters.vue';
 import type { ComponentPublicInstance } from 'vue';
 import RequirementDetailPanel from '@/components/RequirementDetailPanel.vue';
 import VersionSelect from '@/components/VersionSelect.vue';
+import { listVersions } from '@/api/versions';
+import {
+  clearRequirementFilterField,
+  emptyRequirementListFilters,
+  type RequirementListFilterState,
+} from '@/composables/useRequirementListFilters';
 import { requirementPriorityTagType } from '@/constants/requirementPriority';
 import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
 import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
-import type { Requirement, RequirementPriority, RequirementStatus, RequirementType } from '@/types/business';
+import type { Requirement, RequirementPriority, RequirementType, ProjectVersion } from '@/types/business';
+import { decodeFilterQuery, encodeFilterValues, hasFilterValues } from '@/utils/filterQueryCodec';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
 
 const ctx = useContextStore();
@@ -165,6 +181,9 @@ const creating = ref(false);
 const editing = ref<Requirement | null>(null);
 const drawerVisible = ref(false);
 const activeReqId = ref<string | null>(null);
+const applyingRoute = ref(false);
+const filters = ref<RequirementListFilterState>(emptyRequirementListFilters());
+const versions = ref<ProjectVersion[]>([]);
 
 const createFormRef = ref<ComponentPublicInstance<{
   reset: () => void;
@@ -185,34 +204,126 @@ const activeIndex = computed(() =>
   activeReqId.value ? rows.value.findIndex((r) => r.id === activeReqId.value) : -1
 );
 
+const versionNameById = computed(() => new Map(versions.value.map((v) => [v.id, v.name])));
+
 const filterTags = computed(() => {
   const tags: { key: string; label: string; clear: () => void }[] = [];
-  const vid = route.query.version_id;
-  if (typeof vid === 'string' && vid) {
+  const f = filters.value;
+
+  if (f.q.trim()) {
     tags.push({
-      key: 'version',
-      label: '版本已筛选',
-      clear: () => {
-        const q = { ...route.query };
-        delete q.version_id;
-        router.replace({ name: 'requirements', query: q });
-      },
+      key: 'q',
+      label: `标题：${f.q.trim()}`,
+      clear: () => clearFilterField('q'),
     });
   }
-  const st = route.query.status;
-  if (typeof st === 'string' && st) {
+  if (hasFilterValues(f.status_keys)) {
+    const labels = f.status_keys.map((k) => requirementStatusLabel(k)).join('、');
     tags.push({
-      key: 'status',
-      label: `状态 ${requirementStatusLabel(st)}`,
-      clear: () => {
-        const q = { ...route.query };
-        delete q.status;
-        router.replace({ name: 'requirements', query: q });
-      },
+      key: 'status_keys',
+      label: `状态：${labels}`,
+      clear: () => clearFilterField('status_keys'),
+    });
+  }
+  if (hasFilterValues(f.priorities)) {
+    const labels = f.priorities.map((k) => projectConfig.priorityLabel(k)).join('、');
+    tags.push({
+      key: 'priorities',
+      label: `优先级：${labels}`,
+      clear: () => clearFilterField('priorities'),
+    });
+  }
+  if (hasFilterValues(f.req_types)) {
+    const labels = f.req_types.map((k) => projectConfig.typeLabel(k)).join('、');
+    tags.push({
+      key: 'req_types',
+      label: `类型：${labels}`,
+      clear: () => clearFilterField('req_types'),
+    });
+  }
+  if (f.version_id) {
+    const name = versionNameById.value.get(f.version_id) ?? '已选版本';
+    tags.push({
+      key: 'version_id',
+      label: `版本：${name}`,
+      clear: () => clearFilterField('version_id'),
     });
   }
   return tags;
 });
+
+function clearFilterField(key: keyof RequirementListFilterState) {
+  filters.value = clearRequirementFilterField(filters.value, key);
+  syncQueryToRoute();
+  void load();
+}
+
+function buildListParams() {
+  const f = filters.value;
+  const params: {
+    q?: string;
+    version_id?: string;
+    status?: string;
+    priority?: string;
+    req_type?: string;
+  } = {};
+  if (f.q.trim()) params.q = f.q.trim();
+  if (f.version_id) params.version_id = f.version_id;
+  const status = encodeFilterValues(f.status_keys);
+  if (status) params.status = status;
+  const priority = encodeFilterValues(f.priorities);
+  if (priority) params.priority = priority;
+  const reqType = encodeFilterValues(f.req_types);
+  if (reqType) params.req_type = reqType;
+  return params;
+}
+
+function syncQueryToRoute() {
+  const q: Record<string, string> = {};
+  const f = filters.value;
+  if (f.q.trim()) q.q = f.q.trim();
+  if (f.version_id) q.version_id = f.version_id;
+  const status = encodeFilterValues(f.status_keys);
+  if (status) q.status = status;
+  const priority = encodeFilterValues(f.priorities);
+  if (priority) q.priority = priority;
+  const reqType = encodeFilterValues(f.req_types);
+  if (reqType) q.req_type = reqType;
+  if (activeReqId.value) q.id = activeReqId.value;
+  router.replace({ name: 'requirements', query: q });
+}
+
+function applyRouteQuery() {
+  applyingRoute.value = true;
+  const q = route.query;
+  filters.value = {
+    q: typeof q.q === 'string' ? q.q : '',
+    status_keys: decodeFilterQuery(q.status),
+    priorities: decodeFilterQuery(q.priority),
+    req_types: decodeFilterQuery(q.req_type),
+    version_id: typeof q.version_id === 'string' && q.version_id ? q.version_id : null,
+  };
+  const qid = typeof q.id === 'string' && q.id ? q.id : null;
+  if (qid) {
+    activeReqId.value = qid;
+    drawerVisible.value = true;
+  } else if (!drawerVisible.value) {
+    activeReqId.value = null;
+  }
+  applyingRoute.value = false;
+}
+
+function applyFilters() {
+  applyingRoute.value = true;
+  syncQueryToRoute();
+  applyingRoute.value = false;
+  void load();
+}
+
+function resetFilters() {
+  filters.value = emptyRequirementListFilters();
+  applyFilters();
+}
 
 const columns = computed<DataTableColumns<Requirement>>(() => [
   NUM_TABLE_COLUMN,
@@ -323,16 +434,17 @@ function rowProps(row: Requirement) {
 function openDetail(id: string) {
   activeReqId.value = id;
   drawerVisible.value = true;
-  const q = { ...route.query, id };
-  router.replace({ name: 'requirements', query: q });
+  applyingRoute.value = true;
+  syncQueryToRoute();
+  applyingRoute.value = false;
 }
 
 function closeDrawer() {
   drawerVisible.value = false;
   activeReqId.value = null;
-  const q = { ...route.query };
-  delete q.id;
-  router.replace({ name: 'requirements', query: q });
+  applyingRoute.value = true;
+  syncQueryToRoute();
+  applyingRoute.value = false;
 }
 
 function onDrawerShowChange(show: boolean) {
@@ -362,23 +474,18 @@ function onDetailUpdated(row: Requirement) {
 async function load() {
   if (!ctx.projectId) {
     rows.value = [];
+    versions.value = [];
     return;
   }
   loading.value = true;
   try {
     await projectConfig.reload();
-    const params: {
-      version_id?: string;
-      status?: RequirementStatus;
-    } = {};
-    if (typeof route.query.version_id === 'string' && route.query.version_id) {
-      params.version_id = route.query.version_id;
-    }
-    if (typeof route.query.status === 'string' && route.query.status) {
-      params.status = route.query.status as RequirementStatus;
-    }
-    const { data } = await listRequirements(params);
+    const [{ data }, versionRes] = await Promise.all([
+      listRequirements(buildListParams()),
+      listVersions(),
+    ]);
     rows.value = data;
+    versions.value = versionRes.data;
     const qid = route.query.id;
     if (typeof qid === 'string' && qid && data.some((r) => r.id === qid)) {
       activeReqId.value = qid;
@@ -464,9 +571,30 @@ function onRemove(row: Requirement) {
   });
 }
 
-onMounted(load);
-watch(() => ctx.projectId, load);
-watch(() => route.query, load);
+onMounted(() => {
+  applyRouteQuery();
+  void load();
+});
+
+watch(
+  () => ctx.projectId,
+  () => {
+    filters.value = emptyRequirementListFilters();
+    activeReqId.value = null;
+    drawerVisible.value = false;
+    router.replace({ name: 'requirements', query: {} });
+    void load();
+  }
+);
+
+watch(
+  () => route.query,
+  () => {
+    if (applyingRoute.value) return;
+    applyRouteQuery();
+    void load();
+  }
+);
 </script>
 
 <style scoped>

@@ -5,17 +5,17 @@ import type {
   RequirementComment,
   RequirementNodeState,
   RequirementPriority,
-  RequirementStatus,
   RequirementType,
 } from '@/types/business';
 
 export type RequirementNodeAction = 'start' | 'complete' | 'skip' | 'reopen' | 'reject';
 
 export function listRequirements(params?: {
+  q?: string;
   version_id?: string;
-  status?: RequirementStatus;
-  priority?: RequirementPriority;
-  req_type?: RequirementType;
+  status?: string;
+  priority?: string;
+  req_type?: string;
   frontend_rd_id?: string;
   backend_rd_id?: string;
   pm_id?: string;

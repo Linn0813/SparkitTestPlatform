@@ -69,17 +69,17 @@ export function usePermissions() {
     return canManageRequirements(projectId);
   }
 
-  /** 测试用例 */
+  /** 测试用例写操作（产品不可） */
   function canManageCases(projectId: string | null | undefined): boolean {
     return isSystemAdmin.value || hasProjectRole(projectId, TESTER_ROLE);
   }
 
-  /** 测试计划 */
+  /** 测试计划写操作（产品不可） */
   function canManagePlans(projectId: string | null | undefined): boolean {
     return canManageCases(projectId);
   }
 
-  /** 缺陷新建、完整编辑、删除 */
+  /** 缺陷新建、完整编辑、删除（测试 + 产品） */
   function canManageBugs(projectId: string | null | undefined): boolean {
     return (
       isSystemAdmin.value ||
