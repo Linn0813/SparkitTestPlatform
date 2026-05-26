@@ -24,12 +24,7 @@ export function useSidebarMenu() {
   const route = useRoute();
   const router = useRouter();
   const ctx = useContextStore();
-  const {
-    isSystemAdmin,
-    isProjectMember,
-    canAccessCasesModule,
-    canAccessBugsModule,
-  } = usePermissions();
+  const { isSystemAdmin, isProjectMember } = usePermissions();
 
   const activeKey = computed(
     () => routeToMenuKey.get(route.name as string) ?? ''
@@ -48,13 +43,10 @@ export function useSidebarMenu() {
       case 'requirements':
       case 'member-schedule':
       case 'versions':
-        return isSystemAdmin.value || isProjectMember(projectId);
       case 'case-modules':
       case 'cases':
       case 'plans':
-        return canAccessCasesModule(projectId);
       case 'bugs':
-        return canAccessBugsModule(projectId);
       case 'setting-project-config':
         return isSystemAdmin.value || isProjectMember(projectId);
       default:

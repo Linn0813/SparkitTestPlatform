@@ -80,15 +80,3 @@ async def user_can_update_bug_status(user: User, project_id: str, db: AsyncSessi
 async def user_can_update_bug_followers(user: User, project_id: str, db: AsyncSession) -> bool:
     """缺陷跟进人：developer / tester / product（与改状态相同）。"""
     return await user_can_update_bug_status(user, project_id, db)
-
-
-async def user_can_access_bugs_module(user: User, project_id: str, db: AsyncSession) -> bool:
-    if user.is_system_admin:
-        return True
-    roles = await get_project_roles(user, project_id, db)
-    return roles_include(
-        roles,
-        ProjectRole.tester,
-        ProjectRole.product,
-        ProjectRole.developer,
-    )

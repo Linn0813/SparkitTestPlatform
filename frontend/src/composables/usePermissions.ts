@@ -105,17 +105,6 @@ export function usePermissions() {
     return canChangeBugStatus(projectId);
   }
 
-  function canAccessBugsModule(projectId: string | null | undefined): boolean {
-    return (
-      isSystemAdmin.value ||
-      hasAnyProjectRole(projectId, [TESTER_ROLE, PRODUCT_ROLE, DEVELOPER_ROLE])
-    );
-  }
-
-  function canAccessCasesModule(projectId: string | null | undefined): boolean {
-    return isSystemAdmin.value || hasProjectRole(projectId, TESTER_ROLE);
-  }
-
   return {
     isSystemAdmin,
     projectRoles,
@@ -135,7 +124,5 @@ export function usePermissions() {
     canChangeBugStatus,
     canCommentBug,
     canEditBugFollowers,
-    canAccessBugsModule,
-    canAccessCasesModule,
   };
 }
