@@ -9,7 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bug import Bug, BugFollowerLink
 from app.models.project import ProjectMember
-from app.models.requirement import Requirement, RequirementNodeTask
+from app.models.requirement import (
+    Requirement,
+    RequirementNodeProgress,
+    RequirementNodeState,
+    RequirementNodeTask,
+)
 from app.models.user import User
 from app.schemas.member_schedule import (
     MemberScheduleItemOut,
@@ -36,6 +41,13 @@ def _is_fully_scheduled(entity: _HasScheduleDates) -> bool:
 def _overlaps_range(entity: _HasScheduleDates, range_start: date, range_end: date) -> bool:
     assert entity.scheduled_start is not None and entity.scheduled_end is not None
     return entity.scheduled_start <= range_end and entity.scheduled_end >= range_start
+
+
+def _skip_unscheduled_for_node_state(progress: RequirementNodeProgress | None) -> bool:
+    """已完成/已跳过的节点仅作状态，无日历排期时不进「未排期」。"""
+    if progress is None:
+        return False
+    return progress.state in (RequirementNodeState.completed, RequirementNodeState.skipped)
 
 
 @dataclass
@@ -117,8 +129,13 @@ async def build_member_schedule(
     member_rows = members_result.all()
 
     tasks_result = await db.execute(
-        select(RequirementNodeTask, Requirement)
+        select(RequirementNodeTask, Requirement, RequirementNodeProgress)
         .join(Requirement, Requirement.id == RequirementNodeTask.requirement_id)
+        .outerjoin(
+            RequirementNodeProgress,
+            (RequirementNodeProgress.requirement_id == RequirementNodeTask.requirement_id)
+            & (RequirementNodeProgress.node_key == RequirementNodeTask.node_key),
+        )
         .where(Requirement.project_id == project_id)
         .where(RequirementNodeTask.assignee_id.isnot(None))
         .order_by(
@@ -145,9 +162,11 @@ async def build_member_schedule(
         user.id: _MemberBucket() for _, user in member_rows
     }
 
-    for task, req in task_rows:
+    for task, req, progress in task_rows:
         assignee_id = task.assignee_id
         if not assignee_id:
+            continue
+        if not _is_fully_scheduled(task) and _skip_unscheduled_for_node_state(progress):
             continue
         item = _build_task_item(task, req, node_labels)
         _append_item_to_bucket(buckets, assignee_id, item, task, range_start, range_end)

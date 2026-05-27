@@ -18,15 +18,18 @@
 
 在你**开发机**上：
 
-1. 查部署机局域网 IP（在 Mac mini 上）：`ipconfig getifaddr en0`
-2. 编辑 `backend/.env`：
+1. 查部署机局域网 IP（在 Mac mini 上）：`ipconfig getifaddr en0`；外网可用 Tailscale `100.x.x.x`
+2. 配置远程库（内网优先，启动时自动探测可达地址）：
 
-```env
-DATABASE_URL=mysql+aiomysql://sparkit:sparkit@<部署机IP>:3307/sparkit
+```bash
+./dev/link-dev-to-deploy.sh <内网IP> [外网IP]
+# 例: ./dev/link-dev-to-deploy.sh 172.19.3.69 100.122.228.39
 ```
 
+会在 `backend/.env` 写入 `DATABASE_HOST_LAN` / `DATABASE_HOST_WAN`；`./dev/run-backend.sh` 启动时再注入 `DATABASE_URL`。
+
 3. **不要**在开发机执行 `dev/start.sh`（除非你想用本机独立库）
-4. 验证：`cd backend && source .venv/bin/activate && python scripts/check_database.py`
+4. 验证：`cd backend && source .venv/bin/activate && python scripts/check_database.py`（需先启动后端或临时 export DATABASE_URL）
 5. 本机启动：`./dev/run-backend.sh` + `frontend` 里 `npm run dev`
 
 部署机防火墙需允许 **3307** 入站（仅内网）。后端、前端进程在开发机跑，数据在部署机 MySQL。
@@ -94,7 +97,8 @@ chmod +x use-local-db.sh   # 首次
 |------|------|
 | 连不上 MySQL | Docker Desktop 是否运行；`docker ps` 是否有 `sparkit-mysql` |
 | 端口 3307 占用 | 修改 `docker-compose.yml` 端口映射或释放占用 |
-| 接口仍很慢 | 确认 `backend/.env` 未指向公网 IP；应为本机 `127.0.0.1:3307` |
+| 接口仍很慢 | 在公司内网应优先连 `DATABASE_HOST_LAN`；见启动日志 `Using deploy host:` |
+| 启动报连不上 MySQL | 配置 `DATABASE_HOST_LAN`/`WAN` 后重跑；确认部署机 `./deploy-host.sh` 已运行 |
 | 登录失败 | 新库需 `./dev/init_database.sh` 或从备份导入用户表 |
 
 ## 清空 Docker 数据重来

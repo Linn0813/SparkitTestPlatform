@@ -37,8 +37,9 @@ chmod +x deploy-host.sh configure-deploy-host-env.sh
 
 ```bash
 cd SparkitTestPlatform
-./dev/link-dev-to-deploy.sh 100.122.228.39
-./dev/run-backend.sh    # 终端 1
+# 内网 IP 在部署机上 ipconfig getifaddr en0；外网为 Tailscale 100.x.x.x
+./dev/link-dev-to-deploy.sh 172.19.3.69 100.122.228.39
+./dev/run-backend.sh    # 终端 1（启动时内网优先探测，不通再用外网）
 ./dev/run-frontend.sh     # 终端 2
 ```
 
@@ -52,4 +53,4 @@ cd SparkitTestPlatform
 
 - 部署机保持开机，Docker + 前后端需运行。
 - 同事在公司仍用局域网 `http://172.19.x.x:5174`，无需 Tailscale。
-- 公司内网开发：`./dev/link-dev-to-deploy.sh 172.19.3.69`
+- 公司内网开发：`./dev/link-dev-to-deploy.sh 172.19.3.69 100.122.228.39`（仅内网时可只写第一个 IP）

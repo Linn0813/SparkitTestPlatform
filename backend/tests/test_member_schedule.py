@@ -7,7 +7,15 @@ import pytest
 
 from app.models.bug import Bug, BugFollowerLink
 from app.models.project import BusinessProjectRole, ProjectMember
-from app.models.requirement import Requirement, RequirementNodeTask, RequirementPriority, RequirementStatus, RequirementType
+from app.models.requirement import (
+    Requirement,
+    RequirementNodeProgress,
+    RequirementNodeState,
+    RequirementNodeTask,
+    RequirementPriority,
+    RequirementStatus,
+    RequirementType,
+)
 from app.models.template import RequirementWorkflowNodeDef
 from app.models.user import User
 from app.services.bug_follower_schedule import _is_schedule_participating, update_bug_follower_schedule
@@ -15,6 +23,7 @@ from app.services.links import set_bug_followers
 from app.services.member_schedule import (
     _is_fully_scheduled,
     _overlaps_range,
+    _skip_unscheduled_for_node_state,
     build_member_schedule,
 )
 
@@ -74,6 +83,31 @@ def test_overlaps_range():
     assert _overlaps_range(t, date(2024, 11, 1), date(2024, 11, 30)) is True
     assert _overlaps_range(t, date(2024, 11, 13), date(2024, 11, 20)) is False
     assert _overlaps_range(t, date(2024, 11, 12), date(2024, 11, 15)) is True
+
+
+def test_skip_unscheduled_for_node_state():
+    progress_completed = RequirementNodeProgress(
+        requirement_id="req-1",
+        node_key="release",
+        state=RequirementNodeState.completed,
+        enabled=True,
+    )
+    progress_skipped = RequirementNodeProgress(
+        requirement_id="req-1",
+        node_key="skip",
+        state=RequirementNodeState.skipped,
+        enabled=False,
+    )
+    progress_pending = RequirementNodeProgress(
+        requirement_id="req-1",
+        node_key="dev",
+        state=RequirementNodeState.pending,
+        enabled=True,
+    )
+    assert _skip_unscheduled_for_node_state(progress_completed) is True
+    assert _skip_unscheduled_for_node_state(progress_skipped) is True
+    assert _skip_unscheduled_for_node_state(progress_pending) is False
+    assert _skip_unscheduled_for_node_state(None) is False
 
 
 def test_is_schedule_participating():
@@ -170,6 +204,32 @@ async def test_build_member_schedule_buckets():
         scheduled_start=date(2024, 12, 1),
         scheduled_end=date(2024, 12, 5),
     )
+    completed_no_schedule = _task(
+        id="t-completed-unsched",
+        assignee_id="user-1",
+        node_key="release_verify",
+        scheduled_start=None,
+        scheduled_end=None,
+        title="已发版",
+    )
+    progress_dev = RequirementNodeProgress(
+        requirement_id="req-1",
+        node_key="dev",
+        state=RequirementNodeState.in_progress,
+        enabled=True,
+    )
+    progress_release_completed = RequirementNodeProgress(
+        requirement_id="req-1",
+        node_key="release_verify",
+        state=RequirementNodeState.completed,
+        enabled=True,
+    )
+    progress_out = RequirementNodeProgress(
+        requirement_id="req-1",
+        node_key="dev",
+        state=RequirementNodeState.in_progress,
+        enabled=True,
+    )
     bug = _bug()
     bug_scheduled = _bug_link(
         id="link-sched",
@@ -207,9 +267,10 @@ async def test_build_member_schedule_buckets():
     members_result.all.return_value = [(member1, user1), (member2, user2)]
     tasks_result = MagicMock()
     tasks_result.all.return_value = [
-        (scheduled, req),
-        (unscheduled, req),
-        (out_of_range, req),
+        (scheduled, req, progress_dev),
+        (unscheduled, req, progress_dev),
+        (completed_no_schedule, req, progress_release_completed),
+        (out_of_range, req, progress_out),
     ]
     bug_links_result = MagicMock()
     bug_links_result.all.return_value = [
@@ -251,6 +312,9 @@ async def test_build_member_schedule_buckets():
     assert bug_items[0].bug_num == 42
     bug_unsched_items = [i for i in alice.unscheduled_items if i.item_type == "bug"]
     assert len(bug_unsched_items) == 1
+    task_unsched_ids = [i.id for i in alice.unscheduled_items if i.item_type == "requirement_node_task"]
+    assert task_unsched_ids == ["t-unsched"]
+    assert "t-completed-unsched" not in task_unsched_ids
     bob = next(m for m in out.members if m.user_id == "user-2")
     assert bob.scheduled_count == 1
     assert bob.unscheduled_count == 0

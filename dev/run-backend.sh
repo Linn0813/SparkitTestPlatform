@@ -2,6 +2,7 @@
 # 从仓库任意位置启动后端（需先 ./start.sh 拉起 Docker）
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT/backend"
 
 if [[ ! -d .venv ]]; then
@@ -17,6 +18,23 @@ if [[ ! -f .env ]]; then
 fi
 
 # 首次或空库时执行：python scripts/init_database.py && python ../dev/seed.py
+
+ENV_FILE="$ROOT/backend/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  if grep -qE '^DATABASE_HOST_(LAN|WAN)=[^[:space:]]' "$ENV_FILE" 2>/dev/null; then
+    DEPLOY_HOST="$("$DEV_DIR/resolve-deploy-database.sh")"
+    DB_PORT="$(grep -E '^DATABASE_PORT=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || echo 3307)"
+    DB_PORT="${DB_PORT:-3307}"
+    export DATABASE_URL="mysql+aiomysql://sparkit:sparkit@${DEPLOY_HOST}:${DB_PORT}/sparkit"
+    export MINIO_ENDPOINT="${DEPLOY_HOST}:9000"
+    echo "Using deploy host: ${DEPLOY_HOST} (database + MinIO)"
+  elif grep -qE '^DATABASE_URL=.*@(1[0-9]{2}\.|172\.|100\.)' "$ENV_FILE" 2>/dev/null; then
+    echo "backend/.env 仍使用固定远程 DATABASE_URL，未配置内网/外网双地址。" >&2
+    echo "请执行: ./dev/link-dev-to-deploy.sh <内网IP> [外网/Tailscale_IP]" >&2
+    echo "例: ./dev/link-dev-to-deploy.sh 172.19.3.69 100.122.228.39" >&2
+    exit 1
+  fi
+fi
 
 PORT=8000
 if lsof -i ":$PORT" -sTCP:LISTEN -t >/dev/null 2>&1; then
