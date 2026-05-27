@@ -168,6 +168,7 @@ class RequirementWorkflowOut(BaseModel):
 
 class RequirementWorkflowEnabledUpdate(BaseModel):
     enabled: dict[str, bool]
+    expected_updated_at: Optional[datetime] = None
 
 
 class RequirementOut(ORMBase):
@@ -238,6 +239,7 @@ class RequirementUpdate(BaseModel):
     role_assignee_ids: Optional[dict[str, list[str]]] = None
     selected_role_keys: Optional[list[str]] = None
     custom_fields: Optional[dict] = None
+    expected_updated_at: Optional[datetime] = None
 
 
 class RequirementNodeActionBody(BaseModel):

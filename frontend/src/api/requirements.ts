@@ -68,6 +68,7 @@ export function updateRequirement(
     role_assignee_ids?: Record<string, string[]>;
     selected_role_keys?: string[];
     custom_fields?: Record<string, unknown>;
+    expected_updated_at?: string;
   }
 ) {
   return http.patch<Requirement>(`/requirements/${id}`, data);

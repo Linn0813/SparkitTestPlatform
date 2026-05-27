@@ -142,23 +142,37 @@
         </div>
       </template>
 
-      <RequirementFormEditor
-        v-else-if="req"
-        :project-id="req.project_id"
-        v-model:form="form"
-        v-model:custom-fields="customFields"
-        v-model:selected-roles="selectedRoles"
-        v-model:enabled-draft="enabledDraft"
-        :workflow-nodes="editWorkflowNodeSources"
-        :workflow-frozen="workflowFrozen"
-      />
+      <template v-else>
+        <n-alert
+          v-if="editStaleRemote"
+          type="warning"
+          :show-icon="true"
+          class="edit-stale-alert"
+        >
+          <n-space vertical :size="8">
+            <n-text>需求已在别处更新，建议先刷新再保存，否则可能无法保存成功。</n-text>
+            <n-button size="small" @click="refreshFromRemoteEdit">立即刷新</n-button>
+          </n-space>
+        </n-alert>
+        <RequirementFormEditor
+          v-if="req"
+          :project-id="req.project_id"
+          v-model:form="form"
+          v-model:custom-fields="customFields"
+          v-model:selected-roles="selectedRoles"
+          v-model:enabled-draft="enabledDraft"
+          :workflow-nodes="editWorkflowNodeSources"
+          :workflow-frozen="workflowFrozen"
+        />
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import {
+  NAlert,
   NButton,
   NEmpty,
   NSpace,
@@ -175,6 +189,7 @@ import {
 import {
   createRequirementComment,
   deleteRequirement,
+  getRequirement,
   listRequirementActivities,
   listRequirementComments,
   closeRequirement,
@@ -246,6 +261,11 @@ const editMode = ref(false);
 const enabledDraft = ref<Record<string, boolean>>({});
 const selectedRoles = ref<string[]>([]);
 const selectedNodeKey = ref<string | null>(null);
+const editBaseUpdatedAt = ref<string | null>(null);
+const editStaleRemote = ref(false);
+let editStalePollTimer: ReturnType<typeof setInterval> | null = null;
+
+const EDIT_STALE_POLL_MS = 30_000;
 
 const { options: memberOptions } = useProjectMemberOptions(computed(() => req.value?.project_id ?? null));
 const projectConfig = useRequirementProjectConfig(() => req.value?.project_id ?? null);
@@ -483,16 +503,74 @@ const form = ref<RequirementFormModel>({
   roleUserIds: {},
 });
 
+function stopEditStalePoll() {
+  if (editStalePollTimer !== null) {
+    clearInterval(editStalePollTimer);
+    editStalePollTimer = null;
+  }
+}
+
+function startEditStalePoll() {
+  stopEditStalePoll();
+  const id = req.value?.id;
+  if (!id) return;
+  editStalePollTimer = setInterval(() => {
+    void checkEditStaleRemote(id);
+  }, EDIT_STALE_POLL_MS);
+}
+
+async function checkEditStaleRemote(requirementId: string) {
+  if (!editMode.value || !editBaseUpdatedAt.value) return;
+  try {
+    const { data } = await getRequirement(requirementId);
+    if (data.updated_at !== editBaseUpdatedAt.value) {
+      editStaleRemote.value = true;
+    }
+  } catch {
+    /* ignore poll errors */
+  }
+}
+
+function isConflictError(e: unknown): boolean {
+  return (e as { response?: { status?: number } })?.response?.status === 409;
+}
+
+function handleEditConflict() {
+  dialog.warning({
+    title: '无法保存',
+    content: '需求已被他人更新，请刷新后重新编辑。',
+    positiveText: '刷新',
+    negativeText: '取消',
+    onPositiveClick: () => {
+      void refreshFromRemoteEdit();
+    },
+  });
+}
+
+async function refreshFromRemoteEdit() {
+  stopEditStalePoll();
+  editStaleRemote.value = false;
+  editMode.value = false;
+  editBaseUpdatedAt.value = null;
+  await load();
+}
+
 async function enterEdit() {
   clearNodeSelection();
   syncEnabledDraft();
   await ensureProjectRolesLoaded();
   syncFormFromReq();
   deriveSelectedRolesFromRequirement();
+  editBaseUpdatedAt.value = req.value?.updated_at ?? null;
+  editStaleRemote.value = false;
   editMode.value = true;
+  startEditStalePoll();
 }
 
 async function cancelEdit() {
+  stopEditStalePoll();
+  editStaleRemote.value = false;
+  editBaseUpdatedAt.value = null;
   syncEnabledDraft();
   await ensureProjectRolesLoaded();
   syncFormFromReq();
@@ -527,7 +605,8 @@ async function saveReq() {
     for (const roleKey of selectedRoles.value) {
       role_assignee_ids[roleKey] = form.value.roleUserIds[roleKey] ?? [];
     }
-    await updateRequirement(req.value.id, {
+    const expectedAt = editBaseUpdatedAt.value ?? undefined;
+    const { data: patched } = await updateRequirement(req.value.id, {
       title: form.value.title.trim(),
       external_url: form.value.external_url.trim() || null,
       version_id: form.value.version_id,
@@ -536,20 +615,26 @@ async function saveReq() {
       role_assignee_ids,
       selected_role_keys: selectedRoles.value,
       custom_fields: customFields.value,
+      expected_updated_at: expectedAt,
     });
-    await updateRequirementWorkflowEnabled(req.value.id, enabledPayload);
-    const { data: synced } = await syncRequirementStatus(req.value.id);
-    req.value = synced;
-    syncEnabledDraft();
-    const selected = req.value.nodes.find((n) => n.node_key === selectedNodeKey.value);
+    await updateRequirementWorkflowEnabled(req.value.id, enabledPayload, patched.updated_at);
+    stopEditStalePoll();
+    editBaseUpdatedAt.value = null;
+    editStaleRemote.value = false;
+    editMode.value = false;
+    await load();
+    const selected = req.value?.nodes.find((n) => n.node_key === selectedNodeKey.value);
     if (!selected?.enabled) {
       selectedNodeKey.value = null;
     }
-    editMode.value = false;
-    await refreshActivities();
     message.success('已保存');
-    emit('updated', synced);
+    if (req.value) emit('updated', req.value);
   } catch (e: unknown) {
+    if (isConflictError(e)) {
+      editStaleRemote.value = true;
+      handleEditConflict();
+      return;
+    }
     const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
     message.error(typeof detail === 'string' ? detail : '保存失败');
   } finally {
@@ -647,14 +732,24 @@ async function submitComment() {
 }
 
 watch(() => props.requirementId, () => {
+  stopEditStalePoll();
+  editBaseUpdatedAt.value = null;
+  editStaleRemote.value = false;
   editMode.value = false;
   selectedNodeKey.value = null;
   newComment.value = '';
   void load();
 }, { immediate: true });
+
+onUnmounted(() => {
+  stopEditStalePoll();
+});
 </script>
 
 <style scoped>
+.edit-stale-alert {
+  margin-bottom: 12px;
+}
 .panel-loading {
   display: flex;
   align-items: center;

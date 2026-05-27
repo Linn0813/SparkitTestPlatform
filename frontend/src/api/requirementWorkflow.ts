@@ -56,6 +56,13 @@ export function getRequirementWorkflow(requirementId: string) {
   return http.get<RequirementWorkflowOut>(`/requirements/${requirementId}/workflow`);
 }
 
-export function updateRequirementWorkflowEnabled(requirementId: string, enabled: Record<string, boolean>) {
-  return http.put<RequirementWorkflowOut>(`/requirements/${requirementId}/workflow`, { enabled });
+export function updateRequirementWorkflowEnabled(
+  requirementId: string,
+  enabled: Record<string, boolean>,
+  expectedUpdatedAt?: string
+) {
+  return http.put<RequirementWorkflowOut>(`/requirements/${requirementId}/workflow`, {
+    enabled,
+    expected_updated_at: expectedUpdatedAt,
+  });
 }

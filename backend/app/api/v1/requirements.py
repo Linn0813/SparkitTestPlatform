@@ -63,6 +63,7 @@ from app.services.requirement_selected_roles import (
 from app.services.requirement_workflow import ensure_project_workflow_defs, init_requirement_progress_from_defs, load_project_workflow_defs
 
 from app.services.requirement_filters import apply_requirement_list_filters
+from app.services.requirement_version import assert_requirement_version
 from app.services.versions import validate_version_id
 
 router = APIRouter(prefix="/requirements", tags=["requirements"])
@@ -287,6 +288,7 @@ async def update_requirement_workflow(
     db: AsyncSession = Depends(get_db),
 ):
     row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    assert_requirement_version(row, body.expected_updated_at)
     defs = await load_project_workflow_defs(db, ctx.project_id)
     nodes = await load_node_map(db, row.id)
     try:
@@ -308,6 +310,8 @@ async def update_requirement(
 ):
     row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
     data = body.model_dump(exclude_unset=True)
+    expected_updated_at = data.pop("expected_updated_at", None)
+    assert_requirement_version(row, expected_updated_at)
     _sync_role_id_fields_from_assignees(data)
     try:
         if "selected_role_keys" in data:
