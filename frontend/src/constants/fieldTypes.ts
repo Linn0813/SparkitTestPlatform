@@ -62,6 +62,11 @@ export function isLinkLikeTemplateField(field: TemplateField): boolean {
   return field.name.includes('链接');
 }
 
+/** 描述类长文本字段（双列表单中占满整行） */
+export function isDescriptionLikeTemplateField(field: TemplateField): boolean {
+  return field.name === '描述' || field.name.includes('描述');
+}
+
 export function isOptionFieldType(type: string): boolean {
   return type === 'select' || type === 'multi_select';
 }

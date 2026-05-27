@@ -52,8 +52,10 @@
             <n-form-item label="PRD 链接">
               <n-input
                 :value="form.external_url"
+                type="textarea"
+                :autosize="{ minRows: 2, maxRows: 8 }"
                 size="small"
-                placeholder="可选"
+                placeholder="多个链接请用空格或换行分隔，需以 http:// 或 https:// 开头"
                 @update:value="(v: string) => updateForm({ external_url: v })"
               />
             </n-form-item>
@@ -269,7 +271,9 @@ const editCanvasNodes = computed<WorkflowCanvasNode[]>(() =>
 
 const workflowCanvasNodes = computed(() => {
   const roleSet = new Set(props.selectedRoles);
-  return editCanvasNodes.value.filter((n) => n.role_keys.some((rk) => roleSet.has(rk)));
+  return editCanvasNodes.value.filter(
+    (n) => !n.role_keys.length || n.role_keys.some((rk) => roleSet.has(rk))
+  );
 });
 
 const activeWorkflowRoles = computed(() =>
@@ -306,7 +310,7 @@ function onToggleEnabled(nodeKey: string, enabled: boolean) {
 <style scoped>
 .edit-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(220px, 1fr);
+  grid-template-columns: minmax(300px, 1.15fr) minmax(220px, 1fr);
   gap: 12px;
   align-items: start;
 }

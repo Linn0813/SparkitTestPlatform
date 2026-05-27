@@ -90,6 +90,7 @@ import type { BugItem, BugStatusDef, ProjectVersion, Requirement } from '@/types
 import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
 import { formatDateOnly } from '@/utils/formatDateOnly';
+import { linkLabel, parseUrlsFromText } from '@/utils/parseUrls';
 
 const route = useRoute();
 const router = useRouter();
@@ -125,6 +126,48 @@ function followersSummary(row: BugItem): string {
   return '—';
 }
 
+function prdLinkAnchor(url: string) {
+  return h(
+    'a',
+    {
+      href: url,
+      target: '_blank',
+      rel: 'noopener',
+      class: 'prd-link',
+      onClick: (e: MouseEvent) => e.stopPropagation(),
+    },
+    linkLabel(url, 32)
+  );
+}
+
+function renderPrdLinks(externalUrl: string | null | undefined) {
+  const raw = externalUrl?.trim();
+  if (!raw) return '—';
+  const urls = parseUrlsFromText(raw, { dedupe: false });
+  if (urls.length === 0) return raw;
+
+  const tooltipWrap = (url: string) =>
+    h(
+      NTooltip,
+      {
+        placement: 'top-start',
+        contentStyle: { maxWidth: '400px', wordBreak: 'break-all' },
+      },
+      {
+        trigger: () => prdLinkAnchor(url),
+        default: () => url,
+      }
+    );
+
+  if (urls.length === 1) return tooltipWrap(urls[0]);
+
+  return h(
+    'div',
+    { class: 'prd-links-stack' },
+    urls.map((url) => tooltipWrap(url))
+  );
+}
+
 const requirementColumns: DataTableColumns<Requirement> = [
   { ...NUM_TABLE_COLUMN },
   {
@@ -150,33 +193,7 @@ const requirementColumns: DataTableColumns<Requirement> = [
     title: 'PRD 链接',
     key: 'external_url',
     width: 200,
-    render: (r) => {
-      if (!r.external_url) return '—';
-      const url = r.external_url;
-      const label = url.length > 32 ? `${url.slice(0, 32)}…` : url;
-      return h(
-        NTooltip,
-        {
-          placement: 'top-start',
-          contentStyle: { maxWidth: '400px', wordBreak: 'break-all' },
-        },
-        {
-          trigger: () =>
-            h(
-              'a',
-              {
-                href: url,
-                target: '_blank',
-                rel: 'noopener',
-                class: 'prd-link',
-                onClick: (e: MouseEvent) => e.stopPropagation(),
-              },
-              label
-            ),
-          default: () => url,
-        }
-      );
-    },
+    render: (r) => renderPrdLinks(r.external_url),
   },
   {
     title: '操作',
@@ -350,5 +367,10 @@ watch(() => ctx.projectId, load);
 }
 .prd-link:hover {
   text-decoration: underline;
+}
+.prd-links-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 </style>

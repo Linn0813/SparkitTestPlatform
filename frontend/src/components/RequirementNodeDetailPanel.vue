@@ -280,9 +280,6 @@ const actionButtons = computed((): {
   if (node.state === 'pending' || node.state === 'in_progress') {
     if (isNodeActionable(nodes, node)) {
       list.push({ action: 'complete', label: '完成', type: 'primary' });
-      if (node.node_key === 'req_review') {
-        list.push({ action: 'reject', label: '打回', type: 'error' });
-      }
     }
   } else if (node.state === 'completed' || node.state === 'skipped') {
     list.push({ action: 'reopen', label: '重开' });

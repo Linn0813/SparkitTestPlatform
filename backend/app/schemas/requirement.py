@@ -111,7 +111,7 @@ class RequirementWorkflowNodeDefOut(BaseModel):
 
 class RequirementWorkflowNodeDefCreate(BaseModel):
     label: str = Field(min_length=1, max_length=128)
-    role_keys: list[str] = Field(min_length=1)
+    role_keys: list[str] = Field(default_factory=list)
     lane_indexes: list[int] = Field(min_length=1)
     blocks_lane_gate: bool = True
     sort_in_lane: int = Field(ge=0, default=0)
@@ -119,7 +119,7 @@ class RequirementWorkflowNodeDefCreate(BaseModel):
 
 class RequirementWorkflowNodeDefUpdate(BaseModel):
     label: Optional[str] = Field(default=None, min_length=1, max_length=128)
-    role_keys: Optional[list[str]] = Field(default=None, min_length=1)
+    role_keys: Optional[list[str]] = None
     lane_indexes: Optional[list[int]] = Field(default=None, min_length=1)
     blocks_lane_gate: Optional[bool] = None
     sort_in_lane: Optional[int] = Field(default=None, ge=0)

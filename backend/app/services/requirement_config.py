@@ -98,7 +98,7 @@ async def validate_role_keys_for_project(
     db: AsyncSession, project_id: str, role_keys: list[str]
 ) -> None:
     if not role_keys:
-        raise ValueError("至少选择一个角色")
+        return
     allowed = await load_project_role_keys(db, project_id)
     seen: set[str] = set()
     for role_key in role_keys:

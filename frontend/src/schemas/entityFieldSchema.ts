@@ -3,15 +3,18 @@ import type { BugListFilterState } from '@/composables/useBugListFilters';
 import type { CaseListFilterState } from '@/composables/useCaseListFilters';
 import {
   fieldTypeLabel,
+  isDescriptionLikeTemplateField,
   isMemberType,
   isOptionFieldType,
   isRichtextType,
+  isTextLikeType,
   normalizeRichTextValue,
   sortTemplateFields,
 } from '@/constants/fieldTypes';
 import { buildFieldConfigRows, type FieldConfigRow } from '@/constants/systemFields';
 import type { Requirement, TemplateField } from '@/types/business';
 import { formatDateOnly } from '@/utils/formatDateOnly';
+import { parseUrlsFromText, urlsToLinkItems } from '@/utils/parseUrls';
 
 export type EntityScene = 'bug' | 'functional_case' | 'requirement';
 
@@ -395,12 +398,31 @@ export function buildTemplateTableColumns<T extends { custom_fields?: Record<str
   }));
 }
 
-export type RequirementDetailFieldDisplayKind = 'text' | 'link' | 'richtext';
+export type RequirementDetailFieldDisplayKind = 'text' | 'link' | 'links' | 'richtext';
+
+export interface RequirementDetailLinkItem {
+  href: string;
+  label: string;
+}
 
 export interface RequirementDetailFieldDisplay {
   kind: RequirementDetailFieldDisplayKind;
   text: string;
   href?: string;
+  links?: RequirementDetailLinkItem[];
+  /** 原始链接文本，供多链接组件解析 */
+  urlRaw?: string;
+}
+
+function resolveUrlsFieldDisplay(raw: string | null | undefined): RequirementDetailFieldDisplay {
+  const text = raw?.trim() ?? '';
+  if (!text) return { kind: 'text', text: '—' };
+  const urls = parseUrlsFromText(text, { dedupe: false });
+  if (urls.length === 0) return { kind: 'text', text };
+  if (urls.length === 1) {
+    return { kind: 'link', text: urls[0], href: urls[0], urlRaw: text };
+  }
+  return { kind: 'links', text: '', links: urlsToLinkItems(urls), urlRaw: text };
 }
 
 export interface RequirementDetailFieldContext {
@@ -432,11 +454,8 @@ export function resolveRequirementDetailField(
         return { kind: 'text', text: ctx.priorityLabel(ctx.req.priority) || '—' };
       case '__req_type':
         return { kind: 'text', text: ctx.typeLabel(ctx.req.req_type) || '—' };
-      case '__external_url': {
-        const url = ctx.req.external_url?.trim();
-        if (!url) return { kind: 'text', text: '—' };
-        return { kind: 'link', text: url, href: url };
-      }
+      case '__external_url':
+        return resolveUrlsFieldDisplay(ctx.req.external_url);
       case '__version':
         return { kind: 'text', text: ctx.req.version?.name ?? '—' };
       case '__version_released_at':
@@ -450,14 +469,22 @@ export function resolveRequirementDetailField(
   if (!field) return { kind: 'text', text: '—' };
 
   const value = ctx.customFields[row.id];
+  if (isLinkLikeFieldRow(row) && typeof value === 'string') {
+    return resolveUrlsFieldDisplay(value);
+  }
   if (isRichtextType(field.type) && richTextHasContent(value)) {
     return { kind: 'richtext', text: richTextPlain(value) };
   }
-  if (typeof value === 'string') {
-    const url = value.trim();
-    if (/^https?:\/\//i.test(url)) {
-      return { kind: 'link', text: url, href: url };
-    }
+  if (typeof value === 'string' && /https?:\/\//i.test(value)) {
+    return resolveUrlsFieldDisplay(value);
+  }
+  if (
+    isTextLikeType(field.type) &&
+    typeof value === 'string' &&
+    value.trim() &&
+    (isDescriptionLikeTemplateField(field) || value.includes('\n'))
+  ) {
+    return { kind: 'richtext', text: value };
   }
   return { kind: 'text', text: formatTemplateFieldValue(field, value, formatCtx) };
 }
@@ -472,10 +499,11 @@ export function requirementDetailFieldSpan(
 ): 1 | 2 {
   if (isLinkLikeFieldRow(row)) return 2;
   const display = resolveRequirementDetailField(row, ctx);
-  if (display.kind === 'link' || display.kind === 'richtext') return 2;
+  if (display.kind === 'link' || display.kind === 'links' || display.kind === 'richtext') return 2;
   if (row.source === 'template') {
     const field = ctx.templateFields.find((f) => f.id === row.id);
     if (field?.type === 'textarea') return 2;
+    if (field && isDescriptionLikeTemplateField(field)) return 2;
   }
   return 1;
 }

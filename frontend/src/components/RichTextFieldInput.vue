@@ -5,7 +5,7 @@
       :project-id="projectId"
       :disabled="disabled"
       :placeholder="placeholder"
-      :autosize="{ minRows: 3, maxRows: 10 }"
+      :autosize="autosize"
       @update:model-value="onTextChange"
     />
     <div v-if="!disabled && projectId" class="richtext-toolbar">
@@ -66,8 +66,12 @@ const props = withDefaults(
     projectId?: string | null;
     disabled?: boolean;
     placeholder?: string;
+    autosize?: boolean | { minRows?: number; maxRows?: number };
   }>(),
-  { disabled: false }
+  {
+    disabled: false,
+    autosize: () => ({ minRows: 5, maxRows: 14 }),
+  }
 );
 
 const emit = defineEmits<{

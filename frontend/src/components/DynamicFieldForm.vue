@@ -44,7 +44,12 @@
 import { computed } from 'vue';
 import { NDivider, NFormItem, NGi, NGrid } from 'naive-ui';
 import TemplateFieldInput from '@/components/TemplateFieldInput.vue';
-import { isLinkLikeTemplateField, isRichtextType, sortTemplateFields } from '@/constants/fieldTypes';
+import {
+  isDescriptionLikeTemplateField,
+  isLinkLikeTemplateField,
+  isRichtextType,
+  sortTemplateFields,
+} from '@/constants/fieldTypes';
 import { useContextStore } from '@/stores/context';
 import type { TemplateField } from '@/types/business';
 
@@ -78,12 +83,13 @@ function fieldSpan(field: TemplateField): number {
   if (props.columns <= 1) return 1;
   if (isRichtextType(field.type) || field.type === 'textarea') return props.columns;
   if (isLinkLikeTemplateField(field)) return props.columns;
+  if (isDescriptionLikeTemplateField(field)) return props.columns;
   return 1;
 }
 
 function linkFieldPlaceholder(field: TemplateField): string | undefined {
   if (!props.compact || !isLinkLikeTemplateField(field)) return undefined;
-  return '可选';
+  return '多个链接可用空格或换行分隔';
 }
 
 function setValue(id: string, value: unknown) {

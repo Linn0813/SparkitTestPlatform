@@ -39,8 +39,8 @@ const props = withDefaults(
   }>(),
   {
     disabled: false,
-    rows: 4,
-    autosize: () => ({ minRows: 3, maxRows: 12 }),
+    rows: 5,
+    autosize: () => ({ minRows: 4, maxRows: 16 }),
     compact: false,
   }
 );

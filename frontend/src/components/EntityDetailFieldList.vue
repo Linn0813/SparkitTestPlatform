@@ -10,15 +10,10 @@
               :text="fieldEntries[group.row.id]!.display.text"
               :project-id="projectId"
             />
-            <a
-              v-else-if="fieldEntries[group.row.id]?.display.kind === 'link'"
-              :href="fieldEntries[group.row.id]!.display.href"
-              target="_blank"
-              rel="noopener"
-              class="field-link"
-            >
-              {{ fieldEntries[group.row.id]!.display.text }}
-            </a>
+            <ExternalUrlLinks
+              v-else-if="isUrlFieldDisplay(fieldEntries[group.row.id]?.display)"
+              :value="urlFieldRawValue(fieldEntries[group.row.id]!.display)"
+            />
             <span v-else>{{ fieldEntries[group.row.id]?.display.text ?? '—' }}</span>
           </div>
         </div>
@@ -32,15 +27,10 @@
               :text="fieldEntries[row.id]!.display.text"
               :project-id="projectId"
             />
-            <a
-              v-else-if="fieldEntries[row.id]?.display.kind === 'link'"
-              :href="fieldEntries[row.id]!.display.href"
-              target="_blank"
-              rel="noopener"
-              class="field-link"
-            >
-              {{ fieldEntries[row.id]!.display.text }}
-            </a>
+            <ExternalUrlLinks
+              v-else-if="isUrlFieldDisplay(fieldEntries[row.id]?.display)"
+              :value="urlFieldRawValue(fieldEntries[row.id]!.display)"
+            />
             <span v-else>{{ fieldEntries[row.id]?.display.text ?? '—' }}</span>
           </div>
         </div>
@@ -51,6 +41,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import ExternalUrlLinks from '@/components/ExternalUrlLinks.vue';
 import InlineMarkdownContent from '@/components/InlineMarkdownContent.vue';
 import type { FieldConfigRow } from '@/constants/systemFields';
 import {
@@ -84,6 +75,16 @@ const fieldEntries = computed<Record<string, FieldEntry>>(() => {
 });
 
 const layoutGroups = computed(() => buildRequirementDetailLayout(props.rows, props.context));
+
+function isUrlFieldDisplay(
+  display: RequirementDetailFieldDisplay | undefined
+): display is RequirementDetailFieldDisplay {
+  return display?.kind === 'link' || display?.kind === 'links';
+}
+
+function urlFieldRawValue(display: RequirementDetailFieldDisplay): string {
+  return display.urlRaw ?? display.href ?? display.text ?? '';
+}
 </script>
 
 <style scoped>
@@ -117,13 +118,5 @@ const layoutGroups = computed(() => buildRequirementDetailLayout(props.rows, pro
   line-height: 1.5;
   word-break: break-word;
   min-width: 0;
-}
-.field-link {
-  color: var(--n-primary-color);
-  text-decoration: none;
-  word-break: break-all;
-}
-.field-link:hover {
-  text-decoration: underline;
 }
 </style>

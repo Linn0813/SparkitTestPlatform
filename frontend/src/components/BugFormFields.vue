@@ -11,9 +11,8 @@
           <PasteImageTextarea
             v-model="form.description"
             :project-id="projectId"
-            compact
-            placeholder="描述（支持 Ctrl+V / ⌘V 粘贴截图）"
-            :autosize="{ minRows: 2, maxRows: 8 }"
+            placeholder="请输入描述"
+            :autosize="{ minRows: 6, maxRows: 14 }"
           />
         </n-form-item>
       </n-gi>

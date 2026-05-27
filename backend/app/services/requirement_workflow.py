@@ -174,7 +174,7 @@ def validate_role_keys(role_keys: list[str]) -> None:
     from app.constants.requirement_nodes import REQUIREMENT_ROLE_KEYS
 
     if not role_keys:
-        raise ValueError("至少选择一个角色")
+        return
     seen: set[str] = set()
     for role_key in role_keys:
         if role_key not in REQUIREMENT_ROLE_KEYS:

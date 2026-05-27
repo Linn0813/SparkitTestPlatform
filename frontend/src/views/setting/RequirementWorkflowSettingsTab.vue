@@ -30,8 +30,14 @@
           <n-form-item label="节点名称" required>
             <n-input v-model:value="nodeForm.label" />
           </n-form-item>
-          <n-form-item label="关联角色" required>
-            <n-select v-model:value="nodeForm.role_keys" :options="roleOptions" multiple />
+          <n-form-item label="关联角色">
+            <n-select
+              v-model:value="nodeForm.role_keys"
+              :options="roleOptions"
+              multiple
+              clearable
+              placeholder="可选，不选则节点不绑定负责人角色"
+            />
           </n-form-item>
           <n-form-item label="阶段列">
             <n-select
@@ -151,7 +157,8 @@ const columns = computed<DataTableColumns<RequirementWorkflowNodeDef>>(() => {
     title: '角色',
     key: 'role_keys',
     width: 140,
-    render: (r) => r.role_keys.map((k) => projectConfig.roleLabel(k)).join('、'),
+    render: (r) =>
+      r.role_keys.length ? r.role_keys.map((k) => projectConfig.roleLabel(k)).join('、') : '—',
   },
   {
     title: '阶段',
@@ -200,7 +207,7 @@ function openCreate() {
   editing.value = null;
   nodeForm.value = {
     label: '',
-    role_keys: ['qa'],
+    role_keys: [],
     lane_indexes: [2, 3],
     blocks_lane_gate: false,
     sort_in_lane: 0,
@@ -232,10 +239,6 @@ async function onSaveNodeClick() {
 async function saveNode() {
   if (!props.projectId || !nodeForm.value.label.trim()) {
     message.warning('请填写节点名称');
-    return;
-  }
-  if (!nodeForm.value.role_keys.length) {
-    message.warning('请至少选择一个角色');
     return;
   }
   if (!nodeForm.value.lane_indexes.length) {

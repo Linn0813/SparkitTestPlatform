@@ -5,14 +5,17 @@
     :project-id="projectId"
     :disabled="disabled"
     :placeholder="placeholder"
+    :autosize="textareaAutosize"
     @update:model-value="emitValue"
   />
   <n-input
     v-else-if="isLinkLikeTemplateField(field)"
     :value="textValue"
+    type="textarea"
+    :autosize="linkTextareaAutosize"
     :disabled="disabled"
     :size="inputSize"
-    :placeholder="placeholder"
+    :placeholder="linkPlaceholder"
     @update:value="(v) => emitValue(v)"
   />
   <PasteImageTextarea
@@ -21,7 +24,8 @@
     :project-id="projectId"
     :disabled="disabled"
     :placeholder="placeholder"
-    :autosize="{ minRows: 2, maxRows: 8 }"
+    :autosize="textareaAutosize"
+    :compact="inputSize === 'small'"
     @update:model-value="(v) => emitValue(v)"
   />
   <n-input-number
@@ -106,7 +110,12 @@ import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
 import RichTextFieldInput from '@/components/RichTextFieldInput.vue';
 import SelectRadioField from '@/components/SelectRadioField.vue';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
-import { isLinkLikeTemplateField, isRichtextType, isTextLikeType } from '@/constants/fieldTypes';
+import {
+  isDescriptionLikeTemplateField,
+  isLinkLikeTemplateField,
+  isRichtextType,
+  isTextLikeType,
+} from '@/constants/fieldTypes';
 import { isPromotedRadioSelectField } from '@/schemas/entityFieldSchema';
 import type { TemplateField } from '@/types/business';
 
@@ -138,6 +147,19 @@ const placeholder = computed(() => {
   }
   if (props.field.type === 'member') return `请选择${props.field.name}`;
   return `请输入${props.field.name}`;
+});
+
+const linkTextareaAutosize = { minRows: 2, maxRows: 8 };
+
+const textareaAutosize = computed(() =>
+  isDescriptionLikeTemplateField(props.field)
+    ? { minRows: 8, maxRows: 20 }
+    : { minRows: 4, maxRows: 12 }
+);
+
+const linkPlaceholder = computed(() => {
+  if (props.placeholder) return props.placeholder;
+  return '多个链接请用空格或换行分隔，需以 http:// 或 https:// 开头';
 });
 
 const memberPlaceholder = computed(() =>
