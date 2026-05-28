@@ -19,6 +19,7 @@ class ProjectVersion(Base):
     project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), nullable=False, index=True)
     num: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    version_type: Mapped[str] = mapped_column(String(32), nullable=False, default="app_release", index=True)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="planning", index=True
     )

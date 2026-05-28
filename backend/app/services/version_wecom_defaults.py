@@ -33,6 +33,18 @@ DEFAULT_VERSION_WECOM_TEMPLATES: dict[str, str] = {
         "操作人：{operator}\n"
         "{link}"
     ),
+    "gp_approved_complete": (
+        "【GP过审完成】{version}\n"
+        "项目：{project}\n"
+        "操作人：{operator}\n"
+        "{link}"
+    ),
+    "as_approved_complete": (
+        "【AS过审完成】{version}\n"
+        "项目：{project}\n"
+        "操作人：{operator}\n"
+        "{link}"
+    ),
 }
 
 WECOM_EVENT_LABELS: dict[str, str] = {
@@ -41,6 +53,8 @@ WECOM_EVENT_LABELS: dict[str, str] = {
     "gp_review_complete": "GP提审完成",
     "as_review_complete": "AS提审完成",
     "website_link_complete": "官网链接完成",
+    "gp_approved_complete": "GP过审完成",
+    "as_approved_complete": "AS过审完成",
 }
 
 

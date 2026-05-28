@@ -68,24 +68,33 @@ export interface CaseStep {
   expected: string;
 }
 
+export type VersionType = 'app_release' | 'hotfix';
+
 export type VersionStatus = 'planning' | 'developing' | 'releasing' | 'reviewing' | 'ended';
 
-export type VersionNodeKey =
-  | 'planning'
-  | 'development'
-  | 'release_verification'
-  | 'gp_review'
-  | 'as_review'
-  | 'website_link'
-  | 'live';
+export type VersionNodeKey = string;
 
 export type VersionNodeState = 'pending' | 'completed';
 
 export interface VersionNodeProgress {
-  node_key: VersionNodeKey;
+  node_key: string;
   state: VersionNodeState;
   completed_at?: string | null;
   operator_id?: string | null;
+  assignee_id?: string | null;
+  scheduled_start?: string | null;
+  scheduled_end?: string | null;
+}
+
+export interface VersionWorkflowNodeDef {
+  id: string;
+  project_id: string;
+  version_type: VersionType;
+  node_key: string;
+  label: string;
+  lane_index: number;
+  lane_indexes: number[];
+  sort_in_lane: number;
 }
 
 export interface VersionBrief {
@@ -95,6 +104,7 @@ export interface VersionBrief {
   /** 上线日期 YYYY-MM-DD */
   released_at?: string | null;
   status?: VersionStatus;
+  version_type?: VersionType;
 }
 
 export interface ProjectVersion {
@@ -102,8 +112,10 @@ export interface ProjectVersion {
   project_id: string;
   num: number;
   name: string;
+  version_type: VersionType;
   status: VersionStatus;
   nodes: VersionNodeProgress[];
+  workflow_defs: VersionWorkflowNodeDef[];
   /** 上线日期 YYYY-MM-DD */
   released_at: string | null;
   created_by: string;

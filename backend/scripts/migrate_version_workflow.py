@@ -10,7 +10,8 @@ from app.constants.version_nodes import VERSION_NODE_KEYS
 from app.core.database import async_session_factory, engine
 from app.models.project_version import ProjectVersion
 from app.models.version_workflow import VersionNodeProgress, VersionNodeState, VersionStatus
-from app.services.version_workflow import compute_version_status, init_version_workflow
+from app.services.version_workflow import compute_version_status, init_version_workflow, load_version_nodes
+from app.services.version_workflow_defs import load_project_version_workflow_defs
 
 
 async def migrate() -> None:
@@ -71,12 +72,15 @@ async def migrate() -> None:
                 ver.status = VersionStatus.ended.value
                 ended += 1
             else:
-                await init_version_workflow(db, ver.id)
+                await init_version_workflow(db, ver.id, ver.project_id, ver.version_type or "app_release")
                 nodes_result = await db.execute(
                     select(VersionNodeProgress).where(VersionNodeProgress.version_id == ver.id)
                 )
                 nodes = {n.node_key: n for n in nodes_result.scalars().all()}
-                ver.status = compute_version_status(nodes).value
+                defs = await load_project_version_workflow_defs(
+                    db, ver.project_id, ver.version_type or "app_release"
+                )
+                ver.status = compute_version_status(nodes, defs).value
             initialized += 1
 
         await db.commit()

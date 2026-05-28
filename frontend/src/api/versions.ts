@@ -12,6 +12,13 @@ export function getVersion(id: string) {
 export type VersionPayload = {
   name: string;
   released_at?: string | null;
+  version_type?: import('@/types/business').VersionType;
+};
+
+export type VersionNodeUpdatePayload = {
+  assignee_id?: string | null;
+  scheduled_start?: string | null;
+  scheduled_end?: string | null;
 };
 
 export function createVersion(data: VersionPayload) {
@@ -37,4 +44,8 @@ export function completeVersionNode(id: string, nodeKey: string) {
 
 export function reopenVersionNode(id: string, nodeKey: string) {
   return http.post<ProjectVersion>(`/versions/${id}/nodes/${nodeKey}/reopen`);
+}
+
+export function updateVersionNode(id: string, nodeKey: string, data: VersionNodeUpdatePayload) {
+  return http.patch<ProjectVersion>(`/versions/${id}/nodes/${nodeKey}`, data);
 }

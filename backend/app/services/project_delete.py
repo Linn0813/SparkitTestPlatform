@@ -26,7 +26,7 @@ from app.models.requirement import (
     RequirementNodeProgress,
 )
 from app.models.stored_file import StoredFile
-from app.models.template import BugStatus, ProjectFieldTemplate, ProjectIntegration, RequirementWorkflowNodeDef
+from app.models.template import BugStatus, ProjectFieldTemplate, ProjectIntegration, RequirementWorkflowNodeDef, VersionWorkflowNodeDef
 from app.models.user import User
 from app.models.version_workflow import VersionWecomNotifyRule
 from app.models.wecom_rule import BugWecomNotifyRule
@@ -145,6 +145,7 @@ async def _delete_project_meta(db: AsyncSession, project_id: str) -> None:
     await db.execute(delete(ProjectIntegration).where(ProjectIntegration.project_id == project_id))
     await db.execute(delete(BugStatus).where(BugStatus.project_id == project_id))
     await db.execute(delete(RequirementWorkflowNodeDef).where(RequirementWorkflowNodeDef.project_id == project_id))
+    await db.execute(delete(VersionWorkflowNodeDef).where(VersionWorkflowNodeDef.project_id == project_id))
     await db.execute(delete(ProjectFieldTemplate).where(ProjectFieldTemplate.project_id == project_id))
     await db.execute(delete(ProjectMember).where(ProjectMember.project_id == project_id))
 

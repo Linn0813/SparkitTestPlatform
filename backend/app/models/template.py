@@ -109,6 +109,26 @@ class RequirementWorkflowNodeDef(Base):
     )
 
 
+class VersionWorkflowNodeDef(Base):
+    __tablename__ = "version_workflow_node_defs"
+    __table_args__ = (
+        UniqueConstraint("project_id", "version_type", "node_key", name="uq_project_version_wf_node"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), nullable=False, index=True)
+    version_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    node_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    label: Mapped[str] = mapped_column(String(128), nullable=False)
+    lane_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lane_indexes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    sort_in_lane: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class ProjectIntegration(Base):
     __tablename__ = "project_integrations"
 

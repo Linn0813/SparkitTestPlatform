@@ -80,19 +80,68 @@ export function columnNodesForLane(laneIndex: number, columnNodes: WorkflowCanva
     .sort((a, b) => a.sort_in_lane - b.sort_in_lane);
 }
 
-/** 参与某列行高计算的节点（含跨列节点，按起始列 sort 堆叠）。 */
+/** 参与某列行高计算的节点（不含跨列 span，按起始列 sort 堆叠）。 */
 export function laneRowNodes(laneIndex: number, nodes: WorkflowCanvasNode[]): WorkflowCanvasNode[] {
   return nodes
-    .filter((n) => n.span_lanes[0] === laneIndex)
+    .filter((n) => !n.is_span_positioned && n.span_lanes[0] === laneIndex)
     .sort((a, b) => a.sort_in_lane - b.sort_in_lane);
 }
 
-export function maxLaneRowCount(nodes: WorkflowCanvasNode[], allLaneIndexes: number[]): number {
-  let max = 1;
-  for (const lane of allLaneIndexes) {
-    max = Math.max(max, laneRowNodes(lane, nodes).length);
-  }
-  return max;
+/** 全画布统一行网格行数（含 span 节点的 sort_in_lane）。 */
+export function layoutRowCount(nodes: WorkflowCanvasNode[]): number {
+  if (!nodes.length) return 1;
+  return Math.max(1, ...nodes.map((n) => n.sort_in_lane + 1));
+}
+
+/** 某列布局行数：多行 fork 列用全局网格，单列节点列保持单行居中。 */
+export function layoutRowCountForLane(laneIndex: number, nodes: WorkflowCanvasNode[]): number {
+  const global = layoutRowCount(nodes);
+  const inLane = nodes.filter(
+    (n) =>
+      (!n.is_span_positioned && n.span_lanes[0] === laneIndex) ||
+      (n.is_span_positioned && n.span_lanes[0] === laneIndex),
+  );
+  if (!inLane.length) return 1;
+  const maxSort = Math.max(...inLane.map((n) => n.sort_in_lane));
+  if (maxSort === 0 && inLane.length === 1 && global > 1) return 1;
+  return global;
+}
+
+export function rowTopForLayoutGrid(
+  rowIndex: number,
+  nodeHeight: number,
+  laneHeight: number,
+  rowCount: number,
+  rowGap = 10,
+): number | null {
+  if (rowCount <= 0) return null;
+  const groupHeight = rowCount * nodeHeight + (rowCount - 1) * rowGap;
+  const startY = (laneHeight - groupHeight) / 2;
+  return startY + rowIndex * (nodeHeight + rowGap);
+}
+
+export function connectorAnchorPoint(
+  node: WorkflowCanvasNode,
+  el: HTMLElement,
+  side: 'left' | 'right',
+  trackRect: DOMRect,
+): { x: number; y: number } {
+  const rect = el.getBoundingClientRect();
+  const y = rect.top + rect.height / 2 - trackRect.top;
+  const centerX = rect.left + rect.width / 2 - trackRect.left;
+  const half = rect.width / 2;
+  const x = node.is_span_positioned
+    ? side === 'left'
+      ? centerX - half
+      : centerX + half
+    : side === 'left'
+      ? rect.left - trackRect.left
+      : rect.right - trackRect.left;
+  return { x, y };
+}
+
+export function maxLaneRowCount(nodes: WorkflowCanvasNode[], _allLaneIndexes: number[]): number {
+  return layoutRowCount(nodes);
 }
 
 export function buildWorkflowLaneColumns(

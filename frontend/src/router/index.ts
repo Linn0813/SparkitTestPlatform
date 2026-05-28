@@ -50,8 +50,10 @@ const router = createRouter({
         },
         {
           path: 'versions/:id',
-          name: 'version-detail',
-          component: () => import('@/views/version/VersionDetailView.vue'),
+          redirect: (to) => ({
+            name: 'versions',
+            query: { ...to.query, versionId: to.params.id as string },
+          }),
         },
         { path: 'plans', name: 'plans', component: () => import('@/views/plan/PlanListView.vue') },
         {

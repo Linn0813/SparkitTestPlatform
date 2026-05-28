@@ -4,8 +4,10 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.version_types import VERSION_TYPES
 from app.core.database import get_db
 from app.core.deps import (
     ProjectContext,
@@ -13,7 +15,7 @@ from app.core.deps import (
     require_project_context_admin,
     require_project_context_catalog,
 )
-from app.models.bug import Bug
+from app.models.version_workflow import VersionNodeProgress
 from app.models.requirement import RequirementNodeProgress
 from app.models.template import (
     BugStatus,
@@ -23,6 +25,7 @@ from app.models.template import (
     RequirementRoleDef,
     RequirementWorkflowNodeDef,
     TemplateScene,
+    VersionWorkflowNodeDef,
 )
 from app.schemas.requirement import (
     RequirementStatusRuleOut,
@@ -32,6 +35,12 @@ from app.schemas.requirement import (
     RequirementWorkflowNodeDefOut,
     RequirementWorkflowNodeDefUpdate,
     RequirementWorkflowNodeReorderBody,
+)
+from app.schemas.version import (
+    VersionWorkflowNodeDefCreate,
+    VersionWorkflowNodeDefOut,
+    VersionWorkflowNodeDefUpdate,
+    VersionWorkflowNodeReorderBody,
 )
 from app.schemas.template import (
     BugStatusCreate,
@@ -81,7 +90,12 @@ from app.services.requirement_workflow import (
     validate_role_keys_for_project,
 )
 from app.services.template_fields import validate_template_fields
-from app.services.wecom import send_wecom_markdown
+from app.services.version_workflow_defs import (
+    ensure_project_version_workflow_defs,
+    load_project_version_workflow_defs,
+    sync_lane_fields as sync_version_lane_fields,
+    validate_lane_indexes as validate_version_lane_indexes,
+)
 
 router = APIRouter(prefix="/projects", tags=["templates"])
 
@@ -598,6 +612,143 @@ async def reorder_requirement_workflow_nodes(
     await db.flush()
     defs = await load_project_workflow_defs(db, project_id)
     return [RequirementWorkflowNodeDefOut.model_validate(d) for d in defs]
+
+
+@router.get("/{project_id}/version-workflow-nodes", response_model=list[VersionWorkflowNodeDefOut])
+async def list_version_workflow_nodes(
+    project_id: str,
+    version_type: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    if version_type not in VERSION_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid version type")
+    defs = await ensure_project_version_workflow_defs(db, project_id, version_type)
+    return [VersionWorkflowNodeDefOut.model_validate(d) for d in defs]
+
+
+@router.post(
+    "/{project_id}/version-workflow-nodes",
+    response_model=VersionWorkflowNodeDefOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_version_workflow_node(
+    project_id: str,
+    version_type: str,
+    body: VersionWorkflowNodeDefCreate,
+    ctx: ProjectContext = Depends(require_project_context_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    if version_type not in VERSION_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid version type")
+    try:
+        validate_version_lane_indexes(body.lane_indexes)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    row = VersionWorkflowNodeDef(
+        project_id=project_id,
+        version_type=version_type,
+        node_key=body.node_key.strip(),
+        label=body.label.strip(),
+        lane_indexes=sorted(set(body.lane_indexes)),
+        sort_in_lane=body.sort_in_lane,
+    )
+    sync_version_lane_fields(row)
+    db.add(row)
+    try:
+        await db.flush()
+    except IntegrityError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Node key already exists for this version type",
+        ) from e
+    return VersionWorkflowNodeDefOut.model_validate(row)
+
+
+@router.patch(
+    "/{project_id}/version-workflow-nodes/{def_id}",
+    response_model=VersionWorkflowNodeDefOut,
+)
+async def update_version_workflow_node(
+    project_id: str,
+    def_id: str,
+    body: VersionWorkflowNodeDefUpdate,
+    ctx: ProjectContext = Depends(require_project_context_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    row = await db.get(VersionWorkflowNodeDef, def_id)
+    if not row or row.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
+    data = body.model_dump(exclude_unset=True)
+    if "lane_indexes" in data and data["lane_indexes"] is not None:
+        try:
+            validate_version_lane_indexes(data["lane_indexes"])
+            data["lane_indexes"] = sorted(set(data["lane_indexes"]))
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    for k, v in data.items():
+        setattr(row, k, v)
+    sync_version_lane_fields(row)
+    await db.flush()
+    return VersionWorkflowNodeDefOut.model_validate(row)
+
+
+@router.delete("/{project_id}/version-workflow-nodes/{def_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_version_workflow_node(
+    project_id: str,
+    def_id: str,
+    ctx: ProjectContext = Depends(require_project_context_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import delete
+
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    row = await db.get(VersionWorkflowNodeDef, def_id)
+    if not row or row.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
+    in_use = await db.execute(
+        select(func.count())
+        .select_from(VersionNodeProgress)
+        .where(VersionNodeProgress.node_key == row.node_key)
+    )
+    if (in_use.scalar() or 0) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Node is referenced by version progress records",
+        )
+    await db.delete(row)
+
+
+@router.put("/{project_id}/version-workflow-nodes/reorder", response_model=list[VersionWorkflowNodeDefOut])
+async def reorder_version_workflow_nodes(
+    project_id: str,
+    version_type: str,
+    body: VersionWorkflowNodeReorderBody,
+    ctx: ProjectContext = Depends(require_project_context_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    if version_type not in VERSION_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid version type")
+    id_map = {item.id: item for item in body.items}
+    defs = await load_project_version_workflow_defs(db, project_id, version_type)
+    for d in defs:
+        if d.id in id_map:
+            item = id_map[d.id]
+            d.lane_indexes = [item.lane_index]
+            d.sort_in_lane = item.sort_in_lane
+            sync_version_lane_fields(d)
+    await db.flush()
+    defs = await load_project_version_workflow_defs(db, project_id, version_type)
+    return [VersionWorkflowNodeDefOut.model_validate(d) for d in defs]
 
 
 @router.get("/{project_id}/requirement-status-rules", response_model=list[RequirementStatusRuleOut])

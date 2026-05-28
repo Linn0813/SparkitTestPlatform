@@ -41,6 +41,7 @@ from app.models.template import (
     RequirementRoleDef,
     RequirementWorkflowNodeDef,
     TemplateScene,
+    VersionWorkflowNodeDef,
 )
 from app.models.wecom_rule import BugWecomNotifyRule
 from app.models.stored_file import StoredFile
@@ -57,6 +58,7 @@ __all__ = [
     "RequirementRoleDef",
     "RequirementOptionDef",
     "RequirementWorkflowNodeDef",
+    "VersionWorkflowNodeDef",
     "ProjectIntegration",
     "CaseModule",
     "CasePriority",

@@ -61,6 +61,9 @@
       <n-tab-pane name="req-workflow" tab="需求工作流">
         <RequirementWorkflowSettingsTab :project-id="ctx.projectId" :read-only="readOnly" />
       </n-tab-pane>
+      <n-tab-pane name="version-workflow" tab="版本工作流">
+        <VersionWorkflowSettingsTab v-if="ctx.projectId" :project-id="ctx.projectId" :read-only="readOnly" />
+      </n-tab-pane>
       <n-tab-pane name="version-wecom" tab="版本企微">
         <VersionWecomSettingsTab v-if="ctx.projectId" :project-id="ctx.projectId" :read-only="readOnly" />
       </n-tab-pane>
@@ -245,6 +248,7 @@ import BugFieldSettingsTab from '@/views/setting/BugFieldSettingsTab.vue';
 import RequirementFieldSettingsTab from '@/views/setting/RequirementFieldSettingsTab.vue';
 import RequirementRoleSettingsTab from '@/views/setting/RequirementRoleSettingsTab.vue';
 import RequirementWorkflowSettingsTab from '@/views/setting/RequirementWorkflowSettingsTab.vue';
+import VersionWorkflowSettingsTab from '@/views/setting/VersionWorkflowSettingsTab.vue';
 import VersionWecomSettingsTab from '@/views/setting/VersionWecomSettingsTab.vue';
 import {
   FIELD_TYPE_OPTIONS,
