@@ -88,6 +88,23 @@ class RequirementStatusRule(Base):
     )
 
 
+class VersionStatusRule(Base):
+    """版本工作流节点与版本状态的推导规则。"""
+
+    __tablename__ = "version_status_rules"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    node_keys: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    trigger_type: Mapped[str] = mapped_column(String(32), nullable=False, default="lane")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class RequirementWorkflowNodeDef(Base):
     __tablename__ = "requirement_workflow_node_defs"
     __table_args__ = (

@@ -7,6 +7,7 @@ import pytest
 from app.models.project_version import ProjectVersion
 from app.models.template import VersionWorkflowNodeDef
 from app.models.version_workflow import VersionNodeProgress, VersionNodeState, VersionStatus
+from app.services.version_status_rules import default_version_status_rule_likes
 from app.services.version_workflow import (
     VersionWorkflowError,
     assert_version_workflow_node_deletable,
@@ -29,6 +30,20 @@ def _nodes(states: dict[str, str]) -> dict[str, VersionNodeProgress]:
             state=state,
         )
     return result
+
+
+def _default_status_rules():
+    return default_version_status_rule_likes()
+
+
+async def _fake_load_status_rules(db, project_id):
+    return _default_status_rules()
+
+
+def _patch_status_rules(wf_module):
+    original = wf_module.load_status_rules_for_derive
+    wf_module.load_status_rules_for_derive = _fake_load_status_rules
+    return original
 
 
 def _default_defs() -> list[VersionWorkflowNodeDef]:
@@ -144,6 +159,7 @@ async def test_complete_node_sets_released_at_on_live():
 
     original_load = wf.load_version_nodes
     original_defs = wf.load_project_version_workflow_defs
+    original_rules = _patch_status_rules(wf)
     wf.load_version_nodes = fake_load
     wf.load_project_version_workflow_defs = fake_load_defs
     try:
@@ -151,6 +167,7 @@ async def test_complete_node_sets_released_at_on_live():
     finally:
         wf.load_version_nodes = original_load
         wf.load_project_version_workflow_defs = original_defs
+        wf.load_status_rules_for_derive = original_rules
 
     assert version.released_at == date.today()
     assert version.status == VersionStatus.ended.value
@@ -238,6 +255,7 @@ async def test_complete_planning_auto_starts_development():
 
     original_load = wf.load_version_nodes
     original_defs = wf.load_project_version_workflow_defs
+    original_rules = _patch_status_rules(wf)
     wf.load_version_nodes = fake_load
     wf.load_project_version_workflow_defs = fake_load_defs
     try:
@@ -245,6 +263,7 @@ async def test_complete_planning_auto_starts_development():
     finally:
         wf.load_version_nodes = original_load
         wf.load_project_version_workflow_defs = original_defs
+        wf.load_status_rules_for_derive = original_rules
 
     assert db_nodes["planning"].state == VersionNodeState.completed.value
     assert db_nodes["development"].state == VersionNodeState.in_progress.value
@@ -304,6 +323,7 @@ async def test_reopen_gp_only_reopens_live_not_siblings():
 
     original_load = wf.load_version_nodes
     original_defs = wf.load_project_version_workflow_defs
+    original_rules = _patch_status_rules(wf)
     wf.load_version_nodes = fake_load
     wf.load_project_version_workflow_defs = fake_load_defs
     try:
@@ -311,6 +331,7 @@ async def test_reopen_gp_only_reopens_live_not_siblings():
     finally:
         wf.load_version_nodes = original_load
         wf.load_project_version_workflow_defs = original_defs
+        wf.load_status_rules_for_derive = original_rules
 
     assert db_nodes["gp_review"].state == VersionNodeState.in_progress.value
     assert db_nodes["as_review"].state == VersionNodeState.completed.value
@@ -394,6 +415,7 @@ async def test_ensure_started_backfills_missing_node_and_auto_starts():
     original_load = wf.load_version_nodes
     original_defs = wf.load_project_version_workflow_defs
     original_backfill = wf._backfill_missing_version_nodes
+    original_rules = _patch_status_rules(wf)
     wf.load_version_nodes = fake_load
     wf.load_project_version_workflow_defs = fake_load_defs
 
@@ -418,6 +440,7 @@ async def test_ensure_started_backfills_missing_node_and_auto_starts():
         wf.load_version_nodes = original_load
         wf.load_project_version_workflow_defs = original_defs
         wf._backfill_missing_version_nodes = original_backfill
+        wf.load_status_rules_for_derive = original_rules
 
     assert "link_verify" in db_nodes
     assert db_nodes["link_verify"].state == VersionNodeState.in_progress.value
@@ -492,6 +515,7 @@ async def test_sync_version_progress_for_new_def_adds_missing_progress():
 
     original_load = wf.load_version_nodes
     original_defs = wf.load_project_version_workflow_defs
+    original_rules = _patch_status_rules(wf)
     wf.load_version_nodes = fake_load
     wf.load_project_version_workflow_defs = fake_load_defs
     try:
@@ -499,6 +523,7 @@ async def test_sync_version_progress_for_new_def_adds_missing_progress():
     finally:
         wf.load_version_nodes = original_load
         wf.load_project_version_workflow_defs = original_defs
+        wf.load_status_rules_for_derive = original_rules
 
     assert "link_verify" in db_nodes
     assert db_nodes["link_verify"].state == VersionNodeState.in_progress.value

@@ -19,6 +19,10 @@ export const VERSION_STATUS_TAG_TYPES: Record<
   ended: 'success',
 };
 
+export const VERSION_STATUS_OPTIONS = (
+  Object.entries(VERSION_STATUS_LABELS) as [VersionStatus, string][]
+).map(([value, label]) => ({ label, value }));
+
 export const VERSION_NODE_LABELS: Record<VersionNodeKey, string> = {
   planning: '版本规划',
   development: '版本开发',

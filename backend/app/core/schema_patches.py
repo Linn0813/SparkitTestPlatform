@@ -139,3 +139,24 @@ async def ensure_schema_patches() -> None:
                     text(f"ALTER TABLE {table} ADD UNIQUE KEY uq_version_wecom_node (project_id, node_key)")
                 )
                 logger.info("Schema patch applied: uq_version_wecom_node")
+
+        if not await _column_exists(conn, "version_status_rules", "project_id"):
+            await conn.execute(
+                text(
+                    """
+                    CREATE TABLE version_status_rules (
+                        id VARCHAR(36) PRIMARY KEY,
+                        project_id VARCHAR(36) NOT NULL,
+                        status VARCHAR(32) NOT NULL,
+                        node_keys JSON NOT NULL,
+                        sort INT NOT NULL DEFAULT 0,
+                        trigger_type VARCHAR(32) NOT NULL DEFAULT 'lane',
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX ix_version_status_rules_project_id (project_id),
+                        CONSTRAINT fk_version_status_rules_project FOREIGN KEY (project_id) REFERENCES projects(id)
+                    )
+                    """
+                )
+            )
+            logger.info("Schema patch applied: version_status_rules table")

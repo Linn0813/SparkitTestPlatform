@@ -37,6 +37,9 @@ from app.schemas.requirement import (
     RequirementWorkflowNodeReorderBody,
 )
 from app.schemas.version import (
+    VersionStatusRuleOut,
+    VersionStatusRulesReplaceBody,
+    VersionStatusSyncBatchOut,
     VersionWorkflowNodeDefCreate,
     VersionWorkflowNodeDefOut,
     VersionWorkflowNodeDefUpdate,
@@ -94,7 +97,13 @@ from app.services.version_workflow import (
     VersionWorkflowError,
     assert_version_workflow_node_deletable,
     delete_version_node_progress_for_def,
+    sync_project_version_statuses,
     sync_version_progress_for_new_def,
+)
+from app.services.version_status_rules import (
+    ensure_project_version_status_rules,
+    load_all_version_workflow_defs_union,
+    replace_project_version_status_rules,
 )
 from app.services.version_workflow_defs import (
     ensure_project_version_workflow_defs,
@@ -802,6 +811,53 @@ async def sync_project_requirement_statuses_api(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
     updated_count = await sync_project_requirement_statuses(db, project_id, actor_id=ctx.user.id)
     return RequirementStatusSyncBatchOut(updated_count=updated_count)
+
+
+@router.get("/{project_id}/version-status-rules", response_model=list[VersionStatusRuleOut])
+async def list_version_status_rules(
+    project_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    await ensure_project_version_workflow_defs(db, project_id)
+    rules = await ensure_project_version_status_rules(db, project_id)
+    return [VersionStatusRuleOut.model_validate(r) for r in rules]
+
+
+@router.put("/{project_id}/version-status-rules", response_model=list[VersionStatusRuleOut])
+async def replace_version_status_rules_api(
+    project_id: str,
+    body: VersionStatusRulesReplaceBody,
+    ctx: ProjectContext = Depends(require_project_context_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    defs = await load_all_version_workflow_defs_union(db, project_id)
+    try:
+        rules = await replace_project_version_status_rules(
+            db,
+            project_id,
+            [r.model_dump() for r in body.rules],
+            workflow_defs=defs,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    return [VersionStatusRuleOut.model_validate(r) for r in rules]
+
+
+@router.post("/{project_id}/versions/sync-statuses", response_model=VersionStatusSyncBatchOut)
+async def sync_project_version_statuses_api(
+    project_id: str,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    if ctx.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
+    updated_count = await sync_project_version_statuses(db, project_id)
+    return VersionStatusSyncBatchOut(updated_count=updated_count)
 
 
 @router.get("/{project_id}/integrations/wecom", response_model=WecomIntegrationOut)

@@ -134,3 +134,29 @@ class ProjectVersionUpdate(BaseModel):
 class VersionNodeCompleteOut(BaseModel):
     version: ProjectVersionOut
     wecom_mention_count: Optional[int] = None
+
+
+class VersionStatusRuleOut(BaseModel):
+    id: str
+    project_id: str
+    status: str
+    node_keys: list[str]
+    sort: int
+    trigger_type: str = "lane"
+
+    model_config = {"from_attributes": True}
+
+
+class VersionStatusRuleItem(BaseModel):
+    status: str = Field(min_length=1, max_length=32)
+    node_keys: list[str] = Field(default_factory=list)
+    sort: int = Field(ge=0, default=0)
+    trigger_type: str = Field(default="lane", max_length=32)
+
+
+class VersionStatusRulesReplaceBody(BaseModel):
+    rules: list[VersionStatusRuleItem]
+
+
+class VersionStatusSyncBatchOut(BaseModel):
+    updated_count: int

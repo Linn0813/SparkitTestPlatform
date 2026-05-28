@@ -241,6 +241,18 @@ export interface RequirementStatusRule {
   trigger_type: RequirementStatusRuleTrigger;
 }
 
+/** 版本状态推导规则 */
+export type VersionStatusRuleTrigger = 'lane' | 'node_completed' | 'status_hold';
+
+export interface VersionStatusRule {
+  id: string;
+  project_id: string;
+  status: VersionStatus;
+  node_keys: string[];
+  sort: number;
+  trigger_type: VersionStatusRuleTrigger;
+}
+
 export interface RequirementWorkflowOut {
   defs: RequirementWorkflowNodeDef[];
   nodes: RequirementNodeProgress[];

@@ -5,10 +5,11 @@ from datetime import date, datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.version_types import REVIEW_NODE_KEYS
 from app.models.project_version import ProjectVersion
 from app.models.template import VersionWorkflowNodeDef
 from app.models.version_workflow import VersionNodeProgress, VersionNodeState, VersionStatus
+from app.services.version_status_derive import derive_version_status
+from app.services.version_status_rules import default_version_status_rule_likes, load_status_rules_for_derive
 from app.services.version_workflow_defs import (
     compute_prerequisites,
     compute_reopen_set,
@@ -143,7 +144,7 @@ async def sync_version_progress_for_new_def(
         db.add(row)
         nodes[node_key] = row
         reconcile_version_workflow_nodes(nodes, defs)
-        await sync_version_status(ver, nodes, defs)
+        await sync_version_status(db, ver, nodes, defs)
         changed = True
     if changed:
         await db.flush()
@@ -160,7 +161,7 @@ async def ensure_version_workflow_nodes_started(
     backfilled = await _backfill_missing_version_nodes(db, version.id, nodes, defs)
     started, reverted = reconcile_version_workflow_nodes(nodes, defs, actor_id=actor_id)
     if backfilled or started or reverted:
-        await sync_version_status(version, nodes, defs)
+        await sync_version_status(db, version, nodes, defs)
         await db.flush()
     return started, reverted
 
@@ -178,26 +179,43 @@ def compute_version_status(
     nodes: dict[str, VersionNodeProgress],
     defs: list[VersionWorkflowNodeDef],
 ) -> VersionStatus:
-    node_keys = {d.node_key for d in defs}
-    has_review_nodes = any(k in node_keys for k in REVIEW_NODE_KEYS)
-
-    if _is_completed(nodes.get("live")):
-        return VersionStatus.ended
-    if has_review_nodes and _is_completed(nodes.get("release_verification")):
-        return VersionStatus.reviewing
-    if _is_completed(nodes.get("development")):
-        return VersionStatus.releasing
-    if _is_completed(nodes.get("planning")):
-        return VersionStatus.developing
-    return VersionStatus.planning
+    """兼容旧调用：使用默认规则推导。"""
+    return derive_version_status(
+        None,
+        nodes,
+        defs,
+        rules=default_version_status_rule_likes(),
+    )
 
 
 async def sync_version_status(
+    db: AsyncSession,
     version: ProjectVersion,
     nodes: dict[str, VersionNodeProgress],
     defs: list[VersionWorkflowNodeDef],
 ) -> None:
-    version.status = compute_version_status(nodes, defs).value
+    rules = await load_status_rules_for_derive(db, version.project_id)
+    version.status = derive_version_status(version, nodes, defs, rules=rules).value
+
+
+async def sync_project_version_statuses(
+    db: AsyncSession,
+    project_id: str,
+) -> int:
+    result = await db.execute(
+        select(ProjectVersion).where(ProjectVersion.project_id == project_id)
+    )
+    updated = 0
+    for ver in result.scalars().all():
+        defs = await load_project_version_workflow_defs(db, project_id, ver.version_type)
+        nodes = await load_version_nodes(db, ver.id)
+        old_status = ver.status
+        await sync_version_status(db, ver, nodes, defs)
+        if ver.status != old_status:
+            updated += 1
+    if updated:
+        await db.flush()
+    return updated
 
 
 async def init_version_workflow(
@@ -365,7 +383,7 @@ async def complete_version_node(
         version.released_at = date.today()
 
     reconcile_version_workflow_nodes(nodes, defs, actor_id=operator_id)
-    await sync_version_status(version, nodes, defs)
+    await sync_version_status(db, version, nodes, defs)
     await db.flush()
     return nodes
 
@@ -398,7 +416,7 @@ async def reopen_version_node(
             dep.operator_id = None
 
     reconcile_version_workflow_nodes(nodes, defs)
-    await sync_version_status(version, nodes, defs)
+    await sync_version_status(db, version, nodes, defs)
     await db.flush()
     return nodes
 

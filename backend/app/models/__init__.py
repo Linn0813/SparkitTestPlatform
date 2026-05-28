@@ -41,6 +41,7 @@ from app.models.template import (
     RequirementRoleDef,
     RequirementWorkflowNodeDef,
     TemplateScene,
+    VersionStatusRule,
     VersionWorkflowNodeDef,
 )
 from app.models.wecom_rule import BugWecomNotifyRule

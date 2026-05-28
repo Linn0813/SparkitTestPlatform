@@ -3,23 +3,34 @@
     <n-text depth="3">请选择项目</n-text>
   </div>
   <div v-else class="wf-settings-root">
-    <n-tabs v-model:value="versionTypeTab" type="segment" style="margin-bottom: 12px">
-      <n-tab-pane name="app_release" tab="应用发版" />
-      <n-tab-pane name="hotfix" tab="热修" />
+    <n-tabs v-model:value="sectionTab" type="line" class="wf-section-tabs">
+      <n-tab-pane name="nodes" tab="工作流节点">
+        <n-tabs v-model:value="versionTypeTab" type="segment" style="margin-bottom: 12px">
+          <n-tab-pane name="app_release" tab="应用发版" />
+          <n-tab-pane name="hotfix" tab="热修" />
+        </n-tabs>
+        <div class="wf-settings-layout">
+          <div class="wf-settings-config">
+            <n-space justify="space-between" align="center" style="margin-bottom: 8px">
+              <n-text strong>节点列表</n-text>
+              <n-button v-if="!readOnly" size="small" type="primary" @click="openCreate">添加节点</n-button>
+            </n-space>
+            <n-data-table size="small" :columns="columns" :data="defs" :loading="loading" />
+          </div>
+          <div class="wf-settings-preview">
+            <n-text depth="3" class="preview-label">工作流预览</n-text>
+            <VersionWorkflowCanvas :nodes="previewNodes" :defs="defs" />
+          </div>
+        </div>
+      </n-tab-pane>
+      <n-tab-pane name="status-rules" tab="状态与节点映射">
+        <VersionStatusRulesSettings
+          :project-id="projectId"
+          :workflow-nodes="unionWorkflowNodes"
+          :read-only="readOnly"
+        />
+      </n-tab-pane>
     </n-tabs>
-    <div class="wf-settings-layout">
-      <div class="wf-settings-config">
-        <n-space justify="space-between" align="center" style="margin-bottom: 8px">
-          <n-text strong>节点列表</n-text>
-          <n-button v-if="!readOnly" size="small" type="primary" @click="openCreate">添加节点</n-button>
-        </n-space>
-        <n-data-table size="small" :columns="columns" :data="defs" :loading="loading" />
-      </div>
-      <div class="wf-settings-preview">
-        <n-text depth="3" class="preview-label">工作流预览</n-text>
-        <VersionWorkflowCanvas :nodes="previewNodes" :defs="defs" />
-      </div>
-    </div>
 
     <n-drawer v-model:show="showModal" :width="480" placement="right">
       <n-drawer-content :title="editing ? '编辑节点' : '添加节点'" closable>
@@ -84,6 +95,7 @@ import {
   updateVersionWorkflowNode,
 } from '@/api/versionWorkflow';
 import VersionWorkflowCanvas from '@/components/VersionWorkflowCanvas.vue';
+import VersionStatusRulesSettings from '@/views/setting/VersionStatusRulesSettings.vue';
 import type { VersionType, VersionWorkflowNodeDef } from '@/types/business';
 import { versionDefsToCanvasNodes } from '@/utils/versionWorkflowLayout';
 
@@ -91,10 +103,13 @@ const props = defineProps<{ projectId: string | null; readOnly?: boolean }>();
 
 const message = useMessage();
 const dialog = useDialog();
+const sectionTab = ref<'nodes' | 'status-rules'>('nodes');
 const versionTypeTab = ref<VersionType>('app_release');
 const loading = ref(false);
 const saving = ref(false);
 const defs = ref<VersionWorkflowNodeDef[]>([]);
+const defsByType = ref<Partial<Record<VersionType, VersionWorkflowNodeDef[]>>>({});
+const unionDefs = ref<VersionWorkflowNodeDef[]>([]);
 const showModal = ref(false);
 const editing = ref<VersionWorkflowNodeDef | null>(null);
 const nodeForm = ref({
@@ -102,6 +117,14 @@ const nodeForm = ref({
   label: '',
   lane_indexes: [0] as number[],
   sort_in_lane: 0,
+});
+
+const unionWorkflowNodes = computed(() => {
+  const byKey = new Map<string, VersionWorkflowNodeDef>();
+  for (const d of unionDefs.value) {
+    if (!byKey.has(d.node_key)) byKey.set(d.node_key, d);
+  }
+  return [...byKey.values()];
 });
 
 const maxLaneIndex = computed(() => {
@@ -146,15 +169,29 @@ const columns = computed<DataTableColumns<VersionWorkflowNodeDef>>(() => {
   return cols;
 });
 
+function applyTabDefs() {
+  defs.value = defsByType.value[versionTypeTab.value] ?? [];
+}
+
 async function load() {
   if (!props.projectId) {
     defs.value = [];
+    defsByType.value = {};
+    unionDefs.value = [];
     return;
   }
   loading.value = true;
   try {
-    const { data } = await listVersionWorkflowNodes(props.projectId, versionTypeTab.value);
-    defs.value = data;
+    const [appRes, hotfixRes] = await Promise.all([
+      listVersionWorkflowNodes(props.projectId, 'app_release'),
+      listVersionWorkflowNodes(props.projectId, 'hotfix'),
+    ]);
+    defsByType.value = {
+      app_release: appRes.data,
+      hotfix: hotfixRes.data,
+    };
+    unionDefs.value = [...appRes.data, ...hotfixRes.data];
+    applyTabDefs();
   } finally {
     loading.value = false;
   }
@@ -250,11 +287,14 @@ function onRemove(row: VersionWorkflowNodeDef) {
 
 onMounted(load);
 watch(() => props.projectId, load);
-watch(versionTypeTab, load);
+watch(versionTypeTab, applyTabDefs);
 </script>
 
 <style scoped>
 .wf-settings-root {
+  min-width: 0;
+}
+.wf-section-tabs {
   min-width: 0;
 }
 .wf-settings-layout {
