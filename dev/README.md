@@ -14,9 +14,9 @@
 
 ## 在自己电脑开发、连部署机数据库
 
-部署机（Mac mini）上保持中间件运行：`./deploy-host.sh`（只需在部署机执行一次）。
+**部署机（Mac mini）** 用本机 `127.0.0.1` 连 Docker MySQL，不要配 `DATABASE_HOST_LAN/WAN`。首次可执行 `./dev/configure-deploy-host-env.sh <Tailscale_IP>`，再 `./dev/run-backend.sh`。
 
-在你**开发机**上：
+在你**开发机（笔记本）**上：
 
 1. 查部署机局域网 IP（在 Mac mini 上）：`ipconfig getifaddr en0`；外网可用 Tailscale `100.x.x.x`
 2. 配置远程库（内网优先，启动时自动探测可达地址）：

@@ -21,7 +21,11 @@ fi
 
 ENV_FILE="$ROOT/backend/.env"
 if [[ -f "$ENV_FILE" ]]; then
-  if grep -qE '^DATABASE_HOST_(LAN|WAN)=[^[:space:]]' "$ENV_FILE" 2>/dev/null; then
+  # 部署机本机库：DATABASE_URL 指向 127.0.0.1 / localhost，不做内网外网探测
+  if grep -qE '^DATABASE_URL=.*@(127\.0\.0\.1|localhost)[:/]' "$ENV_FILE" 2>/dev/null; then
+    :
+  elif grep -qE '^DATABASE_HOST_(LAN|WAN)=[^[:space:]]' "$ENV_FILE" 2>/dev/null; then
+    # 仅开发机连远程部署库：按 LAN → WAN 探测后注入连接串
     DEPLOY_HOST="$("$DEV_DIR/resolve-deploy-database.sh")"
     DB_PORT="$(grep -E '^DATABASE_PORT=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || echo 3307)"
     DB_PORT="${DB_PORT:-3307}"
@@ -29,10 +33,9 @@ if [[ -f "$ENV_FILE" ]]; then
     export MINIO_ENDPOINT="${DEPLOY_HOST}:9000"
     echo "Using deploy host: ${DEPLOY_HOST} (database + MinIO)"
   elif grep -qE '^DATABASE_URL=.*@(1[0-9]{2}\.|172\.|100\.)' "$ENV_FILE" 2>/dev/null; then
-    echo "backend/.env 仍使用固定远程 DATABASE_URL，未配置内网/外网双地址。" >&2
-    echo "请执行: ./dev/link-dev-to-deploy.sh <内网IP> [外网/Tailscale_IP]" >&2
-    echo "例: ./dev/link-dev-to-deploy.sh 172.19.3.69 100.122.228.39" >&2
-    exit 1
+    echo "提示: 开发机连远程库建议配置内网/外网双地址:" >&2
+    echo "  ./dev/link-dev-to-deploy.sh <内网IP> [外网/Tailscale_IP]" >&2
+    echo "部署机请用 127.0.0.1: ./dev/configure-deploy-host-env.sh <Tailscale_IP>" >&2
   fi
 fi
 
