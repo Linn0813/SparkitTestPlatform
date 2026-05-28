@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -102,7 +102,6 @@ from app.services.version_workflow import (
 )
 from app.services.version_status_rules import (
     ensure_project_version_status_rules,
-    load_all_version_workflow_defs_union,
     replace_project_version_status_rules,
 )
 from app.services.version_workflow_defs import (
@@ -816,13 +815,19 @@ async def sync_project_requirement_statuses_api(
 @router.get("/{project_id}/version-status-rules", response_model=list[VersionStatusRuleOut])
 async def list_version_status_rules(
     project_id: str,
+    version_type: str = Query(default="app_release"),
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
     if ctx.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
-    await ensure_project_version_workflow_defs(db, project_id)
-    rules = await ensure_project_version_status_rules(db, project_id)
+    if version_type not in VERSION_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"未知版本类型：{version_type}")
+    await ensure_project_version_workflow_defs(db, project_id, version_type)
+    try:
+        rules = await ensure_project_version_status_rules(db, project_id, version_type)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     return [VersionStatusRuleOut.model_validate(r) for r in rules]
 
 
@@ -830,16 +835,21 @@ async def list_version_status_rules(
 async def replace_version_status_rules_api(
     project_id: str,
     body: VersionStatusRulesReplaceBody,
+    version_type: str = Query(default="app_release"),
     ctx: ProjectContext = Depends(require_project_context_admin),
     db: AsyncSession = Depends(get_db),
 ):
     if ctx.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project mismatch")
-    defs = await load_all_version_workflow_defs_union(db, project_id)
+    if version_type not in VERSION_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"未知版本类型：{version_type}")
+    await ensure_project_version_workflow_defs(db, project_id, version_type)
+    defs = await load_project_version_workflow_defs(db, project_id, version_type)
     try:
         rules = await replace_project_version_status_rules(
             db,
             project_id,
+            version_type,
             [r.model_dump() for r in body.rules],
             workflow_defs=defs,
         )

@@ -32,12 +32,13 @@ def _nodes(states: dict[str, str]) -> dict[str, VersionNodeProgress]:
     return result
 
 
-def _default_status_rules():
-    return default_version_status_rule_likes()
+def _default_status_rules(version_type: str = "app_release"):
+    return default_version_status_rule_likes(version_type)
 
 
-async def _fake_load_status_rules(db, project_id):
-    return _default_status_rules()
+async def _fake_load_status_rules(db, project_id, version_type="app_release"):
+    vt = version_type or "app_release"
+    return _default_status_rules(vt)
 
 
 def _patch_status_rules(wf_module):

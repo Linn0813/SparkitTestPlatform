@@ -23,12 +23,20 @@
           </div>
         </div>
       </n-tab-pane>
-      <n-tab-pane name="status-rules" tab="状态与节点映射">
-        <VersionStatusRulesSettings
-          :project-id="projectId"
-          :workflow-nodes="unionWorkflowNodes"
-          :read-only="readOnly"
-        />
+      <n-tab-pane name="status-rules" tab="状态与节点映射" display-directive="if">
+        <template v-if="sectionTab === 'status-rules'">
+          <n-tabs v-model:value="statusRulesTypeTab" type="segment" style="margin-bottom: 12px">
+            <n-tab-pane name="app_release" tab="应用发版" />
+            <n-tab-pane name="hotfix" tab="热修" />
+          </n-tabs>
+          <VersionStatusRulesSettings
+            :key="statusRulesTypeTab"
+            :project-id="projectId"
+            :version-type="statusRulesTypeTab"
+            :workflow-nodes="defsByType[statusRulesTypeTab] ?? []"
+            :read-only="readOnly"
+          />
+        </template>
       </n-tab-pane>
     </n-tabs>
 
@@ -105,11 +113,11 @@ const message = useMessage();
 const dialog = useDialog();
 const sectionTab = ref<'nodes' | 'status-rules'>('nodes');
 const versionTypeTab = ref<VersionType>('app_release');
+const statusRulesTypeTab = ref<VersionType>('app_release');
 const loading = ref(false);
 const saving = ref(false);
 const defs = ref<VersionWorkflowNodeDef[]>([]);
 const defsByType = ref<Partial<Record<VersionType, VersionWorkflowNodeDef[]>>>({});
-const unionDefs = ref<VersionWorkflowNodeDef[]>([]);
 const showModal = ref(false);
 const editing = ref<VersionWorkflowNodeDef | null>(null);
 const nodeForm = ref({
@@ -117,14 +125,6 @@ const nodeForm = ref({
   label: '',
   lane_indexes: [0] as number[],
   sort_in_lane: 0,
-});
-
-const unionWorkflowNodes = computed(() => {
-  const byKey = new Map<string, VersionWorkflowNodeDef>();
-  for (const d of unionDefs.value) {
-    if (!byKey.has(d.node_key)) byKey.set(d.node_key, d);
-  }
-  return [...byKey.values()];
 });
 
 const maxLaneIndex = computed(() => {
@@ -177,7 +177,6 @@ async function load() {
   if (!props.projectId) {
     defs.value = [];
     defsByType.value = {};
-    unionDefs.value = [];
     return;
   }
   loading.value = true;
@@ -190,7 +189,6 @@ async function load() {
       app_release: appRes.data,
       hotfix: hotfixRes.data,
     };
-    unionDefs.value = [...appRes.data, ...hotfixRes.data];
     applyTabDefs();
   } finally {
     loading.value = false;

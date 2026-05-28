@@ -180,11 +180,12 @@ def compute_version_status(
     defs: list[VersionWorkflowNodeDef],
 ) -> VersionStatus:
     """兼容旧调用：使用默认规则推导。"""
+    version_type = defs[0].version_type if defs else "app_release"
     return derive_version_status(
         None,
         nodes,
         defs,
-        rules=default_version_status_rule_likes(),
+        rules=default_version_status_rule_likes(version_type),
     )
 
 
@@ -194,7 +195,8 @@ async def sync_version_status(
     nodes: dict[str, VersionNodeProgress],
     defs: list[VersionWorkflowNodeDef],
 ) -> None:
-    rules = await load_status_rules_for_derive(db, version.project_id)
+    version_type = version.version_type or "app_release"
+    rules = await load_status_rules_for_derive(db, version.project_id, version_type)
     version.status = derive_version_status(version, nodes, defs, rules=rules).value
 
 

@@ -4,10 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.version_status_rules import (
-    DEFAULT_VERSION_STATUS_RULES,
     VERSION_STATUS_KEYS,
     VERSION_STATUS_RULE_TRIGGERS,
     VersionStatusRuleLike,
+    default_status_rules_for_type,
 )
 from app.constants.version_types import VERSION_TYPES
 from app.models.template import VersionStatusRule, VersionWorkflowNodeDef
@@ -26,40 +26,63 @@ def rules_to_likes(rules: list[VersionStatusRule]) -> list[VersionStatusRuleLike
     ]
 
 
-def default_version_status_rule_likes() -> list[VersionStatusRuleLike]:
-    return list(DEFAULT_VERSION_STATUS_RULES)
+def default_version_status_rule_likes(version_type: str) -> list[VersionStatusRuleLike]:
+    return list(default_status_rules_for_type(version_type))
 
 
-def _default_payload_from_constants() -> list[dict]:
-    return [
-        {
-            "status": r.status,
-            "node_keys": list(r.node_keys),
-            "sort": r.sort,
-            "trigger_type": r.trigger_type,
-        }
-        for r in DEFAULT_VERSION_STATUS_RULES
-    ]
+def _default_payload_for_type(
+    version_type: str,
+    workflow_defs: list[VersionWorkflowNodeDef] | None = None,
+) -> list[dict]:
+    known_keys = {d.node_key for d in (workflow_defs or [])}
+    payload: list[dict] = []
+    for r in default_status_rules_for_type(version_type):
+        node_keys = [k for k in r.node_keys if k in known_keys] if known_keys else list(r.node_keys)
+        if r.trigger_type != "status_hold" and not node_keys:
+            continue
+        payload.append(
+            {
+                "status": r.status,
+                "node_keys": node_keys,
+                "sort": r.sort,
+                "trigger_type": r.trigger_type,
+            }
+        )
+    if not payload and known_keys:
+        fallback_key = next(
+            (k for k in ("planning", "development", "release_verification", "live") if k in known_keys),
+            next(iter(sorted(known_keys))),
+        )
+        payload.append(
+            {
+                "status": "planning",
+                "node_keys": [fallback_key],
+                "sort": 10,
+                "trigger_type": "lane",
+            }
+        )
+    return payload
 
 
-async def load_all_version_workflow_defs_union(
-    db: AsyncSession,
-    project_id: str,
-) -> list[VersionWorkflowNodeDef]:
-    await ensure_project_version_workflow_defs(db, project_id)
-    result: list[VersionWorkflowNodeDef] = []
-    for version_type in VERSION_TYPES:
-        result.extend(await load_project_version_workflow_defs(db, project_id, version_type))
-    return result
+def _validate_version_type(version_type: str) -> str:
+    vt = (version_type or "").strip()
+    if vt not in VERSION_TYPES:
+        raise ValueError(f"未知版本类型：{version_type}")
+    return vt
 
 
 async def load_project_version_status_rules(
     db: AsyncSession,
     project_id: str,
+    version_type: str,
 ) -> list[VersionStatusRule]:
+    vt = _validate_version_type(version_type)
     result = await db.execute(
         select(VersionStatusRule)
-        .where(VersionStatusRule.project_id == project_id)
+        .where(
+            VersionStatusRule.project_id == project_id,
+            VersionStatusRule.version_type == vt,
+        )
         .order_by(VersionStatusRule.sort, VersionStatusRule.id)
     )
     return list(result.scalars().all())
@@ -68,23 +91,28 @@ async def load_project_version_status_rules(
 async def ensure_project_version_status_rules(
     db: AsyncSession,
     project_id: str,
+    version_type: str,
 ) -> list[VersionStatusRule]:
-    existing = await load_project_version_status_rules(db, project_id)
+    vt = _validate_version_type(version_type)
+    existing = await load_project_version_status_rules(db, project_id, vt)
     if existing:
         return existing
-    defs = await load_all_version_workflow_defs_union(db, project_id)
+    await ensure_project_version_workflow_defs(db, project_id, vt)
+    defs = await load_project_version_workflow_defs(db, project_id, vt)
     return await replace_project_version_status_rules(
-        db, project_id, _default_payload_from_constants(), workflow_defs=defs
+        db, project_id, vt, _default_payload_for_type(vt, defs), workflow_defs=defs
     )
 
 
 async def load_status_rules_for_derive(
     db: AsyncSession,
     project_id: str,
+    version_type: str,
 ) -> list[VersionStatusRuleLike]:
-    rows = await load_project_version_status_rules(db, project_id)
+    vt = _validate_version_type(version_type or "app_release")
+    rows = await load_project_version_status_rules(db, project_id, vt)
     if not rows:
-        rows = await ensure_project_version_status_rules(db, project_id)
+        rows = await ensure_project_version_status_rules(db, project_id, vt)
     return rules_to_likes(rows)
 
 
@@ -130,19 +158,29 @@ def validate_version_status_rules_payload(
 async def replace_project_version_status_rules(
     db: AsyncSession,
     project_id: str,
+    version_type: str,
     rules: list[dict],
     *,
     workflow_defs: list[VersionWorkflowNodeDef],
 ) -> list[VersionStatusRule]:
+    vt = _validate_version_type(version_type)
     payload = validate_version_status_rules_payload(rules, workflow_defs=workflow_defs)
-    existing = await load_project_version_status_rules(db, project_id)
+    existing = await load_project_version_status_rules(db, project_id, vt)
     for row in existing:
         await db.delete(row)
     await db.flush()
     rows: list[VersionStatusRule] = []
     for item in payload:
-        row = VersionStatusRule(project_id=project_id, **item)
+        row = VersionStatusRule(project_id=project_id, version_type=vt, **item)
         db.add(row)
         rows.append(row)
     await db.flush()
     return rows
+
+
+async def ensure_all_version_status_rules(
+    db: AsyncSession,
+    project_id: str,
+) -> None:
+    for version_type in VERSION_TYPES:
+        await ensure_project_version_status_rules(db, project_id, version_type)

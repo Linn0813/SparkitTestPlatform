@@ -147,6 +147,7 @@ async def ensure_schema_patches() -> None:
                     CREATE TABLE version_status_rules (
                         id VARCHAR(36) PRIMARY KEY,
                         project_id VARCHAR(36) NOT NULL,
+                        version_type VARCHAR(32) NOT NULL DEFAULT 'app_release',
                         status VARCHAR(32) NOT NULL,
                         node_keys JSON NOT NULL,
                         sort INT NOT NULL DEFAULT 0,
@@ -154,9 +155,25 @@ async def ensure_schema_patches() -> None:
                         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                         INDEX ix_version_status_rules_project_id (project_id),
+                        INDEX ix_version_status_rules_project_type (project_id, version_type),
                         CONSTRAINT fk_version_status_rules_project FOREIGN KEY (project_id) REFERENCES projects(id)
                     )
                     """
                 )
             )
             logger.info("Schema patch applied: version_status_rules table")
+        elif not await _column_exists(conn, "version_status_rules", "version_type"):
+            await conn.execute(
+                text(
+                    "ALTER TABLE version_status_rules "
+                    "ADD COLUMN version_type VARCHAR(32) NOT NULL DEFAULT 'app_release'"
+                )
+            )
+            if not await _index_exists(conn, "version_status_rules", "ix_version_status_rules_project_type"):
+                await conn.execute(
+                    text(
+                        "CREATE INDEX ix_version_status_rules_project_type "
+                        "ON version_status_rules (project_id, version_type)"
+                    )
+                )
+            logger.info("Schema patch applied: version_status_rules.version_type")

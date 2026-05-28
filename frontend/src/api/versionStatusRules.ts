@@ -1,12 +1,19 @@
 import http from './http';
-import type { VersionStatusRule } from '@/types/business';
+import type { VersionStatusRule, VersionType } from '@/types/business';
 
-export function listVersionStatusRules(projectId: string) {
-  return http.get<VersionStatusRule[]>(`/projects/${projectId}/version-status-rules`);
+function versionTypeQuery(versionType: VersionType): string {
+  return `version_type=${encodeURIComponent(versionType)}`;
+}
+
+export function listVersionStatusRules(projectId: string, versionType: VersionType) {
+  return http.get<VersionStatusRule[]>(
+    `/projects/${projectId}/version-status-rules?${versionTypeQuery(versionType)}`
+  );
 }
 
 export function saveVersionStatusRules(
   projectId: string,
+  versionType: VersionType,
   rules: {
     status: string;
     node_keys: string[];
@@ -14,7 +21,10 @@ export function saveVersionStatusRules(
     trigger_type: string;
   }[]
 ) {
-  return http.put<VersionStatusRule[]>(`/projects/${projectId}/version-status-rules`, { rules });
+  return http.put<VersionStatusRule[]>(
+    `/projects/${projectId}/version-status-rules?${versionTypeQuery(versionType)}`,
+    { rules }
+  );
 }
 
 export function syncProjectVersionStatuses(projectId: string) {

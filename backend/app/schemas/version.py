@@ -139,6 +139,7 @@ class VersionNodeCompleteOut(BaseModel):
 class VersionStatusRuleOut(BaseModel):
     id: str
     project_id: str
+    version_type: str
     status: str
     node_keys: list[str]
     sort: int

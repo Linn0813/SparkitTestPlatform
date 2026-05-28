@@ -47,8 +47,8 @@ def _hotfix_defs() -> list[VersionWorkflowNodeDef]:
     ]
 
 
-def _default_rules() -> list[VersionStatusRuleLike]:
-    return default_version_status_rule_likes()
+def _default_rules(version_type: str = "app_release") -> list[VersionStatusRuleLike]:
+    return default_version_status_rule_likes(version_type)
 
 
 def test_derive_status_planning_default():
@@ -110,7 +110,7 @@ def test_hotfix_skips_reviewing_after_release_verification():
             "live": VersionNodeState.pending.value,
         }
     )
-    status = derive_version_status(None, nodes, defs, rules=_default_rules())
+    status = derive_version_status(None, nodes, defs, rules=_default_rules("hotfix"))
     assert status != VersionStatus.reviewing
     assert status == VersionStatus.releasing
 

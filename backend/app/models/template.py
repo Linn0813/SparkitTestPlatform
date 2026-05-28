@@ -95,6 +95,7 @@ class VersionStatusRule(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), nullable=False, index=True)
+    version_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="app_release")
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     node_keys: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

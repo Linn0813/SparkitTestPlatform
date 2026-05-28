@@ -26,6 +26,7 @@ async def migrate() -> None:
                     CREATE TABLE IF NOT EXISTS version_status_rules (
                         id VARCHAR(36) PRIMARY KEY,
                         project_id VARCHAR(36) NOT NULL,
+                        version_type VARCHAR(32) NOT NULL DEFAULT 'app_release',
                         status VARCHAR(32) NOT NULL,
                         node_keys JSON NOT NULL,
                         sort INT NOT NULL DEFAULT 0,
@@ -42,7 +43,7 @@ async def migrate() -> None:
             pass
 
     from app.core.database import async_session_factory
-    from app.services.version_status_rules import ensure_project_version_status_rules
+    from app.services.version_status_rules import ensure_all_version_status_rules
     from app.services.version_workflow_defs import ensure_project_version_workflow_defs
 
     project_ids: list[str] = []
@@ -51,7 +52,7 @@ async def migrate() -> None:
         project_ids = [row[0] for row in result.fetchall()]
         for pid in project_ids:
             await ensure_project_version_workflow_defs(db, pid)
-            await ensure_project_version_status_rules(db, pid)
+            await ensure_all_version_status_rules(db, pid)
         await db.commit()
 
     await engine.dispose()

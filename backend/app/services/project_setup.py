@@ -16,7 +16,7 @@ from app.services.requirement_config import ensure_project_option_defs, ensure_p
 from app.services.requirement_status_rules import ensure_project_status_rules
 from app.services.requirement_workflow import ensure_project_workflow_defs
 from app.services.version_workflow_defs import ensure_project_version_workflow_defs
-from app.services.version_status_rules import ensure_project_version_status_rules
+from app.services.version_status_rules import ensure_all_version_status_rules
 from app.models.wecom_rule import BugWecomNotifyRule
 from app.services.defaults import DEFAULT_BUG_FIELDS, DEFAULT_BUG_STATUSES, DEFAULT_CASE_FIELDS, DEFAULT_REQUIREMENT_FIELDS
 from app.services.wecom_notify import (
@@ -125,7 +125,7 @@ async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
 
     await ensure_project_workflow_defs(db, project_id)
     await ensure_project_version_workflow_defs(db, project_id)
-    await ensure_project_version_status_rules(db, project_id)
+    await ensure_all_version_status_rules(db, project_id)
     await ensure_project_status_rules(db, project_id)
     await ensure_project_role_defs(db, project_id)
     await ensure_project_option_defs(db, project_id)

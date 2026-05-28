@@ -5,7 +5,7 @@
         <n-text strong>状态与节点映射</n-text>
         <n-text depth="3" style="display: block; margin-top: 4px; font-size: 12px; max-width: 720px">
           按优先级从小到大匹配。当前阶段节点：阶段含关联节点且仍有未完成项时命中。
-          节点已完成：关联节点全部完成后命中。规则中引用的节点若不在当前版本类型工作流内则自动跳过。
+          节点已完成：关联节点全部完成后命中。关联节点仅来自当前版本类型的工作流。
         </n-text>
       </div>
       <n-space v-if="!readOnly" :size="8">
@@ -39,13 +39,19 @@ import {
   syncProjectVersionStatuses,
 } from '@/api/versionStatusRules';
 import { VERSION_STATUS_OPTIONS } from '@/constants/versionStatus';
-import type { VersionStatus, VersionStatusRule, VersionWorkflowNodeDef } from '@/types/business';
+import type { VersionStatus, VersionStatusRule, VersionType, VersionWorkflowNodeDef } from '@/types/business';
 
-const props = defineProps<{
-  projectId: string | null;
-  workflowNodes: VersionWorkflowNodeDef[];
-  readOnly?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    projectId: string | null;
+    versionType: VersionType;
+    workflowNodes: VersionWorkflowNodeDef[];
+    readOnly?: boolean;
+  }>(),
+  {
+    versionType: 'app_release',
+  }
+);
 
 const message = useMessage();
 const loading = ref(false);
@@ -92,13 +98,13 @@ function toDraft(rules: VersionStatusRule[]): DraftRule[] {
 }
 
 async function load() {
-  if (!props.projectId) {
+  if (!props.projectId || !props.versionType) {
     draft.value = [];
     return;
   }
   loading.value = true;
   try {
-    const { data } = await listVersionStatusRules(props.projectId);
+    const { data } = await listVersionStatusRules(props.projectId, props.versionType);
     draft.value = toDraft(data);
   } finally {
     loading.value = false;
@@ -133,6 +139,7 @@ async function onSave() {
   try {
     const { data } = await saveVersionStatusRules(
       props.projectId,
+      props.versionType,
       draft.value.map((r) => ({
         status: r.status,
         node_keys: r.node_keys,
@@ -249,6 +256,7 @@ const columns = computed<DataTableColumns<DraftRule>>(() => {
 
 onMounted(load);
 watch(() => props.projectId, load);
+watch(() => props.versionType, load);
 </script>
 
 <style scoped>

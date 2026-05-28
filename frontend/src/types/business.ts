@@ -247,6 +247,7 @@ export type VersionStatusRuleTrigger = 'lane' | 'node_completed' | 'status_hold'
 export interface VersionStatusRule {
   id: string;
   project_id: string;
+  version_type: VersionType;
   status: VersionStatus;
   node_keys: string[];
   sort: number;
