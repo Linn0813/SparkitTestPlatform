@@ -5,10 +5,24 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.version_nodes import VERSION_NODE_KEYS
 from app.core.database import get_db
 from app.core.deps import ProjectContext, require_project_context, require_project_context_catalog
 from app.models.project_version import ProjectVersion
-from app.schemas.version import ProjectVersionCreate, ProjectVersionOut, ProjectVersionUpdate
+from app.schemas.version import (
+    ProjectVersionCreate,
+    ProjectVersionOut,
+    ProjectVersionUpdate,
+    VersionNodeCompleteOut,
+)
+from app.services.version_serializers import version_to_out
+from app.services.version_wecom_notify import notify_version_node_complete
+from app.services.version_workflow import (
+    VersionWorkflowError,
+    complete_version_node,
+    init_version_workflow,
+    reopen_version_node,
+)
 from app.services.versions import count_version_references
 
 router = APIRouter(prefix="/versions", tags=["versions"])
@@ -21,6 +35,13 @@ async def _next_version_num(project_id: str, db: AsyncSession) -> int:
     return (result.scalar() or 0) + 1
 
 
+async def _get_version_or_404(version_id: str, ctx: ProjectContext, db: AsyncSession) -> ProjectVersion:
+    row = await db.get(ProjectVersion, version_id)
+    if not row or row.project_id != ctx.project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+    return row
+
+
 @router.get("", response_model=list[ProjectVersionOut])
 async def list_versions(
     ctx: ProjectContext = Depends(require_project_context),
@@ -31,7 +52,8 @@ async def list_versions(
         .where(ProjectVersion.project_id == ctx.project_id)
         .order_by(ProjectVersion.num.desc())
     )
-    return [ProjectVersionOut.model_validate(r) for r in result.scalars().all()]
+    versions = result.scalars().all()
+    return [await version_to_out(db, v) for v in versions]
 
 
 @router.post("", response_model=ProjectVersionOut, status_code=status.HTTP_201_CREATED)
@@ -55,8 +77,9 @@ async def create_version(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Version name already exists in this project",
         ) from e
+    await init_version_workflow(db, row.id)
     await db.refresh(row)
-    return ProjectVersionOut.model_validate(row)
+    return await version_to_out(db, row)
 
 
 @router.get("/{version_id}", response_model=ProjectVersionOut)
@@ -65,10 +88,8 @@ async def get_version(
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
-    row = await db.get(ProjectVersion, version_id)
-    if not row or row.project_id != ctx.project_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
-    return ProjectVersionOut.model_validate(row)
+    row = await _get_version_or_404(version_id, ctx, db)
+    return await version_to_out(db, row)
 
 
 @router.patch("/{version_id}", response_model=ProjectVersionOut)
@@ -78,9 +99,7 @@ async def update_version(
     ctx: ProjectContext = Depends(require_project_context_catalog),
     db: AsyncSession = Depends(get_db),
 ):
-    row = await db.get(ProjectVersion, version_id)
-    if not row or row.project_id != ctx.project_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+    row = await _get_version_or_404(version_id, ctx, db)
     data = body.model_dump(exclude_unset=True)
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
@@ -96,7 +115,7 @@ async def update_version(
             detail="Version name already exists in this project",
         ) from e
     await db.refresh(row)
-    return ProjectVersionOut.model_validate(row)
+    return await version_to_out(db, row)
 
 
 @router.delete("/{version_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -105,9 +124,7 @@ async def delete_version(
     ctx: ProjectContext = Depends(require_project_context_catalog),
     db: AsyncSession = Depends(get_db),
 ):
-    row = await db.get(ProjectVersion, version_id)
-    if not row or row.project_id != ctx.project_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found")
+    row = await _get_version_or_404(version_id, ctx, db)
     refs = await count_version_references(db, version_id)
     if refs > 0:
         raise HTTPException(
@@ -115,3 +132,41 @@ async def delete_version(
             detail=f"Version is referenced by {refs} record(s); unlink first",
         )
     await db.delete(row)
+
+
+@router.post("/{version_id}/nodes/{node_key}/complete", response_model=VersionNodeCompleteOut)
+async def complete_version_node_endpoint(
+    version_id: str,
+    node_key: str,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    if node_key not in VERSION_NODE_KEYS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown node")
+    row = await _get_version_or_404(version_id, ctx, db)
+    try:
+        await complete_version_node(db, row, node_key, ctx.user.id)
+    except VersionWorkflowError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    mention_count = await notify_version_node_complete(db, row, node_key, ctx.user.id)
+    out = await version_to_out(db, row)
+    return VersionNodeCompleteOut(version=out, wecom_mention_count=mention_count)
+
+
+@router.post("/{version_id}/nodes/{node_key}/reopen", response_model=ProjectVersionOut)
+async def reopen_version_node_endpoint(
+    version_id: str,
+    node_key: str,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    if node_key not in VERSION_NODE_KEYS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown node")
+    row = await _get_version_or_404(version_id, ctx, db)
+    try:
+        await reopen_version_node(db, row, node_key)
+    except VersionWorkflowError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    return await version_to_out(db, row)

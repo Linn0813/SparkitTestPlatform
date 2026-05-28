@@ -13,6 +13,13 @@
       </n-space>
     </template>
 
+    <VersionWorkflowPanel
+      v-if="version"
+      :version="version"
+      :can-edit="canCatalog"
+      @updated="onVersionWorkflowUpdated"
+    />
+
     <n-tabs v-model:value="activeTab" type="line">
       <n-tab-pane name="requirements" tab="需求">
         <n-data-table
@@ -85,6 +92,8 @@ import { listRequirements } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import { getVersion } from '@/api/versions';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
+import VersionWorkflowPanel from '@/components/VersionWorkflowPanel.vue';
+import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
 import type { BugItem, BugStatusDef, ProjectVersion, Requirement } from '@/types/business';
 import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
@@ -95,6 +104,8 @@ import { linkLabel, parseUrlsFromText } from '@/utils/parseUrls';
 const route = useRoute();
 const router = useRouter();
 const ctx = useContextStore();
+const { canManageCatalog } = usePermissions();
+const canCatalog = computed(() => canManageCatalog(ctx.projectId));
 const message = useMessage();
 
 const versionId = computed(() => route.params.id as string);
@@ -292,6 +303,10 @@ async function onBugDeleted() {
 
 async function onBugUpdated() {
   await loadBugs();
+}
+
+function onVersionWorkflowUpdated(v: ProjectVersion) {
+  version.value = v;
 }
 
 async function loadVersion() {

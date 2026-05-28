@@ -28,6 +28,7 @@ from app.models.requirement import (
 from app.models.stored_file import StoredFile
 from app.models.template import BugStatus, ProjectFieldTemplate, ProjectIntegration, RequirementWorkflowNodeDef
 from app.models.user import User
+from app.models.version_workflow import VersionWecomNotifyRule
 from app.models.wecom_rule import BugWecomNotifyRule
 from app.services.file_refs import (
     file_keys_from_bug,
@@ -140,6 +141,7 @@ async def _delete_case_modules(db: AsyncSession, project_id: str) -> None:
 async def _delete_project_meta(db: AsyncSession, project_id: str) -> None:
     await db.execute(delete(ProjectVersion).where(ProjectVersion.project_id == project_id))
     await db.execute(delete(BugWecomNotifyRule).where(BugWecomNotifyRule.project_id == project_id))
+    await db.execute(delete(VersionWecomNotifyRule).where(VersionWecomNotifyRule.project_id == project_id))
     await db.execute(delete(ProjectIntegration).where(ProjectIntegration.project_id == project_id))
     await db.execute(delete(BugStatus).where(BugStatus.project_id == project_id))
     await db.execute(delete(RequirementWorkflowNodeDef).where(RequirementWorkflowNodeDef.project_id == project_id))

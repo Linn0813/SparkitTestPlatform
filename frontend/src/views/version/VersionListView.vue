@@ -45,6 +45,7 @@ import {
   NAlert,
   NButton,
   NCard,
+  NTag,
   NDataTable,
   NDatePicker,
   NForm,
@@ -61,6 +62,7 @@ import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
 import type { ProjectVersion } from '@/types/business';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
+import { versionStatusLabel, versionStatusTagType } from '@/constants/versionStatus';
 import { formatDateOnly } from '@/utils/formatDateOnly';
 
 const router = useRouter();
@@ -92,6 +94,17 @@ const columns = computed<DataTableColumns<ProjectVersion>>(() => [
           onClick: () => router.push({ name: 'version-detail', params: { id: row.id } }),
         },
         () => row.name
+      ),
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 100,
+    render: (row) =>
+      h(
+        NTag,
+        { size: 'small', type: versionStatusTagType(row.status), bordered: false },
+        () => versionStatusLabel(row.status)
       ),
   },
   {

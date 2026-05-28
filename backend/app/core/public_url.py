@@ -30,3 +30,7 @@ def build_bug_detail_url(bug_id: str, *, project_url: str | None = None) -> str:
 
 def build_requirement_detail_url(requirement_id: str, *, project_url: str | None = None) -> str:
     return f"{resolve_public_base_url(project_url)}/requirements?id={requirement_id}"
+
+
+def build_version_detail_url(version_id: str, *, project_url: str | None = None) -> str:
+    return f"{resolve_public_base_url(project_url)}/versions/{version_id}"

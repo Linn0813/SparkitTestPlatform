@@ -13,6 +13,12 @@ from app.models.case import CaseModule, CasePriority, TestCase
 from app.models.plan import ExecuteResult, PlanCase, PlanCaseResult, PlanStatus, TestPlan
 from app.models.project import Project, ProjectMember, ProjectRole
 from app.models.project_version import ProjectVersion
+from app.models.version_workflow import (
+    VersionNodeProgress,
+    VersionNodeState,
+    VersionStatus,
+    VersionWecomNotifyRule,
+)
 from app.models.requirement import (
     BugPlanLink,
     BugRequirementLink,
@@ -61,6 +67,10 @@ __all__ = [
     "PlanCase",
     "PlanCaseResult",
     "ProjectVersion",
+    "VersionStatus",
+    "VersionNodeState",
+    "VersionNodeProgress",
+    "VersionWecomNotifyRule",
     "Requirement",
     "RequirementPriority",
     "RequirementType",

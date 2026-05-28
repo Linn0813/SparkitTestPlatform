@@ -68,12 +68,33 @@ export interface CaseStep {
   expected: string;
 }
 
+export type VersionStatus = 'planning' | 'developing' | 'releasing' | 'reviewing' | 'ended';
+
+export type VersionNodeKey =
+  | 'planning'
+  | 'development'
+  | 'release_verification'
+  | 'gp_review'
+  | 'as_review'
+  | 'website_link'
+  | 'live';
+
+export type VersionNodeState = 'pending' | 'completed';
+
+export interface VersionNodeProgress {
+  node_key: VersionNodeKey;
+  state: VersionNodeState;
+  completed_at?: string | null;
+  operator_id?: string | null;
+}
+
 export interface VersionBrief {
   id: string;
   num: number;
   name: string;
   /** 上线日期 YYYY-MM-DD */
   released_at?: string | null;
+  status?: VersionStatus;
 }
 
 export interface ProjectVersion {
@@ -81,11 +102,30 @@ export interface ProjectVersion {
   project_id: string;
   num: number;
   name: string;
+  status: VersionStatus;
+  nodes: VersionNodeProgress[];
   /** 上线日期 YYYY-MM-DD */
   released_at: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface VersionWecomIntegration {
+  project_id: string;
+  version_wecom_webhook_url?: string | null;
+  version_wecom_enabled: boolean;
+  app_public_url?: string | null;
+}
+
+export interface VersionWecomNotifyRule {
+  id: string;
+  project_id: string;
+  event_key: string;
+  event_label: string;
+  message_template: string;
+  notify_user_ids: string[];
+  enabled: boolean;
 }
 
 export interface UserBrief {

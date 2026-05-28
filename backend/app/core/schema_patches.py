@@ -49,6 +49,21 @@ async def ensure_schema_patches() -> None:
             "selected_role_keys",
             "ALTER TABLE requirements ADD COLUMN selected_role_keys JSON NULL",
         ),
+        (
+            "project_versions",
+            "status",
+            "ALTER TABLE project_versions ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'planning'",
+        ),
+        (
+            "project_integrations",
+            "version_wecom_webhook_url",
+            "ALTER TABLE project_integrations ADD COLUMN version_wecom_webhook_url TEXT NULL",
+        ),
+        (
+            "project_integrations",
+            "version_wecom_enabled",
+            "ALTER TABLE project_integrations ADD COLUMN version_wecom_enabled TINYINT(1) NOT NULL DEFAULT 0",
+        ),
     )
     async with engine.begin() as conn:
         for table, column, ddl in column_patches:

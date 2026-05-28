@@ -13,6 +13,7 @@ from app.api.v1 import (
     requirements,
     templates,
     users,
+    version_wecom,
     versions,
     wecom_rules,
 )
@@ -25,6 +26,7 @@ api_router.include_router(templates.router)
 api_router.include_router(cases.router)
 api_router.include_router(requirements.router)
 api_router.include_router(versions.router)
+api_router.include_router(version_wecom.router)
 api_router.include_router(plans.router)
 api_router.include_router(bugs.router)
 api_router.include_router(files.router)
