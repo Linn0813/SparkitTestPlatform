@@ -86,14 +86,14 @@
               <n-select
                 v-if="isTaskEditable"
                 class="task-field task-field--assignee"
-                :value="effectiveAssigneeId(task)"
+                :value="task.assignee_id"
                 :options="memberOptions"
                 size="small"
                 filterable
                 clearable
                 placeholder="选择负责人"
                 :disabled="isTaskSaving(task.id)"
-                @update:value="(v: string | null) => onTaskFieldChange(task, { assignee_id: v })"
+                @update:value="(v: string | null) => onAssigneeChange(task, v)"
               />
               <n-tag
                 v-else-if="assigneeLabel(task) !== '—'"
@@ -300,22 +300,19 @@ function legacyRoleUser(roleKey: string): { id: string; name?: string; email?: s
   return u?.id ? u : null;
 }
 
-function effectiveAssigneeId(task: RequirementNodeTask): string | null {
-  if (task.assignee_id) return task.assignee_id;
-  const ids = props.requirement.role_assignee_ids?.[task.role_key];
-  if (ids?.[0]) return ids[0];
-  return legacyRoleUser(task.role_key)?.id ?? null;
-}
-
 function assigneeLabel(task: RequirementNodeTask): string {
   const u = task.assignee;
   if (u?.name?.trim()) return u.name.trim();
-  const effectiveId = effectiveAssigneeId(task);
-  if (effectiveId) {
-    const opt = props.memberOptions.find((o) => o.value === effectiveId);
-    return opt?.label ?? effectiveId;
+  if (task.assignee_id) {
+    const opt = props.memberOptions.find((o) => o.value === task.assignee_id);
+    return opt?.label ?? task.assignee_id;
   }
   return '—';
+}
+
+async function onAssigneeChange(task: RequirementNodeTask, value: string | null) {
+  if (value === task.assignee_id || (value == null && task.assignee_id == null)) return;
+  await onTaskFieldChange(task, { assignee_id: value });
 }
 
 function formatDate(iso: string | null): string {
