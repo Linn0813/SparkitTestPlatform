@@ -74,7 +74,7 @@ export type VersionStatus = 'planning' | 'developing' | 'releasing' | 'reviewing
 
 export type VersionNodeKey = string;
 
-export type VersionNodeState = 'pending' | 'completed';
+export type VersionNodeState = 'pending' | 'in_progress' | 'completed';
 
 export interface VersionNodeProgress {
   node_key: string;
@@ -133,11 +133,18 @@ export interface VersionWecomIntegration {
 export interface VersionWecomNotifyRule {
   id: string;
   project_id: string;
-  event_key: string;
-  event_label: string;
+  node_key: string;
+  node_label: string;
   message_template: string;
   notify_user_ids: string[];
   enabled: boolean;
+}
+
+export interface VersionWecomNotifyRuleOption {
+  node_key: string;
+  node_label: string;
+  default_message_template: string;
+  configured: boolean;
 }
 
 export interface UserBrief {

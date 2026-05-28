@@ -53,6 +53,7 @@ export function canCompleteVersionNode(
 ): boolean {
   const node = nodes.find((n) => n.node_key === nodeKey);
   if (!node || node.state === 'completed') return false;
+  if (node.state !== 'pending' && node.state !== 'in_progress') return false;
   const byKey = new Map(nodes.map((n) => [n.node_key, n.state]));
   return PREREQUISITES[nodeKey].every((k) => byKey.get(k) === 'completed');
 }

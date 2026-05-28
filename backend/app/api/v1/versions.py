@@ -22,6 +22,7 @@ from app.services.version_wecom_notify import notify_version_node_complete
 from app.services.version_workflow import (
     VersionWorkflowError,
     complete_version_node,
+    ensure_version_workflow_nodes_started,
     init_version_workflow,
     reopen_version_node,
     resync_version_workflow_on_type_change,
@@ -85,6 +86,7 @@ async def create_version(
             detail="Version name already exists in this project",
         ) from e
     await init_version_workflow(db, row.id, ctx.project_id, body.version_type)
+    await ensure_version_workflow_nodes_started(db, row, actor_id=ctx.user.id)
     await db.refresh(row)
     return await version_to_out(db, row)
 
@@ -96,6 +98,7 @@ async def get_version(
     db: AsyncSession = Depends(get_db),
 ):
     row = await _get_version_or_404(version_id, ctx, db)
+    await ensure_version_workflow_nodes_started(db, row, actor_id=ctx.user.id)
     return await version_to_out(db, row)
 
 

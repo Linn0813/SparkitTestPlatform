@@ -113,3 +113,29 @@ async def ensure_schema_patches() -> None:
                         "Schema patch: backfilled selected_role_keys for %s requirements",
                         count,
                     )
+
+        table = "version_wecom_notify_rules"
+        if await _column_exists(conn, table, "event_key") and not await _column_exists(conn, table, "node_key"):
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN node_key VARCHAR(64) NULL"))
+            await conn.execute(
+                text(
+                    f"""
+                    UPDATE {table}
+                    SET node_key = REPLACE(event_key, '_complete', '')
+                    WHERE node_key IS NULL
+                    """
+                )
+            )
+            logger.info("Schema patch applied: version_wecom_notify_rules.node_key backfill")
+
+        if await _column_exists(conn, table, "node_key") and await _column_exists(conn, table, "event_key"):
+            if await _index_exists(conn, table, "uq_version_wecom_event"):
+                await conn.execute(text(f"ALTER TABLE {table} DROP INDEX uq_version_wecom_event"))
+                logger.info("Schema patch applied: dropped uq_version_wecom_event")
+            await conn.execute(text(f"ALTER TABLE {table} DROP COLUMN event_key"))
+            await conn.execute(text(f"ALTER TABLE {table} MODIFY COLUMN node_key VARCHAR(64) NOT NULL"))
+            if not await _index_exists(conn, table, "uq_version_wecom_node"):
+                await conn.execute(
+                    text(f"ALTER TABLE {table} ADD UNIQUE KEY uq_version_wecom_node (project_id, node_key)")
+                )
+                logger.info("Schema patch applied: uq_version_wecom_node")

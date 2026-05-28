@@ -4,8 +4,6 @@ from pydantic import BaseModel, Field
 
 from app.schemas.common import ORMBase
 
-VersionWecomEventKey = str
-
 
 class VersionWecomIntegrationOut(BaseModel):
     project_id: str
@@ -27,14 +25,28 @@ class VersionWecomTestRequest(BaseModel):
 class VersionWecomNotifyRuleOut(ORMBase):
     id: str
     project_id: str
-    event_key: VersionWecomEventKey
-    event_label: str
+    node_key: str
+    node_label: str
     message_template: str
     notify_user_ids: list[str] = Field(default_factory=list)
     enabled: bool
+
+
+class VersionWecomNotifyRuleCreate(BaseModel):
+    node_key: str
+    message_template: str
+    notify_user_ids: list[str] = Field(default_factory=list)
+    enabled: bool = True
 
 
 class VersionWecomNotifyRuleUpdate(BaseModel):
     message_template: Optional[str] = None
     notify_user_ids: Optional[list[str]] = None
     enabled: Optional[bool] = None
+
+
+class VersionWecomNotifyRuleOptionOut(BaseModel):
+    node_key: str
+    node_label: str
+    default_message_template: str
+    configured: bool

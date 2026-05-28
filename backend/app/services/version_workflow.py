@@ -31,6 +31,140 @@ def _is_completed(node: VersionNodeProgress | None) -> bool:
     return bool(node and node.state == VersionNodeState.completed.value)
 
 
+def _is_in_progress(node: VersionNodeProgress | None) -> bool:
+    return bool(node and node.state == VersionNodeState.in_progress.value)
+
+
+def _prerequisites_met(
+    nodes: dict[str, VersionNodeProgress],
+    node_key: str,
+    defs: list[VersionWorkflowNodeDef],
+) -> bool:
+    prereqs = compute_prerequisites(defs)
+    return all(_is_completed(nodes.get(p)) for p in prereqs.get(node_key, ()))
+
+
+def auto_start_ready_version_nodes(
+    nodes: dict[str, VersionNodeProgress],
+    defs: list[VersionWorkflowNodeDef],
+    *,
+    actor_id: str | None = None,
+) -> list[str]:
+    """前置节点均已完成后，将 pending 节点自动置为进行中。"""
+    started: list[str] = []
+    for d in defs:
+        node = nodes.get(d.node_key)
+        if not node or node.state != VersionNodeState.pending.value:
+            continue
+        if not _prerequisites_met(nodes, d.node_key, defs):
+            continue
+        node.state = VersionNodeState.in_progress.value
+        if actor_id:
+            node.operator_id = actor_id
+        started.append(d.node_key)
+    return started
+
+
+def _revert_stale_in_progress_version_nodes(
+    nodes: dict[str, VersionNodeProgress],
+    defs: list[VersionWorkflowNodeDef],
+) -> list[str]:
+    """前置未满足时，将误保留的进行中节点回退为未开始。"""
+    reverted: list[str] = []
+    for d in defs:
+        node = nodes.get(d.node_key)
+        if not node or not _is_in_progress(node):
+            continue
+        if _prerequisites_met(nodes, d.node_key, defs):
+            continue
+        node.state = VersionNodeState.pending.value
+        node.operator_id = None
+        reverted.append(d.node_key)
+    return reverted
+
+
+def reconcile_version_workflow_nodes(
+    nodes: dict[str, VersionNodeProgress],
+    defs: list[VersionWorkflowNodeDef],
+    *,
+    actor_id: str | None = None,
+) -> tuple[list[str], list[str]]:
+    reverted = _revert_stale_in_progress_version_nodes(nodes, defs)
+    started = auto_start_ready_version_nodes(nodes, defs, actor_id=actor_id)
+    return started, reverted
+
+
+async def _backfill_missing_version_nodes(
+    db: AsyncSession,
+    version_id: str,
+    nodes: dict[str, VersionNodeProgress],
+    defs: list[VersionWorkflowNodeDef],
+) -> list[str]:
+    added: list[str] = []
+    for d in defs:
+        if d.node_key in nodes:
+            continue
+        row = VersionNodeProgress(
+            version_id=version_id,
+            node_key=d.node_key,
+            state=VersionNodeState.pending.value,
+        )
+        db.add(row)
+        nodes[d.node_key] = row
+        added.append(d.node_key)
+    if added:
+        await db.flush()
+    return added
+
+
+async def sync_version_progress_for_new_def(
+    db: AsyncSession,
+    project_id: str,
+    version_type: str,
+    node_key: str,
+) -> None:
+    defs = await load_project_version_workflow_defs(db, project_id, version_type)
+    result = await db.execute(
+        select(ProjectVersion).where(
+            ProjectVersion.project_id == project_id,
+            ProjectVersion.version_type == version_type,
+        )
+    )
+    changed = False
+    for ver in result.scalars().all():
+        nodes = await load_version_nodes(db, ver.id)
+        if node_key in nodes:
+            continue
+        row = VersionNodeProgress(
+            version_id=ver.id,
+            node_key=node_key,
+            state=VersionNodeState.pending.value,
+        )
+        db.add(row)
+        nodes[node_key] = row
+        reconcile_version_workflow_nodes(nodes, defs)
+        await sync_version_status(ver, nodes, defs)
+        changed = True
+    if changed:
+        await db.flush()
+
+
+async def ensure_version_workflow_nodes_started(
+    db: AsyncSession,
+    version: ProjectVersion,
+    *,
+    actor_id: str | None = None,
+) -> tuple[list[str], list[str]]:
+    defs = await load_project_version_workflow_defs(db, version.project_id, version.version_type)
+    nodes = await load_version_nodes(db, version.id)
+    backfilled = await _backfill_missing_version_nodes(db, version.id, nodes, defs)
+    started, reverted = reconcile_version_workflow_nodes(nodes, defs, actor_id=actor_id)
+    if backfilled or started or reverted:
+        await sync_version_status(version, nodes, defs)
+        await db.flush()
+    return started, reverted
+
+
 async def load_version_nodes(
     db: AsyncSession, version_id: str
 ) -> dict[str, VersionNodeProgress]:
@@ -98,6 +232,49 @@ async def reset_version_workflow(
     version.status = VersionStatus.planning.value
     await init_version_workflow(db, version.id, version.project_id, version.version_type)
     await db.flush()
+
+
+async def assert_version_workflow_node_deletable(
+    db: AsyncSession,
+    project_id: str,
+    version_type: str,
+    node_key: str,
+) -> None:
+    from sqlalchemy import func
+
+    in_progress = await db.execute(
+        select(func.count())
+        .select_from(VersionNodeProgress)
+        .join(ProjectVersion, ProjectVersion.id == VersionNodeProgress.version_id)
+        .where(
+            ProjectVersion.project_id == project_id,
+            ProjectVersion.version_type == version_type,
+            VersionNodeProgress.node_key == node_key,
+            VersionNodeProgress.state == VersionNodeState.in_progress.value,
+        )
+    )
+    if (in_progress.scalar() or 0) > 0:
+        raise VersionWorkflowError("节点进行中，不可删除")
+
+
+async def delete_version_node_progress_for_def(
+    db: AsyncSession,
+    project_id: str,
+    version_type: str,
+    node_key: str,
+) -> None:
+    from sqlalchemy import delete
+
+    version_ids = select(ProjectVersion.id).where(
+        ProjectVersion.project_id == project_id,
+        ProjectVersion.version_type == version_type,
+    )
+    await db.execute(
+        delete(VersionNodeProgress).where(
+            VersionNodeProgress.node_key == node_key,
+            VersionNodeProgress.version_id.in_(version_ids),
+        )
+    )
 
 
 async def resync_version_workflow_on_type_change(
@@ -172,6 +349,11 @@ async def complete_version_node(
         raise VersionWorkflowError("节点不存在")
     if node.state == VersionNodeState.completed.value:
         raise VersionWorkflowError("节点已完成")
+    if node.state not in (
+        VersionNodeState.pending.value,
+        VersionNodeState.in_progress.value,
+    ):
+        raise VersionWorkflowError("节点当前不可完成")
 
     _check_prerequisites(nodes, node_key, defs)
 
@@ -182,6 +364,7 @@ async def complete_version_node(
     if node_key == "live" and version.released_at is None:
         version.released_at = date.today()
 
+    reconcile_version_workflow_nodes(nodes, defs, actor_id=operator_id)
     await sync_version_status(version, nodes, defs)
     await db.flush()
     return nodes
@@ -206,11 +389,15 @@ async def reopen_version_node(
 
     for dep_key in compute_reopen_set(defs, node_key):
         dep = nodes.get(dep_key)
-        if dep and dep.state == VersionNodeState.completed.value:
+        if dep and dep.state in (
+            VersionNodeState.completed.value,
+            VersionNodeState.in_progress.value,
+        ):
             dep.state = VersionNodeState.pending.value
             dep.completed_at = None
             dep.operator_id = None
 
+    reconcile_version_workflow_nodes(nodes, defs)
     await sync_version_status(version, nodes, defs)
     await db.flush()
     return nodes

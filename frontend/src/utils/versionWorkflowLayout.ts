@@ -91,6 +91,7 @@ export function canCompleteVersionNode(
 ): boolean {
   const node = nodes.find((n) => n.node_key === nodeKey);
   if (!node || node.state === 'completed') return false;
+  if (node.state !== 'pending' && node.state !== 'in_progress') return false;
   const byKey = new Map(nodes.map((n) => [n.node_key, n.state]));
   const prereqs = buildVersionPrerequisites(defs);
   return (prereqs[nodeKey] ?? []).every((k) => byKey.get(k) === 'completed');
@@ -194,7 +195,7 @@ export function versionDefsToCanvasNodes(
     blocks_lane_gate: true,
     sort_in_lane: d.sort_in_lane,
     enabled: true,
-    state: (stateByKey.get(d.node_key) === 'completed' ? 'completed' : 'pending') as RequirementNodeState,
+    state: (stateByKey.get(d.node_key) ?? 'pending') as RequirementNodeState,
   }));
   return expandWorkflowCanvasNodes(sources);
 }

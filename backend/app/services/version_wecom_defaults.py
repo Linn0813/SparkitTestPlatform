@@ -58,5 +58,17 @@ WECOM_EVENT_LABELS: dict[str, str] = {
 }
 
 
+def default_template_for_node(node_key: str, label: str) -> str:
+    legacy_key = f"{node_key}_complete"
+    if legacy_key in DEFAULT_VERSION_WECOM_TEMPLATES:
+        return DEFAULT_VERSION_WECOM_TEMPLATES[legacy_key]
+    return (
+        f"【{label}完成】{{version}}\n"
+        "项目：{project}\n"
+        "操作人：{operator}\n"
+        "{link}"
+    )
+
+
 def all_default_templates() -> list[tuple[str, str]]:
     return [(key, DEFAULT_VERSION_WECOM_TEMPLATES[key]) for key in VERSION_WECOM_EVENT_KEYS]

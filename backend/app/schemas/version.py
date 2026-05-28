@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.schemas.common import ORMBase
 
 VersionStatusLiteral = Literal["planning", "developing", "releasing", "reviewing", "ended"]
-VersionNodeStateLiteral = Literal["pending", "completed"]
+VersionNodeStateLiteral = Literal["pending", "in_progress", "completed"]
 VersionTypeLiteral = Literal["app_release", "hotfix"]
 
 

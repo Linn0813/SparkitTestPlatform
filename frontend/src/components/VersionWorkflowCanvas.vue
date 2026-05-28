@@ -154,7 +154,8 @@ function nodeClass(node: WorkflowCanvasNode) {
 
 function nodeMeta(nodeKey: string): string {
   const prog = progressByKey.value.get(nodeKey);
-  const parts = [nodeStateLabel(prog?.state === 'completed' ? 'completed' : 'pending')];
+  const state = (prog?.state ?? 'pending') as RequirementNodeState;
+  const parts = [nodeStateLabel(state)];
   if (prog?.assignee_id) {
     const name = props.assigneeLabel(prog.assignee_id);
     if (name) parts.push(name);

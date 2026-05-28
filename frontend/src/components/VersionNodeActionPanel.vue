@@ -5,12 +5,12 @@
         <div>
           <n-text strong>{{ label }}</n-text>
           <n-tag
-            :type="node.state === 'completed' ? 'success' : 'default'"
+            :type="nodeStateTagType(node.state as RequirementNodeState, true)"
             size="small"
             :bordered="false"
             style="margin-left: 8px"
           >
-            {{ node.state === 'completed' ? '已完成' : '待完成' }}
+            {{ nodeStateLabel(node.state as RequirementNodeState) }}
           </n-tag>
         </div>
         <n-space v-if="canEdit" :size="8">
@@ -40,29 +40,30 @@
           <n-gi>
             <n-form-item label="负责人">
               <n-select
-                v-model:value="form.assignee_id"
+                :value="form.assignee_id"
                 :options="memberOptions"
+                :disabled="saving"
                 clearable
                 filterable
                 placeholder="可选"
+                @update:value="onAssigneeChange"
               />
             </n-form-item>
           </n-gi>
           <n-gi>
             <n-form-item label="排期（可选）">
               <n-date-picker
-                v-model:formatted-value="scheduleRange"
+                :formatted-value="scheduleRange"
                 type="daterange"
                 value-format="yyyy-MM-dd"
+                :disabled="saving"
                 clearable
                 style="width: 100%"
+                @update:formatted-value="onScheduleChange"
               />
             </n-form-item>
           </n-gi>
         </n-grid>
-        <n-space justify="end">
-          <n-button size="small" :loading="saving" @click="saveMeta">保存</n-button>
-        </n-space>
       </n-form>
       <n-descriptions v-else :column="2" size="small" label-placement="left">
         <n-descriptions-item label="负责人">
@@ -95,8 +96,10 @@ import {
   useMessage,
 } from 'naive-ui';
 import { updateVersionNode } from '@/api/versions';
-import type { VersionNodeProgress, VersionWorkflowNodeDef } from '@/types/business';
+import type { ProjectVersion, VersionNodeProgress, VersionWorkflowNodeDef } from '@/types/business';
 import { canCompleteVersionNode, formatVersionNodeSchedule } from '@/utils/versionWorkflowLayout';
+import { nodeStateLabel, nodeStateTagType } from '@/utils/requirementWorkflowLayout';
+import type { RequirementNodeState } from '@/types/business';
 
 const props = defineProps<{
   versionId: string;
@@ -112,7 +115,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   complete: [];
   reopen: [];
-  updated: [];
+  updated: [version: ProjectVersion];
 }>();
 
 const message = useMessage();
@@ -136,18 +139,28 @@ const canComplete = computed(() =>
   props.nodeKey ? canCompleteVersionNode(props.nodeKey, props.nodes, props.defs) : false
 );
 
-const scheduleRange = computed({
-  get: () => {
-    if (form.value.scheduled_start && form.value.scheduled_end) {
-      return [form.value.scheduled_start, form.value.scheduled_end] as [string, string];
-    }
-    return null;
-  },
-  set: (val: [string, string] | null) => {
-    form.value.scheduled_start = val?.[0] ?? null;
-    form.value.scheduled_end = val?.[1] ?? null;
-  },
+const scheduleRange = computed((): [string, string] | null => {
+  if (form.value.scheduled_start && form.value.scheduled_end) {
+    return [form.value.scheduled_start, form.value.scheduled_end];
+  }
+  return null;
 });
+
+async function onAssigneeChange(value: string | null) {
+  const current = node.value?.assignee_id ?? null;
+  if (value === current || (value == null && current == null)) return;
+  form.value.assignee_id = value;
+  await saveMeta();
+}
+
+async function onScheduleChange(range: [string, string] | null) {
+  const start = range?.[0] ?? null;
+  const end = range?.[1] ?? null;
+  if (start === form.value.scheduled_start && end === form.value.scheduled_end) return;
+  form.value.scheduled_start = start;
+  form.value.scheduled_end = end;
+  await saveMeta();
+}
 
 const scheduleText = computed(() =>
   formatVersionNodeSchedule({
@@ -171,13 +184,12 @@ async function saveMeta() {
   if (!props.nodeKey) return;
   saving.value = true;
   try {
-    await updateVersionNode(props.versionId, props.nodeKey, {
+    const { data } = await updateVersionNode(props.versionId, props.nodeKey, {
       assignee_id: form.value.assignee_id,
       scheduled_start: form.value.scheduled_start,
       scheduled_end: form.value.scheduled_end,
     });
-    message.success('已保存');
-    emit('updated');
+    emit('updated', data);
   } catch (e: unknown) {
     const detail =
       (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '保存失败';

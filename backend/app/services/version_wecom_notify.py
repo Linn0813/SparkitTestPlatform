@@ -5,13 +5,13 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.version_nodes import NODE_TO_WECOM_EVENT, VERSION_NODE_LABELS
 from app.core.public_url import build_version_detail_url
 from app.models.project import Project
 from app.models.project_version import ProjectVersion
 from app.models.template import ProjectIntegration
 from app.models.user import User
 from app.models.version_workflow import VersionWecomNotifyRule
+from app.services.version_wecom_rules import load_project_notifyable_nodes
 from app.services.wecom import send_wecom_text
 from app.services.wecom_notify import _build_mentions, _safe_template_render
 
@@ -82,14 +82,10 @@ async def notify_version_node_complete(
     node_key: str,
     operator_id: str,
 ) -> int | None:
-    event_key = NODE_TO_WECOM_EVENT.get(node_key)
-    if not event_key:
-        return None
-
     rule_result = await db.execute(
         select(VersionWecomNotifyRule).where(
             VersionWecomNotifyRule.project_id == version.project_id,
-            VersionWecomNotifyRule.event_key == event_key,
+            VersionWecomNotifyRule.node_key == node_key,
             VersionWecomNotifyRule.enabled.is_(True),
         )
     )
@@ -105,10 +101,13 @@ async def notify_version_node_complete(
     integ = integ_result.scalar_one_or_none()
     project_url = integ.app_public_url if integ else None
 
+    node_labels = await load_project_notifyable_nodes(db, version.project_id)
+    node_label = node_labels.get(node_key, node_key)
+
     context = {
         "version": version.name,
         "project": project.name if project else "-",
-        "node": VERSION_NODE_LABELS.get(node_key, node_key),
+        "node": node_label,
         "operator": operator.name if operator else "-",
         "link": build_version_detail_url(version.id, project_url=project_url),
     }

@@ -298,8 +298,9 @@ async function onReopenSelected() {
   }
 }
 
-async function onNodeMetaUpdated() {
-  await loadVersion();
+async function onNodeMetaUpdated(updated: ProjectVersion) {
+  version.value = updated;
+  emit('updated', updated);
 }
 
 function enterEdit() {

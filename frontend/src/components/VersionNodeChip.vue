@@ -10,8 +10,12 @@
   >
     <n-space vertical :size="6">
       <n-text strong style="font-size: 13px">{{ VERSION_NODE_LABELS[nodeKey] }}</n-text>
-      <n-tag :type="state === 'completed' ? 'success' : 'default'" size="small" :bordered="false">
-        {{ state === 'completed' ? '已完成' : '待完成' }}
+      <n-tag
+        :type="nodeStateTagType(state as RequirementNodeState, true)"
+        size="small"
+        :bordered="false"
+      >
+        {{ nodeStateLabel(state as RequirementNodeState) }}
       </n-tag>
       <n-space v-if="canEdit" :size="4">
         <n-button
@@ -41,7 +45,8 @@
 import { computed } from 'vue';
 import { NButton, NCard, NSpace, NTag, NText } from 'naive-ui';
 import { VERSION_NODE_LABELS, canCompleteVersionNode } from '@/constants/versionStatus';
-import type { VersionNodeKey, VersionNodeProgress } from '@/types/business';
+import { nodeStateLabel, nodeStateTagType } from '@/utils/requirementWorkflowLayout';
+import type { RequirementNodeState, VersionNodeKey, VersionNodeProgress } from '@/types/business';
 
 const props = defineProps<{
   nodeKey: VersionNodeKey;

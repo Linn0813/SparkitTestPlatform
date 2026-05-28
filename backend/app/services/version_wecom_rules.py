@@ -1,57 +1,72 @@
 from __future__ import annotations
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.version_nodes import VERSION_WECOM_EVENT_KEYS
+from app.constants.version_types import VERSION_TYPES
 from app.models.version_workflow import VersionWecomNotifyRule
-from app.services.version_wecom_defaults import DEFAULT_VERSION_WECOM_TEMPLATES
+from app.services.version_wecom_defaults import default_template_for_node
+from app.services.version_workflow_defs import load_project_version_workflow_defs
 
 
-def _existing_event_keys(db: AsyncSession, project_id: str, persisted: set[str]) -> set[str]:
-    keys = set(persisted)
-    for obj in db.new:
-        if isinstance(obj, VersionWecomNotifyRule) and obj.project_id == project_id:
-            keys.add(obj.event_key)
-    return keys
+class VersionWecomRuleError(ValueError):
+    pass
 
 
-async def ensure_project_version_wecom_rules(project_id: str, db: AsyncSession) -> None:
+async def load_project_notifyable_nodes(
+    db: AsyncSession,
+    project_id: str,
+) -> dict[str, str]:
+    """合并项目各版本类型工作流节点，按 node_key 去重。"""
+    by_key: dict[str, str] = {}
+    for version_type in VERSION_TYPES:
+        defs = await load_project_version_workflow_defs(db, project_id, version_type)
+        for d in defs:
+            if d.node_key not in by_key:
+                by_key[d.node_key] = d.label
+    return by_key
+
+
+async def validate_rule_node_key(
+    db: AsyncSession,
+    project_id: str,
+    node_key: str,
+) -> str:
+    nodes = await load_project_notifyable_nodes(db, project_id)
+    label = nodes.get(node_key)
+    if not label:
+        raise VersionWecomRuleError("未知工作流节点")
+    return label
+
+
+async def node_label_for_rule(
+    db: AsyncSession,
+    project_id: str,
+    node_key: str,
+) -> str:
+    nodes = await load_project_notifyable_nodes(db, project_id)
+    return nodes.get(node_key, node_key)
+
+
+async def list_version_wecom_rule_options(
+    project_id: str,
+    db: AsyncSession,
+) -> list[dict[str, object]]:
+    nodes = await load_project_notifyable_nodes(db, project_id)
     result = await db.execute(
-        select(VersionWecomNotifyRule.event_key).where(
+        select(VersionWecomNotifyRule.node_key).where(
             VersionWecomNotifyRule.project_id == project_id
         )
     )
-    persisted = {row[0] for row in result.all()}
-    existing = _existing_event_keys(db, project_id, persisted)
-
-    for event_key in VERSION_WECOM_EVENT_KEYS:
-        if event_key in existing:
-            continue
-        row = await db.execute(
-            select(VersionWecomNotifyRule.id)
-            .where(
-                VersionWecomNotifyRule.project_id == project_id,
-                VersionWecomNotifyRule.event_key == event_key,
-            )
-            .limit(1)
+    configured = {row[0] for row in result.all()}
+    options: list[dict[str, object]] = []
+    for node_key, node_label in sorted(nodes.items(), key=lambda x: x[0]):
+        options.append(
+            {
+                "node_key": node_key,
+                "node_label": node_label,
+                "default_message_template": default_template_for_node(node_key, node_label),
+                "configured": node_key in configured,
+            }
         )
-        if row.scalar_one_or_none():
-            existing.add(event_key)
-            continue
-        try:
-            async with db.begin_nested():
-                db.add(
-                    VersionWecomNotifyRule(
-                        project_id=project_id,
-                        event_key=event_key,
-                        message_template=DEFAULT_VERSION_WECOM_TEMPLATES[event_key],
-                        notify_user_ids=[],
-                        enabled=True,
-                    )
-                )
-                await db.flush()
-            existing.add(event_key)
-        except IntegrityError:
-            existing.add(event_key)
+    return options

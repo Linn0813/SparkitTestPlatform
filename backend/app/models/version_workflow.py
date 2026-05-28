@@ -21,6 +21,7 @@ class VersionStatus(str, enum.Enum):
 
 class VersionNodeState(str, enum.Enum):
     pending = "pending"
+    in_progress = "in_progress"
     completed = "completed"
 
 
@@ -49,11 +50,11 @@ class VersionNodeProgress(Base):
 
 class VersionWecomNotifyRule(Base):
     __tablename__ = "version_wecom_notify_rules"
-    __table_args__ = (UniqueConstraint("project_id", "event_key", name="uq_version_wecom_event"),)
+    __table_args__ = (UniqueConstraint("project_id", "node_key", name="uq_version_wecom_node"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), nullable=False, index=True)
-    event_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    node_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     message_template: Mapped[str] = mapped_column(Text, nullable=False)
     notify_user_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

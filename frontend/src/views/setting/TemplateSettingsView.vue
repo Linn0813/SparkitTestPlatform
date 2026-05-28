@@ -67,7 +67,7 @@
       <n-tab-pane name="version-wecom" tab="版本企微">
         <VersionWecomSettingsTab v-if="ctx.projectId" :project-id="ctx.projectId" :read-only="readOnly" />
       </n-tab-pane>
-      <n-tab-pane name="wecom" tab="企微通知">
+      <n-tab-pane name="wecom" tab="缺陷企微">
         <n-form label-placement="top" style="max-width: 960px">
           <n-divider title-placement="left">基础配置</n-divider>
           <n-form-item label="启用"><n-switch v-model:value="wecom.wecom_enabled" :disabled="readOnly" /></n-form-item>

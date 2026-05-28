@@ -90,6 +90,12 @@ from app.services.requirement_workflow import (
     validate_role_keys_for_project,
 )
 from app.services.template_fields import validate_template_fields
+from app.services.version_workflow import (
+    VersionWorkflowError,
+    assert_version_workflow_node_deletable,
+    delete_version_node_progress_for_def,
+    sync_version_progress_for_new_def,
+)
 from app.services.version_workflow_defs import (
     ensure_project_version_workflow_defs,
     load_project_version_workflow_defs,
@@ -666,6 +672,7 @@ async def create_version_workflow_node(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Node key already exists for this version type",
         ) from e
+    await sync_version_progress_for_new_def(db, project_id, version_type, row.node_key)
     return VersionWorkflowNodeDefOut.model_validate(row)
 
 
@@ -713,16 +720,15 @@ async def delete_version_workflow_node(
     row = await db.get(VersionWorkflowNodeDef, def_id)
     if not row or row.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
-    in_use = await db.execute(
-        select(func.count())
-        .select_from(VersionNodeProgress)
-        .where(VersionNodeProgress.node_key == row.node_key)
-    )
-    if (in_use.scalar() or 0) > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Node is referenced by version progress records",
+    try:
+        await assert_version_workflow_node_deletable(
+            db, project_id, row.version_type, row.node_key
         )
+    except VersionWorkflowError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await delete_version_node_progress_for_def(
+        db, project_id, row.version_type, row.node_key
+    )
     await db.delete(row)
 
 
