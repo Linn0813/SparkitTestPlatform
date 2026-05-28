@@ -29,6 +29,8 @@ if [[ -n "$LAN_IP" ]]; then
 fi
 
 set_env_kv "$ENV_FILE" "DATABASE_URL" "mysql+aiomysql://sparkit:sparkit@127.0.0.1:3307/sparkit"
+set_env_kv "$ENV_FILE" "DATABASE_HOST_LAN" ""
+set_env_kv "$ENV_FILE" "DATABASE_HOST_WAN" ""
 set_env_kv "$ENV_FILE" "MINIO_ENDPOINT" "127.0.0.1:9000"
 set_env_kv "$ENV_FILE" "MINIO_ACCESS_KEY" "minioadmin"
 set_env_kv "$ENV_FILE" "MINIO_SECRET_KEY" "minioadmin"
