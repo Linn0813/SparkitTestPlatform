@@ -1,8 +1,8 @@
 import { computed, ref, watch, type Ref } from 'vue';
 import {
+  allVisibleFilterKeys,
   buildFieldCatalog,
   clearBugFilterValue,
-  DEFAULT_BUG_FILTER_VISIBLE_KEYS,
   sanitizeVisibleFilterKeys,
   type FieldCatalogItem,
 } from '@/schemas/entityFieldSchema';
@@ -36,23 +36,36 @@ export function useBugListFilterVisibility(
   templateFields: Ref<TemplateField[]>,
   filters: Ref<BugListFilterState>
 ) {
-  const visibleKeys = ref<string[]>([...DEFAULT_BUG_FILTER_VISIBLE_KEYS]);
+  const visibleKeys = ref<string[]>([]);
 
   const catalog = computed<FieldCatalogItem[]>(() =>
     buildFieldCatalog('bug', templateFields.value)
   );
 
+  function hasStoredVisibility(pid: string | null): boolean {
+    return pid != null && loadVisibleKeys(pid) !== null;
+  }
+
+  function defaultVisibleKeys(): string[] {
+    return allVisibleFilterKeys(catalog.value);
+  }
+
   function applyStoredVisibility(pid: string | null) {
     if (!pid) {
-      visibleKeys.value = [...DEFAULT_BUG_FILTER_VISIBLE_KEYS];
+      visibleKeys.value = defaultVisibleKeys();
       return;
     }
     const stored = loadVisibleKeys(pid);
-    const base = stored ?? [...DEFAULT_BUG_FILTER_VISIBLE_KEYS];
-    visibleKeys.value = sanitizeVisibleFilterKeys(base, catalog.value);
+    visibleKeys.value = stored
+      ? sanitizeVisibleFilterKeys(stored, catalog.value)
+      : defaultVisibleKeys();
   }
 
   function sanitizeVisibleKeys() {
+    if (!hasStoredVisibility(projectId.value)) {
+      visibleKeys.value = defaultVisibleKeys();
+      return;
+    }
     const prev = new Set(visibleKeys.value);
     const next = sanitizeVisibleFilterKeys(visibleKeys.value, catalog.value);
     const removed = [...prev].filter((k) => !next.includes(k));

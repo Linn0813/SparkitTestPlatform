@@ -13,9 +13,10 @@
           <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
           <n-button size="small" type="primary" :loading="saving" @click="saveCase">保存</n-button>
         </template>
-        <n-dropdown v-else-if="canEdit" trigger="click" :options="moreMenuOptions" @select="onMoreMenu">
-          <n-button quaternary size="small">更多</n-button>
-        </n-dropdown>
+        <template v-else-if="canEdit">
+          <n-button quaternary size="small" @click="enterEdit">编辑</n-button>
+          <n-button quaternary size="small" type="error" @click="onDelete">删除</n-button>
+        </template>
         <n-button quaternary size="small" @click="emit('close')">关闭</n-button>
       </n-space>
     </div>
@@ -145,7 +146,6 @@ import {
   NDivider,
   NDescriptions,
   NDescriptionsItem,
-  NDropdown,
   NForm,
   NFormItem,
   NInput,
@@ -236,11 +236,6 @@ const templateUiFields = computed(() => fieldSchema.templateFieldsForUi.value);
 
 const canEdit = computed(() => canManageCases(caseItem.value?.project_id));
 
-const moreMenuOptions = [
-  { label: '编辑', key: 'edit' },
-  { label: '删除', key: 'delete' },
-];
-
 const requirementOptions = computed(() =>
   requirements.value.map((r) => ({
     label: requirementOptionLabel(r, { showNum: false }),
@@ -311,11 +306,6 @@ function cancelEdit() {
     );
   }
   editMode.value = false;
-}
-
-function onMoreMenu(key: string) {
-  if (key === 'edit') enterEdit();
-  if (key === 'delete') onDelete();
 }
 
 async function saveCase() {

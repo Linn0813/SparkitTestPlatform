@@ -99,7 +99,7 @@ const CASE_DEDUPE_LABELS = new Set([
   '关联需求',
 ]);
 
-export const DEFAULT_BUG_FILTER_VISIBLE_KEYS = ['q'];
+export const DEFAULT_BUG_FILTER_VISIBLE_KEYS = BUG_FILTER_SYSTEM_DEFS.map((d) => d.key);
 
 const CASE_FILTER_SYSTEM_DEFS: FieldCatalogItem[] = [
   { key: 'module', label: '模块', kind: 'system' },
@@ -108,7 +108,7 @@ const CASE_FILTER_SYSTEM_DEFS: FieldCatalogItem[] = [
   { key: 'requirement', label: '关联需求', kind: 'system' },
 ];
 
-export const DEFAULT_CASE_FILTER_VISIBLE_KEYS = ['module', 'q'];
+export const DEFAULT_CASE_FILTER_VISIBLE_KEYS = CASE_FILTER_SYSTEM_DEFS.map((d) => d.key);
 
 export const CASE_PRIORITY_FILTER_OPTIONS = ['P0', 'P1', 'P2', 'P3'].map((v) => ({
   label: v,
@@ -251,14 +251,20 @@ export function catalogKeys(catalog: FieldCatalogItem[]): Set<string> {
   return new Set(catalog.map((d) => d.key));
 }
 
+export function allVisibleFilterKeys(catalog: FieldCatalogItem[]): string[] {
+  return catalog.map((d) => d.key);
+}
+
 export function sanitizeVisibleFilterKeys(
   visibleKeys: string[],
   catalog: FieldCatalogItem[],
-  defaultKeys: string[] = DEFAULT_BUG_FILTER_VISIBLE_KEYS
+  defaultKeys?: string[]
 ): string[] {
   const allowed = catalogKeys(catalog);
   const sanitized = visibleKeys.filter((k) => allowed.has(k));
-  return sanitized.length ? sanitized : [...defaultKeys];
+  if (sanitized.length) return sanitized;
+  const fallback = defaultKeys ?? allVisibleFilterKeys(catalog);
+  return fallback.filter((k) => allowed.has(k));
 }
 
 export function clearBugFilterValue(state: BugListFilterState, key: string): BugListFilterState {
