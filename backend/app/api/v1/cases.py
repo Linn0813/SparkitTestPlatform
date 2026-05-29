@@ -30,7 +30,9 @@ from app.schemas.case import (
     TestCaseOut,
     TestCaseUpdate,
 )
+from app.services.case_filters import apply_case_list_filters
 from app.services.case_import import generate_template_bytes, parse_import_workbook
+from app.services.case_module_paths import apply_case_list_order
 from app.services.field_validator import load_project_member_user_ids, validate_custom_fields
 from app.services.file_cleanup import cleanup_after_case_content_change, cleanup_after_case_deleted
 from app.services.file_refs import file_keys_from_case
@@ -303,7 +305,7 @@ async def list_cases(
 
     offset = (page - 1) * page_size
     result = await db.execute(
-        stmt.order_by(TestCase.updated_at.desc()).offset(offset).limit(page_size)
+        apply_case_list_order(stmt, modules).offset(offset).limit(page_size)
     )
     items: list[TestCaseOut] = []
     for c in result.scalars().all():
