@@ -13,6 +13,7 @@
     <n-alert v-if="!ctx.projectId" type="info" style="margin-bottom: 12px">请先选择项目</n-alert>
     <n-data-table
       v-else
+      :key="tableKey"
       :columns="columns"
       :data="tableData"
       :loading="loading"
@@ -86,6 +87,7 @@ const message = useMessage();
 const dialog = useDialog();
 
 const modules = ref<CaseModule[]>([]);
+const tableKey = ref(0);
 const expandedRowKeys = ref<Array<string | number>>([]);
 const loading = ref(false);
 const showModal = ref(false);
@@ -171,6 +173,7 @@ async function load() {
     const { data } = await listModules();
     modules.value = data;
     expandedRowKeys.value = collectModuleTableExpandKeys(buildModuleTableTree(data));
+    tableKey.value += 1;
   } finally {
     loading.value = false;
   }
@@ -224,8 +227,17 @@ function moduleDeleteErrorMessage(detail: string | undefined): string {
   const map: Record<string, string> = {
     'Module has child modules': '请先删除子模块',
     'Module has cases': '请先删除或移出模块内的用例',
+    '请先删除子模块': '请先删除子模块',
+    '请先删除或移出模块内的用例': '请先删除或移出模块内的用例',
+    '模块仍有关联数据，无法删除': '模块仍有关联数据，无法删除',
   };
   return map[detail] ?? detail;
+}
+
+function removeModuleLocally(moduleId: string) {
+  modules.value = modules.value.filter((m) => m.id !== moduleId);
+  expandedRowKeys.value = expandedRowKeys.value.filter((k) => String(k) !== moduleId);
+  tableKey.value += 1;
 }
 
 function onRemove(row: CaseModule) {
@@ -241,11 +253,14 @@ function onRemove(row: CaseModule) {
     onPositiveClick: async () => {
       try {
         await deleteModule(row.id);
+        removeModuleLocally(row.id);
         message.success('已删除');
         await load();
+        return true;
       } catch (e: unknown) {
         const detail = apiErrorDetail(e);
         message.error(moduleDeleteErrorMessage(typeof detail === 'string' ? detail : undefined));
+        return false;
       }
     },
   });

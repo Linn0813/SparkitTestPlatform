@@ -435,6 +435,14 @@ function onCheckedRowKeysChange(keys: Array<string | number>) {
   checkedRowKeys.value = keys.map(String);
 }
 
+function removeCasesLocally(ids: string[]) {
+  if (!ids.length) return;
+  const idSet = new Set(ids);
+  const removed = cases.value.filter((c) => idSet.has(c.id)).length;
+  cases.value = cases.value.filter((c) => !idSet.has(c.id));
+  total.value = Math.max(0, total.value - removed);
+}
+
 function onRemove(row: TestCase) {
   dialog.warning({
     title: '删除用例',
@@ -444,13 +452,16 @@ function onRemove(row: TestCase) {
     onPositiveClick: async () => {
       try {
         await deleteCase(row.id);
-        message.success('已删除');
+        removeCasesLocally([row.id]);
         checkedRowKeys.value = checkedRowKeys.value.filter((id) => id !== row.id);
         if (activeCaseId.value === row.id) closeDetailDrawer();
+        message.success('已删除');
         await loadCases();
+        return true;
       } catch (e: unknown) {
         const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
         message.error(typeof detail === 'string' ? detail : '删除失败');
+        return false;
       }
     },
   });
@@ -468,18 +479,20 @@ function onBatchDelete() {
       batchDeleting.value = true;
       try {
         const results = await Promise.allSettled(ids.map((id) => deleteCase(id)));
-        const failed = results.filter((r) => r.status === 'rejected').length;
-        const succeeded = ids.length - failed;
+        const succeededIds = ids.filter((id, i) => results[i].status === 'fulfilled');
+        const failed = ids.length - succeededIds.length;
+        removeCasesLocally(succeededIds);
         checkedRowKeys.value = [];
-        if (activeCaseId.value && ids.includes(activeCaseId.value)) closeDetailDrawer();
+        if (activeCaseId.value && succeededIds.includes(activeCaseId.value)) closeDetailDrawer();
         await loadCases();
         if (failed === 0) {
-          message.success(`已删除 ${succeeded} 条用例`);
-        } else if (succeeded > 0) {
-          message.warning(`已删除 ${succeeded} 条，${failed} 条删除失败`);
+          message.success(`已删除 ${succeededIds.length} 条用例`);
+        } else if (succeededIds.length > 0) {
+          message.warning(`已删除 ${succeededIds.length} 条，${failed} 条删除失败`);
         } else {
           message.error('删除失败');
         }
+        return failed === 0;
       } finally {
         batchDeleting.value = false;
       }
@@ -639,12 +652,13 @@ async function loadCases() {
     : -1;
   loading.value = true;
   try {
-    const { data } = await listCases(buildListParams());
+    let { data } = await listCases(buildListParams());
     total.value = data.total;
     const maxPage = Math.max(1, Math.ceil(data.total / data.page_size) || 1);
     if (page.value > maxPage) {
       page.value = maxPage;
-      return;
+      ({ data } = await listCases(buildListParams()));
+      total.value = data.total;
     }
     cases.value = data.items;
     if (data.page_size !== pageSize.value) pageSize.value = data.page_size;

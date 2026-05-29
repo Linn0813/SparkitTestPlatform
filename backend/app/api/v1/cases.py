@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -37,7 +38,7 @@ from app.services.links import (
     set_case_requirements,
     validate_requirement_ids,
 )
-from app.services.case_filters import apply_case_list_filters
+from app.services.case_purge import hard_delete_test_cases
 from app.services.custom_field_filters import parse_custom_filters
 from app.services.list_filter_utils import parse_csv_filter, split_empty_values
 from app.services.project_setup import ensure_project_defaults
@@ -181,12 +182,23 @@ async def delete_module(
     child_mods = await db.execute(select(CaseModule).where(CaseModule.parent_id == module_id))
     if child_mods.scalars().first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先删除子模块")
-    cases = await db.execute(
+    active_cases = await db.execute(
         select(TestCase).where(TestCase.module_id == module_id, TestCase.deleted.is_(False))
     )
-    if cases.scalars().first():
+    if active_cases.scalars().first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先删除或移出模块内的用例")
-    await db.delete(mod)
+    soft_deleted = await db.execute(
+        select(TestCase).where(TestCase.module_id == module_id, TestCase.deleted.is_(True))
+    )
+    try:
+        await hard_delete_test_cases(db, ctx.project_id, list(soft_deleted.scalars().all()))
+        await db.delete(mod)
+        await db.flush()
+    except IntegrityError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="模块仍有关联数据，无法删除",
+        ) from e
 
 
 @router.get("/import/template")
