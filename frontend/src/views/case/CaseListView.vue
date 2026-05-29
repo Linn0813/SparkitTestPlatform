@@ -2,6 +2,14 @@
   <n-card title="测试用例">
     <template #header-extra>
       <n-space>
+        <n-button
+          v-if="canCases && checkedRowKeys.length"
+          type="error"
+          :loading="batchDeleting"
+          @click="onBatchDelete"
+        >
+          删除选中（{{ checkedRowKeys.length }}）
+        </n-button>
         <n-button v-if="canCases" @click="showImportModal = true">导入</n-button>
         <n-button v-if="canCases" type="primary" @click="openCreateDrawer">新建用例</n-button>
       </n-space>
@@ -29,6 +37,8 @@
       :scroll-x="1400"
       :row-key="(row: TestCase) => row.id"
       :row-props="rowProps"
+      :checked-row-keys="checkedRowKeys"
+      @update:checked-row-keys="onCheckedRowKeysChange"
       style="margin-top: 12px"
     />
 
@@ -144,10 +154,11 @@ import {
   NSelect,
   NSpace,
   NTooltip,
+  useDialog,
   useMessage,
   type DataTableColumns,
 } from 'naive-ui';
-import { createCase, listCases, type ListCasesParams } from '@/api/cases';
+import { createCase, deleteCase, listCases, type ListCasesParams } from '@/api/cases';
 import { listRequirements } from '@/api/requirements';
 import CaseDetailPanel from '@/components/CaseDetailPanel.vue';
 import CaseImportModal from '@/components/CaseImportModal.vue';
@@ -177,6 +188,7 @@ const canCases = computed(() => canManageCases(ctx.projectId));
 const route = useRoute();
 const router = useRouter();
 const message = useMessage();
+const dialog = useDialog();
 
 const { modules, moduleOptions, treeData, loadModules } = useCaseModules();
 
@@ -192,6 +204,8 @@ const detailDrawerVisible = ref(false);
 const createDrawerVisible = ref(false);
 const activeCaseId = ref<string | null>(null);
 const showImportModal = ref(false);
+const checkedRowKeys = ref<string[]>([]);
+const batchDeleting = ref(false);
 
 const projectIdRef = computed(() => ctx.projectId);
 const fieldSchema = useProjectFieldSchema('functional_case', projectIdRef);
@@ -306,7 +320,12 @@ function rowProps(row: TestCase) {
   };
 }
 
-const columns = computed<DataTableColumns<TestCase>>(() => [
+const columns = computed<DataTableColumns<TestCase>>(() => {
+  const cols: DataTableColumns<TestCase> = [];
+  if (canCases.value) {
+    cols.push({ type: 'selection' });
+  }
+  cols.push(
   {
     title: '模块',
     key: 'module_path',
@@ -371,23 +390,102 @@ const columns = computed<DataTableColumns<TestCase>>(() => [
   {
     title: '操作',
     key: 'a',
-    width: 80,
+    width: canCases.value ? 120 : 80,
     fixed: 'right',
-    render: (row) =>
-      h(
-        NButton,
-        {
-          size: 'small',
-          quaternary: true,
-          onClick: (e: MouseEvent) => {
-            e.stopPropagation();
-            openCaseDetail(row.id);
+    render: (row) => {
+      const buttons = [
+        h(
+          NButton,
+          {
+            size: 'small',
+            quaternary: true,
+            onClick: (e: MouseEvent) => {
+              e.stopPropagation();
+              openCaseDetail(row.id);
+            },
           },
-        },
-        () => '查看'
-      ),
+          () => '查看'
+        ),
+      ];
+      if (canCases.value) {
+        buttons.push(
+          h(
+            NButton,
+            {
+              size: 'small',
+              quaternary: true,
+              type: 'error',
+              onClick: (e: MouseEvent) => {
+                e.stopPropagation();
+                onRemove(row);
+              },
+            },
+            () => '删除'
+          )
+        );
+      }
+      return h(NSpace, { size: 4 }, () => buttons);
+    },
   },
-]);
+  );
+  return cols;
+});
+
+function onCheckedRowKeysChange(keys: Array<string | number>) {
+  checkedRowKeys.value = keys.map(String);
+}
+
+function onRemove(row: TestCase) {
+  dialog.warning({
+    title: '删除用例',
+    content: `确定删除「${row.title}」？此操作不可恢复。`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deleteCase(row.id);
+        message.success('已删除');
+        checkedRowKeys.value = checkedRowKeys.value.filter((id) => id !== row.id);
+        if (activeCaseId.value === row.id) closeDetailDrawer();
+        await loadCases();
+      } catch (e: unknown) {
+        const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+        message.error(typeof detail === 'string' ? detail : '删除失败');
+      }
+    },
+  });
+}
+
+function onBatchDelete() {
+  const ids = [...checkedRowKeys.value];
+  if (!ids.length) return;
+  dialog.warning({
+    title: '批量删除用例',
+    content: `确定删除选中的 ${ids.length} 条用例？此操作不可恢复。`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      batchDeleting.value = true;
+      try {
+        const results = await Promise.allSettled(ids.map((id) => deleteCase(id)));
+        const failed = results.filter((r) => r.status === 'rejected').length;
+        const succeeded = ids.length - failed;
+        checkedRowKeys.value = [];
+        if (activeCaseId.value && ids.includes(activeCaseId.value)) closeDetailDrawer();
+        await loadCases();
+        if (failed === 0) {
+          message.success(`已删除 ${succeeded} 条用例`);
+        } else if (succeeded > 0) {
+          message.warning(`已删除 ${succeeded} 条，${failed} 条删除失败`);
+        } else {
+          message.error('删除失败');
+        }
+      } finally {
+        batchDeleting.value = false;
+      }
+    },
+  });
+}
 
 function buildListParams(): ListCasesParams {
   const p: ListCasesParams = {
@@ -469,6 +567,7 @@ function applyRouteQuery() {
 
 function applyFilters() {
   const hadPage = page.value;
+  checkedRowKeys.value = [];
   page.value = 1;
   syncQueryToRoute();
   if (hadPage === 1) loadCases();
@@ -635,6 +734,7 @@ watch(
 watch(() => ctx.projectId, async () => {
   filters.value = emptyCaseListFilters(fieldSchema.templateFields.value);
   page.value = 1;
+  checkedRowKeys.value = [];
   closeDetailDrawer();
   await loadMeta();
   await loadModules();
@@ -653,6 +753,7 @@ watch(pageSize, () => {
 
 watch(page, () => {
   if (!paginationReady.value || applyingRoute.value) return;
+  checkedRowKeys.value = [];
   syncQueryToRoute();
   loadCases();
 });

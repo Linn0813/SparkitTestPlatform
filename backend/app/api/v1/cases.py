@@ -180,12 +180,12 @@ async def delete_module(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Module not found")
     child_mods = await db.execute(select(CaseModule).where(CaseModule.parent_id == module_id))
     if child_mods.scalars().first():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Module has child modules")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先删除子模块")
     cases = await db.execute(
         select(TestCase).where(TestCase.module_id == module_id, TestCase.deleted.is_(False))
     )
     if cases.scalars().first():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Module has cases")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先删除或移出模块内的用例")
     await db.delete(mod)
 
 

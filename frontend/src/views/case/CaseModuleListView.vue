@@ -215,10 +215,27 @@ async function onSave() {
   }
 }
 
+function hasChildModules(moduleId: string): boolean {
+  return modules.value.some((m) => m.parent_id === moduleId);
+}
+
+function moduleDeleteErrorMessage(detail: string | undefined): string {
+  if (!detail) return '删除失败';
+  const map: Record<string, string> = {
+    'Module has child modules': '请先删除子模块',
+    'Module has cases': '请先删除或移出模块内的用例',
+  };
+  return map[detail] ?? detail;
+}
+
 function onRemove(row: CaseModule) {
+  if (hasChildModules(row.id)) {
+    message.warning('请先删除该模块下的子模块');
+    return;
+  }
   dialog.warning({
     title: '删除模块',
-    content: `确定删除模块「${row.name}」？需先删除子模块与模块内用例。`,
+    content: `确定删除模块「${row.name}」？若模块内仍有测试用例将无法删除。`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -228,7 +245,7 @@ function onRemove(row: CaseModule) {
         await load();
       } catch (e: unknown) {
         const detail = apiErrorDetail(e);
-        message.error(typeof detail === 'string' ? detail : '删除失败');
+        message.error(moduleDeleteErrorMessage(typeof detail === 'string' ? detail : undefined));
       }
     },
   });
