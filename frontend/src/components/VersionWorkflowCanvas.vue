@@ -75,6 +75,7 @@ import {
   nodeStateDotClass,
   nodeStateLabel,
   partitionCanvasNodes,
+  rowIndexInLane,
   rowTopForLayoutGrid,
   spanNodeLeftX,
   type WorkflowCanvasNode,
@@ -246,8 +247,17 @@ async function updateLayout() {
   for (const node of layoutColumnNodes.value) {
     const laneEl = laneRefs.value[node.span_lanes[0]];
     if (!laneEl) continue;
-    const laneRowCount = layoutRowCountForLane(node.span_lanes[0], props.nodes ?? []);
-    const topY = rowTopInLane(node.sort_in_lane, measuredHeight, laneEl.offsetHeight, laneRowCount);
+    const laneRowCount = layoutRowCountForLane(
+      node.span_lanes[0],
+      props.nodes ?? [],
+      layoutColumnNodes.value,
+    );
+    const topY = rowTopInLane(
+      rowIndexInLane(node, layoutColumnNodes.value),
+      measuredHeight,
+      laneEl.offsetHeight,
+      laneRowCount,
+    );
     if (topY == null) continue;
     colStyles[node.render_key] = { top: `${topY}px` };
   }

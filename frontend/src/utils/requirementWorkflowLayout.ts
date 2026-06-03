@@ -80,6 +80,17 @@ export function columnNodesForLane(laneIndex: number, columnNodes: WorkflowCanva
     .sort((a, b) => a.sort_in_lane - b.sort_in_lane);
 }
 
+/** 该列是否只有一个列内节点（不含 span 跨列节点）。 */
+export function isSingleColumnNodeLane(laneIndex: number, columnNodes: WorkflowCanvasNode[]): boolean {
+  return columnNodesForLane(laneIndex, columnNodes).length === 1;
+}
+
+/** 列内节点的布局行索引：单列节点列始终为 0（垂直居中），多节点列用 sort_in_lane。 */
+export function rowIndexInLane(node: WorkflowCanvasNode, columnNodes: WorkflowCanvasNode[]): number {
+  if (isSingleColumnNodeLane(node.span_lanes[0], columnNodes)) return 0;
+  return node.sort_in_lane;
+}
+
 /** 参与某列行高计算的节点（不含跨列 span，按起始列 sort 堆叠）。 */
 export function laneRowNodes(laneIndex: number, nodes: WorkflowCanvasNode[]): WorkflowCanvasNode[] {
   return nodes
@@ -94,16 +105,14 @@ export function layoutRowCount(nodes: WorkflowCanvasNode[]): number {
 }
 
 /** 某列布局行数：多行 fork 列用全局网格，单列节点列保持单行居中。 */
-export function layoutRowCountForLane(laneIndex: number, nodes: WorkflowCanvasNode[]): number {
+export function layoutRowCountForLane(
+  laneIndex: number,
+  nodes: WorkflowCanvasNode[],
+  columnNodes?: WorkflowCanvasNode[],
+): number {
   const global = layoutRowCount(nodes);
-  const inLane = nodes.filter(
-    (n) =>
-      (!n.is_span_positioned && n.span_lanes[0] === laneIndex) ||
-      (n.is_span_positioned && n.span_lanes[0] === laneIndex),
-  );
-  if (!inLane.length) return 1;
-  const maxSort = Math.max(...inLane.map((n) => n.sort_in_lane));
-  if (maxSort === 0 && inLane.length === 1 && global > 1) return 1;
+  const cols = columnNodes ?? nodes.filter((n) => !n.is_span_positioned);
+  if (isSingleColumnNodeLane(laneIndex, cols) && global > 1) return 1;
   return global;
 }
 
