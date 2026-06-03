@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     db_connect_timeout: int = 10
     db_echo: bool = False
     secret_key: str = "dev-secret-change-me"
-    access_token_expire_minutes: int = 1440
+    access_token_expire_minutes: int = 10080  # 7 days
     cors_origins: str = "http://localhost:5174,http://127.0.0.1:5174"
     wecom_request_timeout: int = 5
     app_public_url: str = "http://localhost:5174"
