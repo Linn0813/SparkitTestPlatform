@@ -43,6 +43,6 @@ const INLINE_IMAGE_URL_RE = /\/api\/v1\/files\/raw\?[^)]+|https?:\/\/[^)]+/;
 export function renderInlineImageHtml(escapedText: string): string {
   return escapedText.replace(
     new RegExp(`!\\[([^\\]]*)\\]\\((${INLINE_IMAGE_URL_RE.source})\\)`, 'g'),
-    '<img src="$2" alt="$1" class="inline-md-img" loading="lazy" />'
+    '<img src="$2" alt="$1" title="点击查看大图" class="inline-md-img" loading="lazy" />'
   );
 }

@@ -1,10 +1,8 @@
 import { formatDateOnly } from '@/utils/formatDateOnly';
 
-/** 版本展示：名称已像版本号时不再加 #num 前缀 */
+/** 版本展示：仅显示版本名称 */
 export function formatVersionDisplay(v: { num: number; name: string }): string {
-  const n = v.name.trim();
-  if (/^v?\d[\d.]*$/i.test(n)) return n;
-  return `#${v.num} · ${n}`;
+  return v.name.trim();
 }
 
 /** 版本展示含上线时间，无上线时间则仅展示版本名 */

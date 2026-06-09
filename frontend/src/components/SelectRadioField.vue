@@ -1,5 +1,11 @@
 <template>
-  <n-radio-group :value="modelValue ?? null" :name="name" size="small" @update:value="onUpdate">
+  <n-radio-group
+    :value="modelValue ?? null"
+    :name="name"
+    size="small"
+    :disabled="disabled"
+    @update:value="onUpdate"
+  >
     <n-space wrap :size="[4, 4]">
       <n-radio-button v-for="opt in options" :key="opt" :value="opt">
         {{ opt }}
@@ -15,6 +21,7 @@ defineProps<{
   modelValue: string | null | undefined;
   options: string[];
   name: string;
+  disabled?: boolean;
 }>();
 
 const emit = defineEmits<{

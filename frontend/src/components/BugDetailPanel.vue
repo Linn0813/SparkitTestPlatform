@@ -56,8 +56,16 @@
           :label="field.name"
           :span="isRichtextType(field.type) ? 2 : 1"
         >
+          <SelectRadioField
+            v-if="canEditFollowers && isBugSeverityField(field)"
+            :model-value="customFieldString(field.id)"
+            :options="field.options ?? []"
+            :name="`view-${field.id}`"
+            :disabled="customFieldSaving === field.id"
+            @update:model-value="(v) => onCustomFieldUpdate(field, v)"
+          />
           <InlineMarkdownContent
-            v-if="isRichtextType(field.type) && richTextHasContent(customFields[field.id])"
+            v-else-if="isRichtextType(field.type) && richTextHasContent(customFields[field.id])"
             :text="richTextPlain(customFields[field.id])"
             :project-id="bug.project_id"
           />
@@ -80,7 +88,18 @@
           />
           <template v-else>{{ followersLabel }}</template>
         </n-descriptions-item>
-        <n-descriptions-item label="规划迭代">{{ planVersionLabel }}</n-descriptions-item>
+        <n-descriptions-item label="规划迭代">
+          <VersionSelect
+            v-if="canEditFollowers"
+            :model-value="bug.plan_version_id"
+            :project-id="bug.project_id"
+            :disabled="planVersionSaving"
+            placeholder="选择规划迭代"
+            style="min-width: 220px; max-width: 100%"
+            @update:model-value="onPlanVersionUpdate"
+          />
+          <template v-else>{{ planVersionLabel }}</template>
+        </n-descriptions-item>
         <n-descriptions-item label="发现版本">{{ foundVersionLabel }}</n-descriptions-item>
         <n-descriptions-item label="关联需求" :span="2">{{ requirementsLabel }}</n-descriptions-item>
         <n-descriptions-item label="关联测试计划" :span="2">{{ plansLabel }}</n-descriptions-item>
@@ -298,9 +317,12 @@ import BugFollowerScheduleTable, {
   type FollowerScheduleRow,
 } from '@/components/BugFollowerScheduleTable.vue';
 import InlineMarkdownContent from '@/components/InlineMarkdownContent.vue';
+import SelectRadioField from '@/components/SelectRadioField.vue';
+import VersionSelect from '@/components/VersionSelect.vue';
 import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
 import {
   formatTemplateFieldValue,
+  isBugSeverityField,
   isRichtextType,
   richTextHasContent,
   richTextPlain,
@@ -318,7 +340,7 @@ import {
   isPreviewableAttachment,
   isVideoAttachment,
 } from '@/utils/attachmentPreview';
-import type { BugActivity, BugAttachment, BugComment, BugItem, BugStatusDef, Requirement, TestPlan } from '@/types/business';
+import type { BugActivity, BugAttachment, BugComment, BugItem, BugStatusDef, Requirement, TemplateField, TestPlan } from '@/types/business';
 import { displayUserLabel } from '@/utils/displayUser';
 import { formatNumWithTitle } from '@/utils/entityNum';
 import { formatVersionWithRelease } from '@/utils/versionLabel';
@@ -349,6 +371,8 @@ const editMode = ref(false);
 const saving = ref(false);
 const statusSaving = ref(false);
 const followerIdsSaving = ref(false);
+const planVersionSaving = ref(false);
+const customFieldSaving = ref<string | null>(null);
 const viewStatusKey = ref<string | null>(null);
 const scheduleSavingUserId = ref<string | null>(null);
 const scheduleEstimateDrafts = ref<Record<string, number | null>>({});
@@ -689,6 +713,51 @@ async function onFollowersUpdate(ids: string[]) {
     message.error('跟进人更新失败');
   } finally {
     followerIdsSaving.value = false;
+  }
+}
+
+async function onPlanVersionUpdate(versionId: string | null) {
+  if (!bug.value || planVersionSaving.value) return;
+  const next = versionId ?? null;
+  const prev = bug.value.plan_version_id ?? null;
+  if (prev === next) return;
+  planVersionSaving.value = true;
+  try {
+    await updateBug(props.bugId, { plan_version_id: next });
+    message.success('规划迭代已更新');
+    await load();
+    emit('updated');
+  } catch {
+    message.error('规划迭代更新失败');
+  } finally {
+    planVersionSaving.value = false;
+  }
+}
+
+function customFieldString(fieldId: string): string | null {
+  const v = customFields.value[fieldId];
+  if (v === undefined || v === null || v === '') return null;
+  return String(v);
+}
+
+async function onCustomFieldUpdate(field: TemplateField, value: string | null) {
+  if (!bug.value || customFieldSaving.value) return;
+  const fieldId = field.id;
+  const prev = customFields.value[fieldId] ?? null;
+  const next = value ?? null;
+  if (prev === next) return;
+  customFieldSaving.value = fieldId;
+  try {
+    await updateBug(props.bugId, {
+      custom_fields: { ...customFields.value, [fieldId]: next },
+    });
+    message.success(`${field.name}已更新`);
+    await load();
+    emit('updated');
+  } catch {
+    message.error(`${field.name}更新失败`);
+  } finally {
+    customFieldSaving.value = null;
   }
 }
 

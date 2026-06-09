@@ -415,6 +415,8 @@ async def update_bug(
         allowed = {"status_key"}
         if await user_can_update_bug_followers(ctx.user, ctx.project_id, db):
             allowed.add("follower_ids")
+            allowed.add("plan_version_id")
+            allowed.add("custom_fields")
         disallowed = set(data.keys()) - allowed
         if disallowed:
             raise HTTPException(
@@ -462,9 +464,22 @@ async def update_bug(
                 ProjectFieldTemplate.scene == TemplateScene.bug,
             )
         )
+        template_fields = tpl.scalar_one().fields
+        if not can_full_edit:
+            severity_ids = {
+                f["id"]
+                for f in template_fields
+                if f.get("id") == "field_severity" or "严重" in (f.get("name") or "")
+            }
+            incoming = data["custom_fields"]
+            merged = dict(bug.custom_fields or {})
+            for key in severity_ids:
+                if key in incoming:
+                    merged[key] = incoming[key]
+            data["custom_fields"] = merged
         member_ids = await load_project_member_user_ids(db, ctx.project_id)
         data["custom_fields"] = validate_custom_fields(
-            tpl.scalar_one().fields,
+            template_fields,
             data["custom_fields"],
             project_id=ctx.project_id,
             project_member_ids=member_ids,

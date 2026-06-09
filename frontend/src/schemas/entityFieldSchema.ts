@@ -215,6 +215,11 @@ export function detailTemplateFields(scene: EntityScene, fields: TemplateField[]
   return list;
 }
 
+/** 缺陷详情：仅「严重程度」支持查看态直接修改 */
+export function isBugSeverityField(field: TemplateField): boolean {
+  return field.id === 'field_severity' || field.name.includes('严重');
+}
+
 /** 缺陷表单：适合 Radio 平铺的单选模板字段（严重程度、平台等） */
 export function isPromotedRadioSelectField(field: TemplateField): boolean {
   if (field.type !== 'select') return false;
