@@ -1,9 +1,10 @@
 """project_versions: add optional build_number column
 
 Revision ID: 003_project_versions_build_number
-Revises: 002_stored_files_drop_content
+Revises:
 Create Date: 2026-06-11
 
+Note: 001/002 stored_files migrations were applied outside Alembic; this is the repo baseline.
 """
 from typing import Sequence, Union
 
@@ -11,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "003_project_versions_build_number"
-down_revision: Union[str, None] = "002_stored_files_drop_content"
+down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
