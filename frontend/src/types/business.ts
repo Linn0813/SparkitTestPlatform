@@ -101,6 +101,8 @@ export interface VersionBrief {
   id: string;
   num: number;
   name: string;
+  /** 选填的构建号，例如 1234 或 1.2.0.456 */
+  build_number?: string | null;
   /** 上线日期 YYYY-MM-DD */
   released_at?: string | null;
   status?: VersionStatus;
@@ -112,6 +114,8 @@ export interface ProjectVersion {
   project_id: string;
   num: number;
   name: string;
+  /** 选填的构建号 */
+  build_number: string | null;
   version_type: VersionType;
   status: VersionStatus;
   nodes: VersionNodeProgress[];

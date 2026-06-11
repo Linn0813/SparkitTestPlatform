@@ -73,6 +73,7 @@ async def create_version(
         project_id=ctx.project_id,
         num=await _next_version_num(ctx.project_id, db),
         name=body.name.strip(),
+        build_number=(body.build_number.strip() or None) if body.build_number else None,
         version_type=body.version_type,
         released_at=body.released_at,
         created_by=ctx.user.id,
@@ -120,6 +121,11 @@ async def update_version(
 
     if "name" in data and data["name"] is not None:
         row.name = data["name"].strip()
+    if "build_number" in data:
+        bn = data["build_number"]
+        if isinstance(bn, str):
+            bn = bn.strip() or None
+        row.build_number = bn
     if "released_at" in data:
         row.released_at = data["released_at"]
 

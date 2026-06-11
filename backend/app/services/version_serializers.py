@@ -39,6 +39,7 @@ async def version_to_out(db: AsyncSession, version: ProjectVersion) -> ProjectVe
         project_id=version.project_id,
         num=version.num,
         name=version.name,
+        build_number=version.build_number,
         version_type=version.version_type,  # type: ignore[arg-type]
         status=version.status,  # type: ignore[arg-type]
         released_at=version.released_at,

@@ -11,6 +11,7 @@ export function getVersion(id: string) {
 
 export type VersionPayload = {
   name: string;
+  build_number?: string | null;
   released_at?: string | null;
   version_type?: import('@/types/business').VersionType;
 };

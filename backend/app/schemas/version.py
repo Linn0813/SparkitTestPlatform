@@ -14,6 +14,7 @@ class VersionBrief(ORMBase):
     id: str
     num: int
     name: str
+    build_number: Optional[str] = None
     released_at: Optional[date] = None
     status: VersionStatusLiteral = "planning"
     version_type: VersionTypeLiteral = "app_release"
@@ -109,6 +110,7 @@ class ProjectVersionOut(ORMBase):
     project_id: str
     num: int
     name: str
+    build_number: Optional[str] = None
     version_type: VersionTypeLiteral
     status: VersionStatusLiteral
     released_at: Optional[date] = None
@@ -121,12 +123,14 @@ class ProjectVersionOut(ORMBase):
 
 class ProjectVersionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
+    build_number: Optional[str] = Field(default=None, max_length=64)
     released_at: Optional[date] = None
     version_type: VersionTypeLiteral = "app_release"
 
 
 class ProjectVersionUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    build_number: Optional[str] = Field(default=None, max_length=64)
     released_at: Optional[date] = None
     version_type: Optional[VersionTypeLiteral] = None
 

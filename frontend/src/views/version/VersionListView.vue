@@ -39,6 +39,13 @@
         <n-form-item label="版本名称" required>
           <n-input v-model:value="form.name" placeholder="如 v1.2.0、Sprint-2025-W20" />
         </n-form-item>
+        <n-form-item label="构建号">
+          <n-input
+            v-model:value="form.build_number"
+            placeholder="选填，如 1234 或 1.2.0.456"
+            :maxlength="64"
+          />
+        </n-form-item>
         <n-form-item label="上线时间">
           <n-date-picker
             v-model:formatted-value="form.released_at"
@@ -123,6 +130,7 @@ const showModal = ref(false);
 const editing = ref<ProjectVersion | null>(null);
 const form = ref({
   name: '',
+  build_number: '' as string,
   released_at: null as string | null,
   version_type: 'app_release' as VersionType,
 });
@@ -163,6 +171,13 @@ const columns = computed<DataTableColumns<ProjectVersion>>(() => [
     key: 'version_type',
     width: 100,
     render: (row) => versionTypeLabel(row.version_type),
+  },
+  {
+    title: '构建号',
+    key: 'build_number',
+    width: 120,
+    ellipsis: { tooltip: true },
+    render: (row) => row.build_number || '—',
   },
   {
     title: '状态',
@@ -330,6 +345,7 @@ function openModal(row?: ProjectVersion) {
   editing.value = row ?? null;
   form.value = {
     name: row?.name ?? '',
+    build_number: row?.build_number ?? '',
     released_at: row?.released_at?.slice(0, 10) ?? null,
     version_type: row?.version_type ?? 'app_release',
   };
@@ -343,6 +359,7 @@ async function onSave() {
   }
   const payload = {
     name: form.value.name.trim(),
+    build_number: form.value.build_number.trim() || null,
     released_at: form.value.released_at || null,
     version_type: form.value.version_type,
   };
@@ -368,6 +385,7 @@ async function onSave() {
 
 async function persistVersion(payload: {
   name: string;
+  build_number: string | null;
   released_at: string | null;
   version_type: VersionType;
 }) {

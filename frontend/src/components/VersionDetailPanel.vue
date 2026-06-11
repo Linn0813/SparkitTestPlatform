@@ -71,6 +71,9 @@
               <n-descriptions-item label="类型">
                 {{ versionTypeLabel(version.version_type) }}
               </n-descriptions-item>
+              <n-descriptions-item label="构建号">
+                {{ version.build_number || '—' }}
+              </n-descriptions-item>
               <n-descriptions-item label="上线时间">
                 {{ version.released_at ? formatDateOnly(version.released_at) : '—' }}
               </n-descriptions-item>
@@ -103,6 +106,13 @@
         <n-form label-placement="top" style="max-width: 480px; margin-top: 8px">
           <n-form-item label="版本名称" required>
             <n-input v-model:value="editForm.name" />
+          </n-form-item>
+          <n-form-item label="构建号">
+            <n-input
+              v-model:value="editForm.build_number"
+              placeholder="选填，如 1234 或 1.2.0.456"
+              :maxlength="64"
+            />
           </n-form-item>
           <n-form-item label="上线时间">
             <n-date-picker
@@ -233,6 +243,7 @@ const editMode = ref(false);
 const saving = ref(false);
 const editForm = ref({
   name: '',
+  build_number: '' as string,
   released_at: null as string | null,
   version_type: 'app_release' as VersionType,
 });
@@ -307,6 +318,7 @@ function enterEdit() {
   if (!version.value) return;
   editForm.value = {
     name: version.value.name,
+    build_number: version.value.build_number ?? '',
     released_at: version.value.released_at?.slice(0, 10) ?? null,
     version_type: version.value.version_type,
   };
@@ -341,6 +353,7 @@ async function saveVersion() {
   try {
     const { data } = await updateVersion(version.value.id, {
       name: editForm.value.name.trim(),
+      build_number: editForm.value.build_number.trim() || null,
       released_at: editForm.value.released_at || null,
       version_type: editForm.value.version_type,
     });
