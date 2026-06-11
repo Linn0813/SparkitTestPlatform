@@ -55,6 +55,11 @@ async def ensure_schema_patches() -> None:
             "ALTER TABLE project_versions ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'planning'",
         ),
         (
+            "project_versions",
+            "build_number",
+            "ALTER TABLE project_versions ADD COLUMN build_number VARCHAR(64) NULL AFTER name",
+        ),
+        (
             "project_integrations",
             "version_wecom_webhook_url",
             "ALTER TABLE project_integrations ADD COLUMN version_wecom_webhook_url TEXT NULL",

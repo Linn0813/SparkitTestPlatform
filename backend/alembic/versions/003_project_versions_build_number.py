@@ -7,6 +7,7 @@ Create Date: 2026-06-11
 """
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = "003_project_versions_build_number"
@@ -15,9 +16,24 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _column_exists(table: str, column: str) -> bool:
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table "
+            "AND COLUMN_NAME = :column"
+        ),
+        {"table": table, "column": column},
+    )
+    return result.scalar_one() > 0
+
+
 def upgrade() -> None:
-    op.execute("ALTER TABLE project_versions ADD COLUMN build_number VARCHAR(64) NULL AFTER name")
+    if not _column_exists("project_versions", "build_number"):
+        op.execute("ALTER TABLE project_versions ADD COLUMN build_number VARCHAR(64) NULL AFTER name")
 
 
 def downgrade() -> None:
-    op.execute("ALTER TABLE project_versions DROP COLUMN build_number")
+    if _column_exists("project_versions", "build_number"):
+        op.execute("ALTER TABLE project_versions DROP COLUMN build_number")
