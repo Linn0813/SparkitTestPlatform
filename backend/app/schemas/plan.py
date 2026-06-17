@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.models.plan import ExecuteResult, PlanStatus
 from app.schemas.case import TestCaseOut
 from app.schemas.common import ORMBase
+from app.schemas.user import UserOut
 from app.schemas.version import VersionBrief
 
 
@@ -73,6 +74,19 @@ class PlanCaseResultUpdate(BaseModel):
     plan_case_id: str
     result: ExecuteResult
     comment: Optional[str] = None
+
+
+class PlanCaseResultCommentCreate(BaseModel):
+    body: str = Field(min_length=1)
+
+
+class PlanCaseResultCommentOut(ORMBase):
+    id: str
+    plan_case_id: str
+    user_id: str
+    body: str
+    created_at: datetime
+    user: Optional[UserOut] = None
 
 
 class PlanStatsOut(BaseModel):

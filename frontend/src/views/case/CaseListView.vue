@@ -34,7 +34,7 @@
       :columns="columns"
       :data="cases"
       :loading="loading"
-      :scroll-x="1400"
+      :scroll-x="1960"
       :row-key="(row: TestCase) => row.id"
       :row-props="rowProps"
       :checked-row-keys="checkedRowKeys"
@@ -235,8 +235,6 @@ const requirementOptions = computed(() =>
   }))
 );
 
-const reqById = computed(() => new Map(requirements.value.map((r) => [r.id, r])));
-
 const activeIndex = computed(() => {
   if (!activeCaseId.value) return -1;
   return cases.value.findIndex((c) => c.id === activeCaseId.value);
@@ -249,35 +247,6 @@ function moduleLabel(row: TestCase): string {
 function tableLineText(text: string | null | undefined): string {
   if (!text?.trim()) return '—';
   return text.replace(/\s+/g, ' ').trim();
-}
-
-function requirementCell(row: TestCase) {
-  const ids = row.requirement_ids ?? [];
-  if (!ids.length) return '—';
-  const labels = ids
-    .map((id) => {
-      const r = reqById.value.get(id);
-      return r ? r.title : null;
-    })
-    .filter(Boolean) as string[];
-  const display =
-    labels.length === 0
-      ? `${ids.length} 项`
-      : labels.length === 1
-        ? labels[0]
-        : `${labels[0]} 等 ${labels.length} 项`;
-  const full = labels.length ? labels.join('、') : display;
-  if (display === full) {
-    return h('span', { class: 'cell-ellipsis' }, display);
-  }
-  return h(
-    NTooltip,
-    { placement: 'top-start', style: { maxWidth: '480px' } },
-    {
-      trigger: () => h('span', { class: 'cell-ellipsis' }, display),
-      default: () => full,
-    }
-  );
 }
 
 function textCell(text: string | null | undefined) {
@@ -331,12 +300,12 @@ const columns = computed<DataTableColumns<TestCase>>(() => {
     key: 'module_path',
     width: 160,
     ellipsis: { tooltip: true },
-    render: (row) => moduleLabel(row),
+    render: (row) => h('span', { class: 'cell-ellipsis' }, moduleLabel(row)),
   },
   {
     title: '标题',
     key: 'title',
-    minWidth: 180,
+    width: 280,
     ellipsis: { tooltip: true },
     render: (row) =>
       h(
@@ -356,30 +325,23 @@ const columns = computed<DataTableColumns<TestCase>>(() => {
   {
     title: '前置条件',
     key: 'precondition',
-    width: 140,
+    width: 280,
     ellipsis: { tooltip: true },
     render: (row) => textCell(row.precondition),
   },
   {
     title: '步骤',
     key: 'step_text',
-    width: 140,
+    width: 280,
     ellipsis: { tooltip: true },
     render: (row) => textCell(row.step_text),
   },
   {
     title: '预期结果',
     key: 'expected_result',
-    width: 140,
+    width: 280,
     ellipsis: { tooltip: true },
     render: (row) => textCell(row.expected_result),
-  },
-  {
-    title: '关联需求',
-    key: 'requirement_ids',
-    width: 160,
-    ellipsis: { tooltip: true },
-    render: (row) => requirementCell(row),
   },
   {
     title: '更新时间',
@@ -390,7 +352,7 @@ const columns = computed<DataTableColumns<TestCase>>(() => {
   {
     title: '操作',
     key: 'a',
-    width: canCases.value ? 120 : 80,
+    width: canCases.value ? 140 : 80,
     fixed: 'right',
     render: (row) => {
       const buttons = [
@@ -424,7 +386,7 @@ const columns = computed<DataTableColumns<TestCase>>(() => {
           )
         );
       }
-      return h(NSpace, { size: 4 }, () => buttons);
+      return h(NSpace, { size: 4, wrap: false, class: 'case-row-actions' }, () => buttons);
     },
   },
   );
@@ -801,5 +763,10 @@ watch(page, () => {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+.case-list-table :deep(.case-row-actions) {
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 </style>

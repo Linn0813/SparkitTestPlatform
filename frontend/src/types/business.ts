@@ -365,6 +365,15 @@ export interface PlanCaseResult {
   executed_at: string | null;
 }
 
+export interface PlanCaseResultComment {
+  id: string;
+  plan_case_id: string;
+  user_id: string;
+  body: string;
+  created_at: string;
+  user?: { id: string; name: string; email: string } | null;
+}
+
 export interface PlanCase {
   id: string;
   plan_id: string;

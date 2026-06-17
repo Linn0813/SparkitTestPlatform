@@ -11,9 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import ProjectContext, require_project_context, require_project_context_tester
 from app.models.case import TestCase
-from app.models.plan import ExecuteResult, PlanCase, PlanCaseResult, PlanStatus, TestPlan
+from app.models.plan import (
+    ExecuteResult,
+    PlanCase,
+    PlanCaseResult,
+    PlanCaseResultComment,
+    PlanStatus,
+    TestPlan,
+)
 from app.models.project_version import ProjectVersion
 from app.models.requirement import BugPlanLink
+from app.models.user import User
 from app.schemas.case import TestCaseOut
 from app.services.case_module_paths import build_module_path_map, load_project_modules
 from app.services.serializers import case_out as serialize_case
@@ -22,6 +30,8 @@ from app.services.versions import validate_version_id
 from app.schemas.plan import (
     PlanCaseAdd,
     PlanCaseOut,
+    PlanCaseResultCommentCreate,
+    PlanCaseResultCommentOut,
     PlanCaseResultOut,
     PlanCaseResultUpdate,
     PlanStatsOut,
@@ -30,6 +40,7 @@ from app.schemas.plan import (
     TestPlanOut,
     TestPlanUpdate,
 )
+from app.schemas.user import UserOut
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 
@@ -230,6 +241,7 @@ async def delete_plan(
     if not plan or plan.project_id != ctx.project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
     pc_ids_sq = select(PlanCase.id).where(PlanCase.plan_id == plan_id)
+    await db.execute(delete(PlanCaseResultComment).where(PlanCaseResultComment.plan_case_id.in_(pc_ids_sq)))
     await db.execute(delete(PlanCaseResult).where(PlanCaseResult.plan_case_id.in_(pc_ids_sq)))
     await db.execute(delete(PlanCase).where(PlanCase.plan_id == plan_id))
     await db.execute(delete(BugPlanLink).where(BugPlanLink.plan_id == plan_id))
@@ -304,6 +316,7 @@ async def remove_plan_case(
     r = res.scalar_one_or_none()
     if r:
         await db.delete(r)
+    await db.execute(delete(PlanCaseResultComment).where(PlanCaseResultComment.plan_case_id == pc.id))
     await db.delete(pc)
 
 
@@ -322,13 +335,96 @@ async def update_result(
     if not result:
         result = PlanCaseResult(plan_case_id=pc.id)
         db.add(result)
+    updates = body.model_dump(exclude_unset=True)
     result.result = body.result
-    result.comment = body.comment
+    if "comment" in updates:
+        result.comment = body.comment
     result.executor_id = ctx.user.id
     result.executed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.flush()
     await db.refresh(result)
     return PlanCaseResultOut.model_validate(result)
+
+
+async def _get_plan_case_in_project(
+    db: AsyncSession, plan_id: str, plan_case_id: str, project_id: str
+) -> PlanCase:
+    plan = await db.get(TestPlan, plan_id)
+    if not plan or plan.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+    pc = await db.get(PlanCase, plan_case_id)
+    if not pc or pc.plan_id != plan_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan case not found")
+    return pc
+
+
+@router.get(
+    "/{plan_id}/cases/{plan_case_id}/comments",
+    response_model=list[PlanCaseResultCommentOut],
+)
+async def list_plan_case_comments(
+    plan_id: str,
+    plan_case_id: str,
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    await _get_plan_case_in_project(db, plan_id, plan_case_id, ctx.project_id)
+    result = await db.execute(
+        select(PlanCaseResultComment)
+        .where(PlanCaseResultComment.plan_case_id == plan_case_id)
+        .order_by(PlanCaseResultComment.created_at.asc())
+    )
+    comments = list(result.scalars().all())
+    user_ids = {c.user_id for c in comments}
+    user_map: dict[str, User] = {}
+    if user_ids:
+        users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        user_map = {u.id: u for u in users_result.scalars().all()}
+    out: list[PlanCaseResultCommentOut] = []
+    for c in comments:
+        user = user_map.get(c.user_id)
+        out.append(
+            PlanCaseResultCommentOut(
+                id=c.id,
+                plan_case_id=c.plan_case_id,
+                user_id=c.user_id,
+                body=c.body,
+                created_at=c.created_at,
+                user=UserOut.model_validate(user) if user else None,
+            )
+        )
+    return out
+
+
+@router.post(
+    "/{plan_id}/cases/{plan_case_id}/comments",
+    response_model=PlanCaseResultCommentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_plan_case_comment(
+    plan_id: str,
+    plan_case_id: str,
+    body: PlanCaseResultCommentCreate,
+    ctx: ProjectContext = Depends(require_project_context_tester),
+    db: AsyncSession = Depends(get_db),
+):
+    await _get_plan_case_in_project(db, plan_id, plan_case_id, ctx.project_id)
+    comment = PlanCaseResultComment(
+        plan_case_id=plan_case_id,
+        user_id=ctx.user.id,
+        body=body.body.strip(),
+    )
+    db.add(comment)
+    await db.flush()
+    await db.refresh(comment)
+    return PlanCaseResultCommentOut(
+        id=comment.id,
+        plan_case_id=comment.plan_case_id,
+        user_id=comment.user_id,
+        body=comment.body,
+        created_at=comment.created_at,
+        user=UserOut.model_validate(ctx.user),
+    )
 
 
 @router.get("/{plan_id}/stats", response_model=PlanStatsOut)

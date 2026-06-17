@@ -1,5 +1,5 @@
 import http from './http';
-import type { PlanCase, PlanStats, TestPlan } from '@/types/business';
+import type { PlanCase, PlanCaseResultComment, PlanStats, TestPlan } from '@/types/business';
 
 export function listPlans(params?: { version_id?: string }) {
   return http.get<TestPlan[]>('/plans', { params });
@@ -33,8 +33,16 @@ export function removePlanCase(planId: string, planCaseId: string) {
   return http.delete(`/plans/${planId}/cases/${planCaseId}`);
 }
 
-export function updatePlanResult(planId: string, data: { plan_case_id: string; result: string; comment?: string }) {
+export function updatePlanResult(planId: string, data: { plan_case_id: string; result: string }) {
   return http.post(`/plans/${planId}/results`, data);
+}
+
+export function listPlanCaseComments(planId: string, planCaseId: string) {
+  return http.get<PlanCaseResultComment[]>(`/plans/${planId}/cases/${planCaseId}/comments`);
+}
+
+export function createPlanCaseComment(planId: string, planCaseId: string, body: string) {
+  return http.post<PlanCaseResultComment>(`/plans/${planId}/cases/${planCaseId}/comments`, { body });
 }
 
 export function getPlanStats(planId: string) {

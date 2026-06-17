@@ -10,7 +10,14 @@ from app.models.bug import (
     BugStatusHistory,
 )
 from app.models.case import CaseModule, CasePriority, TestCase
-from app.models.plan import ExecuteResult, PlanCase, PlanCaseResult, PlanStatus, TestPlan
+from app.models.plan import (
+    ExecuteResult,
+    PlanCase,
+    PlanCaseResult,
+    PlanCaseResultComment,
+    PlanStatus,
+    TestPlan,
+)
 from app.models.project import Project, ProjectMember, ProjectRole
 from app.models.project_version import ProjectVersion
 from app.models.version_workflow import (
@@ -69,6 +76,7 @@ __all__ = [
     "TestPlan",
     "PlanCase",
     "PlanCaseResult",
+    "PlanCaseResultComment",
     "ProjectVersion",
     "VersionStatus",
     "VersionNodeState",

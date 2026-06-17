@@ -65,3 +65,13 @@ class PlanCaseResult(Base):
     )
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     executed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class PlanCaseResultComment(Base):
+    __tablename__ = "plan_case_result_comments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    plan_case_id: Mapped[str] = mapped_column(String(36), ForeignKey("plan_cases.id"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)

@@ -373,7 +373,6 @@ const planExecutionContext = computed(() => {
     planId: planId,
     planCaseId: activePlanCase.value.id,
     result: activePlanCase.value.result?.result ?? 'not_run',
-    comment: activePlanCase.value.result?.comment ?? null,
     readOnly: isArchived.value || !canManagePlan.value,
   };
 });

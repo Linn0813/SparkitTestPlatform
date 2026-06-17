@@ -13,7 +13,7 @@ from app.models.bug import (
     BugStatusHistory,
 )
 from app.models.case import CaseModule, TestCase
-from app.models.plan import PlanCase, PlanCaseResult, TestPlan
+from app.models.plan import PlanCase, PlanCaseResult, PlanCaseResultComment, TestPlan
 from app.models.project import Project, ProjectMember
 from app.models.project_version import ProjectVersion
 from app.models.requirement import (
@@ -75,6 +75,7 @@ async def _delete_plan_data(db: AsyncSession, project_id: str) -> None:
     plan_ids_sq = select(TestPlan.id).where(TestPlan.project_id == project_id)
     pc_ids_sq = select(PlanCase.id).where(PlanCase.plan_id.in_(plan_ids_sq))
 
+    await db.execute(delete(PlanCaseResultComment).where(PlanCaseResultComment.plan_case_id.in_(pc_ids_sq)))
     await db.execute(delete(PlanCaseResult).where(PlanCaseResult.plan_case_id.in_(pc_ids_sq)))
     await db.execute(delete(PlanCase).where(PlanCase.plan_id.in_(plan_ids_sq)))
 

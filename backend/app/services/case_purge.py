@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bug import BugCaseLink
 from app.models.case import TestCase
-from app.models.plan import PlanCase, PlanCaseResult
+from app.models.plan import PlanCase, PlanCaseResult, PlanCaseResultComment
 from app.models.requirement import CaseRequirementLink
 from app.services.file_cleanup import cleanup_after_case_deleted
 
@@ -20,6 +20,7 @@ async def hard_delete_test_cases(
         return
     case_ids = [c.id for c in cases]
     plan_case_ids_sq = select(PlanCase.id).where(PlanCase.case_id.in_(case_ids))
+    await db.execute(delete(PlanCaseResultComment).where(PlanCaseResultComment.plan_case_id.in_(plan_case_ids_sq)))
     await db.execute(delete(PlanCaseResult).where(PlanCaseResult.plan_case_id.in_(plan_case_ids_sq)))
     await db.execute(delete(PlanCase).where(PlanCase.case_id.in_(case_ids)))
     await db.execute(delete(CaseRequirementLink).where(CaseRequirementLink.case_id.in_(case_ids)))

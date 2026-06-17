@@ -23,7 +23,29 @@
 
     <div class="panel-title-row">
       <n-text strong class="case-title">{{ caseItem.title }}</n-text>
-      <n-tag v-if="!editMode" size="medium" round :bordered="false" type="info">{{ caseItem.priority }}</n-tag>
+      <n-dropdown
+        v-if="planExecution && !editMode"
+        trigger="click"
+        :options="resultMenuOptions"
+        :disabled="planExecution.readOnly || resultSaving"
+        @select="onResultMenuSelect"
+      >
+        <n-tag
+          :type="currentResultTagType"
+          size="medium"
+          round
+          :bordered="false"
+          class="status-chip"
+          :class="{ 'status-chip--disabled': planExecution.readOnly }"
+        >
+          <span v-if="resultSaving">更新中…</span>
+          <template v-else>
+            {{ currentResultLabel }}
+            <span v-if="!planExecution.readOnly" class="status-caret">▾</span>
+          </template>
+        </n-tag>
+      </n-dropdown>
+      <n-tag v-else-if="!editMode" size="medium" round :bordered="false" type="info">{{ caseItem.priority }}</n-tag>
     </div>
 
     <div class="panel-body">
@@ -61,36 +83,35 @@
         <n-text v-if="caseItem.expected_result?.trim()" class="text-block">{{ caseItem.expected_result }}</n-text>
         <n-text v-else depth="3">—</n-text>
 
-        <template v-if="planExecution">
-          <n-divider style="margin: 20px 0 12px" />
-          <n-text strong class="section-label" style="margin-top: 0">计划执行</n-text>
-          <n-form label-placement="top" class="execution-block">
-            <n-form-item label="执行结果">
-              <n-select
-                v-model:value="execResult"
-                :options="PLAN_RESULT_OPTIONS"
-                :disabled="planExecution.readOnly"
-                style="width: 100%; max-width: 200px"
+        <template v-if="planExecution && !editMode">
+          <n-text depth="3" class="section-label">执行记录</n-text>
+          <n-space vertical style="width: 100%">
+            <div v-for="c in execComments" :key="c.id" class="comment-item">
+              <n-text strong>{{ commentAuthorLabel(c) }}</n-text>
+              <n-text depth="3" style="font-size: 12px; margin-left: 8px">{{ formatTime(c.created_at) }}</n-text>
+              <InlineMarkdownContent
+                :text="c.body"
+                :project-id="caseItem.project_id"
+                class="comment-body"
               />
-            </n-form-item>
-            <n-form-item label="执行记录">
-              <n-input
-                v-model:value="execComment"
-                type="textarea"
-                :rows="4"
+            </div>
+            <n-empty v-if="!execComments.length" description="暂无执行记录" size="small" />
+            <template v-if="!planExecution.readOnly">
+              <PasteImageTextarea
+                v-model="newExecComment"
+                :project-id="caseItem.project_id"
                 placeholder="记录执行过程、环境、截图说明等"
-                :disabled="planExecution.readOnly"
               />
-            </n-form-item>
-            <n-button
-              v-if="!planExecution.readOnly"
-              type="primary"
-              :loading="execSaving"
-              @click="saveExecution"
-            >
-              保存执行结果
-            </n-button>
-          </n-form>
+              <n-button
+                type="primary"
+                :disabled="!newExecComment.trim()"
+                :loading="commentSaving"
+                @click="submitExecComment"
+              >
+                发表记录
+              </n-button>
+            </template>
+          </n-space>
         </template>
       </template>
 
@@ -143,9 +164,10 @@
 import { computed, ref, watch } from 'vue';
 import {
   NButton,
-  NDivider,
   NDescriptions,
   NDescriptionsItem,
+  NDropdown,
+  NEmpty,
   NForm,
   NFormItem,
   NInput,
@@ -158,9 +180,9 @@ import {
   useMessage,
 } from 'naive-ui';
 import { deleteCase, getCase, updateCase } from '@/api/cases';
-import { updatePlanResult } from '@/api/plans';
+import { createPlanCaseComment, listPlanCaseComments, updatePlanResult } from '@/api/plans';
 import { listRequirements } from '@/api/requirements';
-import { PLAN_RESULT_OPTIONS } from '@/constants/planStatus';
+import { PLAN_RESULT_OPTIONS, planResultLabel, planResultTagType } from '@/constants/planStatus';
 import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
 import InlineMarkdownContent from '@/components/InlineMarkdownContent.vue';
 import PasteImageTextarea from '@/components/PasteImageTextarea.vue';
@@ -173,9 +195,11 @@ import {
 import { useCaseModules } from '@/composables/useCaseModules';
 import { ensureContextForProject } from '@/composables/useProjectTemplate';
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
+import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { usePermissions } from '@/composables/usePermissions';
 import { mergeCustomFields, validateCustomFields } from '@/constants/fieldTypes';
-import type { Requirement, TestCase } from '@/types/business';
+import type { PlanCaseResultComment, Requirement, TestCase } from '@/types/business';
+import { displayUserLabel } from '@/utils/displayUser';
 import { modulePathLabel } from '@/utils/moduleTree';
 import { requirementOptionLabel } from '@/utils/requirementLabel';
 
@@ -183,7 +207,6 @@ export interface PlanExecutionContext {
   planId: string;
   planCaseId: string;
   result: string;
-  comment: string | null;
   readOnly: boolean;
 }
 
@@ -212,11 +235,24 @@ const caseItem = ref<TestCase | null>(null);
 const loading = ref(false);
 const editMode = ref(false);
 const saving = ref(false);
-const execSaving = ref(false);
+const resultSaving = ref(false);
+const commentSaving = ref(false);
 const execResult = ref('not_run');
-const execComment = ref('');
+const execComments = ref<PlanCaseResultComment[]>([]);
+const newExecComment = ref('');
 const requirements = ref<Requirement[]>([]);
 const customFields = ref<Record<string, unknown>>({});
+
+const projectIdRef = computed(() => caseItem.value?.project_id ?? null);
+const { nameByUserId } = useProjectMemberOptions(projectIdRef);
+
+const resultMenuOptions = computed(() =>
+  PLAN_RESULT_OPTIONS.map((o) => ({ label: o.label, key: o.value }))
+);
+
+const currentResultLabel = computed(() => planResultLabel(execResult.value));
+
+const currentResultTagType = computed(() => planResultTagType(execResult.value));
 
 const editForm = ref({
   title: '',
@@ -230,8 +266,8 @@ const editForm = ref({
 
 const priorityOptions = ['P0', 'P1', 'P2', 'P3'].map((v) => ({ label: v, value: v }));
 
-const projectIdRef = computed(() => caseItem.value?.project_id ?? null);
-const fieldSchema = useProjectFieldSchema('functional_case', projectIdRef);
+const projectIdRefForSchema = computed(() => caseItem.value?.project_id ?? null);
+const fieldSchema = useProjectFieldSchema('functional_case', projectIdRefForSchema);
 const templateUiFields = computed(() => fieldSchema.templateFieldsForUi.value);
 
 const canEdit = computed(() => canManageCases(caseItem.value?.project_id));
@@ -262,6 +298,19 @@ const requirementsLabel = computed(() => {
   return labels.length ? labels.join('、') : '—';
 });
 
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleString('zh-CN');
+}
+
+function memberName(userId: string | null | undefined): string {
+  if (!userId) return '—';
+  return nameByUserId.value.get(userId) ?? userId;
+}
+
+function commentAuthorLabel(c: PlanCaseResultComment): string {
+  return displayUserLabel(c.user, c.user_id, memberName(c.user_id));
+}
+
 function fillEditForm(c: TestCase) {
   editForm.value = {
     title: c.title,
@@ -275,6 +324,18 @@ function fillEditForm(c: TestCase) {
   customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, c.custom_fields);
 }
 
+async function loadExecutionComments() {
+  if (!props.planExecution) {
+    execComments.value = [];
+    return;
+  }
+  const { data } = await listPlanCaseComments(
+    props.planExecution.planId,
+    props.planExecution.planCaseId
+  );
+  execComments.value = data;
+}
+
 async function load() {
   loading.value = true;
   try {
@@ -286,6 +347,7 @@ async function load() {
     requirements.value = req.data;
     customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, data.custom_fields);
     fillEditForm(data);
+    await loadExecutionComments();
   } finally {
     loading.value = false;
   }
@@ -361,22 +423,49 @@ function onDelete() {
 function syncExecutionFromProps() {
   if (!props.planExecution) return;
   execResult.value = props.planExecution.result;
-  execComment.value = props.planExecution.comment ?? '';
 }
 
-async function saveExecution() {
-  if (!props.planExecution) return;
-  execSaving.value = true;
+function onResultMenuSelect(key: string) {
+  if (key && key !== execResult.value) {
+    onResultChange(key);
+  }
+}
+
+async function onResultChange(result: string) {
+  if (!props.planExecution || props.planExecution.readOnly) return;
+  const prev = execResult.value;
+  execResult.value = result;
+  resultSaving.value = true;
   try {
     await updatePlanResult(props.planExecution.planId, {
       plan_case_id: props.planExecution.planCaseId,
-      result: execResult.value,
-      comment: execComment.value.trim() || undefined,
+      result,
     });
-    message.success('执行结果已保存');
+    message.success('执行结果已更新');
+    emit('execution-updated');
+  } catch {
+    execResult.value = prev;
+    message.error('执行结果更新失败');
+  } finally {
+    resultSaving.value = false;
+  }
+}
+
+async function submitExecComment() {
+  if (!props.planExecution || !newExecComment.value.trim()) return;
+  commentSaving.value = true;
+  try {
+    const { data } = await createPlanCaseComment(
+      props.planExecution.planId,
+      props.planExecution.planCaseId,
+      newExecComment.value.trim()
+    );
+    execComments.value = [...execComments.value, data];
+    newExecComment.value = '';
+    message.success('执行记录已发表');
     emit('execution-updated');
   } finally {
-    execSaving.value = false;
+    commentSaving.value = false;
   }
 }
 
@@ -391,7 +480,10 @@ watch(
 
 watch(
   () => props.planExecution,
-  () => syncExecutionFromProps(),
+  async () => {
+    syncExecutionFromProps();
+    await loadExecutionComments();
+  },
   { immediate: true, deep: true }
 );
 </script>
@@ -438,6 +530,24 @@ watch(
   word-break: break-word;
 }
 
+.status-chip {
+  cursor: pointer;
+  font-weight: 600;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.status-chip--disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.status-caret {
+  margin-left: 4px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
 .panel-body {
   flex: 1;
   overflow: auto;
@@ -473,8 +583,14 @@ watch(
   border: 1px solid var(--n-border-color);
 }
 
-.execution-block {
-  margin-top: 0;
-  max-width: 560px;
+.comment-item {
+  padding: 12px;
+  border: 1px solid var(--n-border-color);
+  border-radius: 8px;
+  background: var(--n-color);
+}
+
+.comment-body {
+  margin-top: 8px;
 }
 </style>
