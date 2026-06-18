@@ -54,6 +54,18 @@ from app.models.template import (
 from app.models.wecom_rule import BugWecomNotifyRule
 from app.models.stored_file import StoredFile
 from app.models.user import User
+from app.models.ui_automation import (
+    MobileApp,
+    MobilePlatform,
+    UIElement,
+    UIRunner,
+    UIRunStatus,
+    UIStepStatus,
+    UITestCase,
+    UITestCaseStatus,
+    UITestRun,
+    UITestStepResult,
+)
 
 __all__ = [
     "User",
@@ -103,4 +115,14 @@ __all__ = [
     "BugActivity",
     "BugWecomNotifyRule",
     "StoredFile",
+    "MobileApp",
+    "MobilePlatform",
+    "UIElement",
+    "UIRunner",
+    "UIRunStatus",
+    "UIStepStatus",
+    "UITestCase",
+    "UITestCaseStatus",
+    "UITestRun",
+    "UITestStepResult",
 ]

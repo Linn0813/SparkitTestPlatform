@@ -18,11 +18,11 @@ set_env_kv() {
 
 ensure_backend_env() {
   local root="$1"
-  local env_file="$root/backend/.env"
-  local example="$root/.env.example"
+  local env_file="$root/backend/.env.local"
+  local production="$root/backend/.env.production"
   if [[ ! -f "$env_file" ]]; then
-    cp "$example" "$env_file"
-    echo "已创建 backend/.env"
+    cp "$production" "$env_file"
+    echo "已创建 backend/.env.local"
   fi
   echo "$env_file"
 }

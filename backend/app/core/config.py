@@ -32,7 +32,7 @@ def _resolve_deploy_host(lan: Optional[str], wan: Optional[str], port: int) -> O
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env.local", env_file_encoding="utf-8", extra="ignore")
 
     database_url: str = "mysql+aiomysql://sparkit:sparkit@127.0.0.1:3307/sparkit"
     database_host_lan: Optional[str] = None

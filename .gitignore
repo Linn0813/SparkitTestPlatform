@@ -3,15 +3,12 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
-.env
-backend/.env
 *.egg-info/
 .pytest_cache/
 
 # Node
 node_modules/
 dist/
-*.local
 
 # IDE
 .idea/
@@ -24,5 +21,12 @@ dist/
 # Logs
 *.log
 dev/logs/
+
+# Env files — *.local 不提交，*.production 提交
+*.env.local
+backend/.env.local
+runner/.env.local
+dev/.env.compose.local
+
 backend/alembic/versions/001_stored_files_content_longblob.py
 backend/alembic/versions/002_stored_files_drop_content.py

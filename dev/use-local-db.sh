@@ -9,12 +9,12 @@ MINIO_ENDPOINT="127.0.0.1:9000"
 echo "==> 启动部署用 MySQL + MinIO（本机 Docker）"
 "$SCRIPT_DIR/deploy-host.sh"
 
-ENV_FILE="$ROOT/backend/.env"
-EXAMPLE="$ROOT/.env.example"
+ENV_FILE="$ROOT/backend/.env.local"
+PRODUCTION="$ROOT/backend/.env.production"
 
 if [[ ! -f "$ENV_FILE" ]]; then
-  cp "$EXAMPLE" "$ENV_FILE"
-  echo "已创建 backend/.env（从 .env.example）"
+  cp "$PRODUCTION" "$ENV_FILE"
+  echo "已创建 backend/.env.local（从 .env.production）"
 fi
 
 if grep -q '^DATABASE_URL=' "$ENV_FILE"; then
@@ -47,7 +47,7 @@ _set_kv "MINIO_BUCKET" "sparkit"
 _set_kv "MINIO_SECURE" "false"
 
 echo ""
-echo "backend/.env 已指向本机部署中间件："
+echo "backend/.env.local 已指向本机部署中间件："
 echo "  ${DEPLOY_DATABASE_URL}"
 echo "  MINIO_ENDPOINT=${MINIO_ENDPOINT}"
 echo ""

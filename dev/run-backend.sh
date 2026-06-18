@@ -12,14 +12,14 @@ fi
 source .venv/bin/activate
 pip install -q -r requirements.txt
 
-if [[ ! -f .env ]]; then
-  cp "$ROOT/.env.example" .env
-  echo "Created backend/.env from .env.example"
+if [[ ! -f .env.local ]]; then
+  cp "$ROOT/backend/.env.production" .env.local
+  echo "Created backend/.env.local from .env.production"
 fi
 
 # 首次或空库时执行：python scripts/init_database.py && python ../dev/seed.py
 
-ENV_FILE="$ROOT/backend/.env"
+ENV_FILE="$ROOT/backend/.env.local"
 if [[ -f "$ENV_FILE" ]]; then
   # 部署机本机库：DATABASE_URL 指向 127.0.0.1 / localhost，不做内网外网探测
   if grep -qE '^DATABASE_URL=.*@(127\.0\.0\.1|localhost)[:/]' "$ENV_FILE" 2>/dev/null; then

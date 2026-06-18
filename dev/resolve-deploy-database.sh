@@ -4,7 +4,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="$ROOT/backend/.env"
+ENV_FILE="$ROOT/backend/.env.local"
 
 read_env_var() {
   local key="$1"

@@ -61,6 +61,16 @@ const router = createRouter({
           name: 'plan-detail',
           component: () => import('@/views/plan/PlanDetailView.vue'),
         },
+        {
+          path: 'ui-automation',
+          name: 'ui-automation',
+          component: () => import('@/views/ui-automation/UIAutomationView.vue'),
+        },
+        {
+          path: 'ui-automation/runs/:id',
+          name: 'ui-run-detail',
+          component: () => import('@/views/ui-automation/UIRunDetailView.vue'),
+        },
         { path: 'bugs', name: 'bugs', component: () => import('@/views/bug/BugListView.vue') },
         {
           path: 'bugs/:id',

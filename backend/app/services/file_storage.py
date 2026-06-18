@@ -17,7 +17,7 @@ from app.services import minio_storage
 
 logger = logging.getLogger(__name__)
 
-_FILE_KEY_PREFIXES = ("bugs/", "projects/")
+_FILE_KEY_PREFIXES = ("bugs/", "projects/", "ui-screenshots/", "ui-elements/", "ui-videos/")
 
 # mimetypes 在部分环境对视频扩展名识别不完整
 _EXTRA_MIME_BY_EXT: dict[str, str] = {

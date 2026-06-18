@@ -10,8 +10,8 @@ if [[ ! -d .venv ]]; then
 fi
 source .venv/bin/activate
 
-if [[ ! -f .env ]]; then
-  echo "缺少 backend/.env，请复制：cp ../.env.example .env"
+if [[ ! -f .env.local ]]; then
+  echo "缺少 backend/.env.local，请复制：cp backend/.env.production backend/.env.local"
   exit 1
 fi
 

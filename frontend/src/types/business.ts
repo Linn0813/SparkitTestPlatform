@@ -609,3 +609,121 @@ export interface MemberSchedule {
   range_end: string;
   members: MemberScheduleRow[];
 }
+
+// ---------------------------------------------------------------------------
+// UI 自动化
+// ---------------------------------------------------------------------------
+
+export type MobilePlatform = 'android' | 'ios';
+export type UITestCaseStatus = 'draft' | 'active';
+export type UIRunStatus = 'pending' | 'running' | 'passed' | 'failed' | 'error';
+export type UIStepStatus = 'pending' | 'passed' | 'failed' | 'skipped';
+
+export interface UIElement {
+  id: string;
+  project_id: string;
+  platform: MobilePlatform;
+  name: string;
+  selector: string;
+  description: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UITestStep {
+  action: string;
+  selector_key?: string;
+  value?: string;
+}
+
+export interface UITestAssertion {
+  type?: string;
+  selector_key?: string;
+  value?: string;
+}
+
+export interface UITestCase {
+  id: string;
+  project_id: string;
+  name: string;
+  platform: MobilePlatform;
+  description: string | null;
+  status: UITestCaseStatus;
+  selectors: Record<string, string>;
+  steps: UITestStep[];
+  assertion: UITestAssertion;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UITestCaseListItem {
+  id: string;
+  name: string;
+  platform: MobilePlatform;
+  status: UITestCaseStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MobileApp {
+  id: string;
+  project_id: string;
+  platform: MobilePlatform;
+  version: string;
+  filename: string;
+  size: number;
+  uploaded_by: string;
+  uploaded_at: string;
+}
+
+export interface UIRunner {
+  id: string;
+  project_id: string;
+  name: string;
+  platform: MobilePlatform;
+  last_heartbeat_at: string | null;
+  created_at: string;
+}
+
+export interface UITestStepResult {
+  id: string;
+  run_id: string;
+  step_index: number;
+  status: UIStepStatus;
+  error_message: string | null;
+  screenshot_key: string | null;
+  screenshot_url: string | null;
+  duration_ms: number | null;
+  executed_at: string | null;
+}
+
+export interface UITestRun {
+  id: string;
+  project_id: string;
+  case_id: string;
+  app_id: string;
+  runner_id: string | null;
+  status: UIRunStatus;
+  error_message: string | null;
+  video_key: string | null;
+  video_url: string | null;
+  triggered_by: string;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  step_results: UITestStepResult[];
+}
+
+export interface UITestRunListItem {
+  id: string;
+  case_id: string;
+  app_id: string;
+  runner_id: string | null;
+  status: UIRunStatus;
+  triggered_by: string;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+}
