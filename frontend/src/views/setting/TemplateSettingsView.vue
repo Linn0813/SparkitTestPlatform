@@ -9,7 +9,7 @@
       <n-alert v-if="!canEdit" type="info" :bordered="false" style="margin-bottom: 12px">
         仅项目管理员可修改项目设置，当前为只读浏览。
       </n-alert>
-      <n-tabs v-model:value="tab" type="line">
+      <n-tabs v-model:value="tab" type="line" display-directive="show:lazy">
       <n-tab-pane name="case" tab="用例字段">
         <div class="template-editor-layout">
           <TemplateFieldPanel
@@ -201,7 +201,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue';
+import { computed, h, ref, watch } from 'vue';
 import {
   NAlert,
   NButton,
@@ -751,38 +751,61 @@ async function loadWecomRules(projectId: string) {
   applyWecomRules(data);
 }
 
-async function load() {
+function resetTabData() {
+  caseFields.value = [];
+  bugFields.value = [];
+  reqFields.value = [];
+  statuses.value = [];
+  wecom.value = { wecom_enabled: false, wecom_webhook_url: null, app_public_url: null };
+  wecomRules.value = [];
+}
+
+/** 仅加载当前 Tab 所需数据，避免进入项目设置时一次性打满全部接口 */
+async function loadActiveTab() {
   if (!ctx.projectId) {
-    caseFields.value = [];
-    bugFields.value = [];
-    reqFields.value = [];
-    statuses.value = [];
-    wecom.value = { wecom_enabled: false, wecom_webhook_url: null, app_public_url: null };
-    wecomRules.value = [];
+    resetTabData();
     return;
   }
+  const projectId = ctx.projectId;
   try {
-    const projectId = ctx.projectId;
-    if (!projectId) return;
-    const [c, b, s, w, rules] = await Promise.all([
-      getTemplate(projectId, 'functional_case'),
-      getTemplate(projectId, 'bug'),
-      listBugStatuses(projectId),
-      getWecom(projectId),
-      listWecomNotifyRules(projectId),
-    ]);
-    caseFields.value = c.data.fields as TemplateField[];
-    bugFields.value = b.data.fields as TemplateField[];
-    statuses.value = s.data.sort((a, b) => a.sort - b.sort);
-    wecom.value = {
-      wecom_enabled: w.data.wecom_enabled,
-      wecom_webhook_url: w.data.wecom_webhook_url,
-      app_public_url: w.data.app_public_url,
-    };
-    applyWecomRules(rules.data);
+    switch (tab.value) {
+      case 'case': {
+        const { data } = await getTemplate(projectId, 'functional_case');
+        caseFields.value = data.fields as TemplateField[];
+        break;
+      }
+      case 'bug': {
+        const [b, s] = await Promise.all([
+          getTemplate(projectId, 'bug'),
+          listBugStatuses(projectId),
+        ]);
+        bugFields.value = b.data.fields as TemplateField[];
+        statuses.value = s.data.sort((a, b) => a.sort - b.sort);
+        break;
+      }
+      case 'wecom': {
+        const [w, rules] = await Promise.all([
+          getWecom(projectId),
+          listWecomNotifyRules(projectId),
+        ]);
+        wecom.value = {
+          wecom_enabled: w.data.wecom_enabled,
+          wecom_webhook_url: w.data.wecom_webhook_url,
+          app_public_url: w.data.app_public_url,
+        };
+        applyWecomRules(rules.data);
+        break;
+      }
+      default:
+        break;
+    }
   } catch {
     message.error('加载项目设置失败，请确认是否选择了正确的项目且有权限');
   }
+}
+
+async function load() {
+  await loadActiveTab();
 }
 
 async function saveTemplate(scene: 'functional_case' | 'bug' | 'requirement', fields: TemplateField[]) {
@@ -855,13 +878,9 @@ watch(
   }
 );
 
-watch(() => ctx.projectId, () => {
-  void load();
-});
-
-onMounted(() => {
-  void load();
-});
+watch([tab, () => ctx.projectId], () => {
+  void loadActiveTab();
+}, { immediate: true });
 </script>
 
 <style scoped>

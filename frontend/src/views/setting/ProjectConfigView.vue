@@ -1,6 +1,6 @@
 <template>
   <n-card title="项目配置">
-    <n-tabs v-model:value="tab" type="line" class="project-config__tabs">
+    <n-tabs v-model:value="tab" type="line" display-directive="show:lazy" class="project-config__tabs">
       <n-tab-pane name="members" tab="项目成员">
         <ProjectMembersView embedded />
       </n-tab-pane>

@@ -36,25 +36,33 @@ npm run build
 
 echo "==> 重启后端"
 sudo systemctl restart sparkit-backend
+sleep 3
 
 echo "==> 重载 Nginx"
 sudo nginx -t
 sudo systemctl reload nginx
 
 echo ""
-echo "==> 健康检查"
-for i in $(seq 1 15); do
+echo "==> 健康检查（最多约 60 秒）"
+HEALTH_OK=0
+for i in $(seq 1 30); do
   if curl -sf http://127.0.0.1:8000/health >/dev/null; then
     echo "后端正常: http://127.0.0.1:8000/health"
+    HEALTH_OK=1
     break
   fi
-  if [[ $i -eq 15 ]]; then
-    echo "后端未响应，查看日志:" >&2
-    echo "  sudo journalctl -u sparkit-backend -n 40 --no-pager" >&2
-    exit 1
-  fi
+  echo "  等待后端启动... (${i}/30)"
   sleep 2
 done
+
+if [[ $HEALTH_OK -ne 1 ]]; then
+  echo "后端未响应，服务状态与最近日志:" >&2
+  sudo systemctl status sparkit-backend --no-pager -l || true
+  echo "" >&2
+  sudo journalctl -u sparkit-backend -n 50 --no-pager || true
+  ss -tlnp 2>/dev/null | grep -E ':8000|:3741' || true
+  exit 1
+fi
 
 PUBLIC_URL=""
 if [[ -f "$ROOT/backend/.env.local" ]]; then
