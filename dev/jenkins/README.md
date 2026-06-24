@@ -57,14 +57,17 @@ ssh -i ~/.jenkins_sparkit_tp_deploy ubuntu@43.131.62.217 \
   'bash -lc "~/SparkitTestPlatform/dev/update-cloud-server.sh"'
 ```
 
-### 3. Jenkins Web UI — 添加 SSH 凭据
+### 3. Jenkins Web UI — SSH 凭据
 
-1. **Manage Jenkins → Credentials → System → Global credentials → Add Credentials**
-2. Kind: **SSH Username with private key**
-3. ID: **`sparkit-tp-deploy-ssh`**（必须与 Jenkinsfile 一致）
-4. Username: `ubuntu`
-5. Private Key: Enter directly，粘贴 `~/.jenkins_sparkit_tp_deploy` 私钥全文
-6. Save
+与同仓库 Java 任务一致，复用 **`dev-cred`**（`sshagent` 里的 `REMOTE_CRED`）。
+
+若 `dev-cred` 尚未配置到应用机 `ubuntu@43.131.62.217`，任选其一：
+
+**A. 复用 dev-cred** — 在 Jenkins Credentials 里确认该私钥对应的公钥已写入应用机 `~/.ssh/authorized_keys`
+
+**B. 新建专用凭据** — ID 填 `sparkit-tp-deploy-ssh`，并把 Jenkinsfile 里 `REMOTE_CRED` 改为该 ID
+
+添加/检查路径：**Manage Jenkins → Credentials → dev-cred**（或 Global）
 
 ### 4. Jenkins 任务 `dev-sparkit-testplatform`
 
@@ -87,7 +90,17 @@ ssh -i ~/.jenkins_sparkit_tp_deploy ubuntu@43.131.62.217 \
 ### sshagent / credentials not found
 
 - 安装插件 **SSH Agent Plugin**
-- 凭据 ID 必须是 **`sparkit-tp-deploy-ssh`**
+- Jenkinsfile 默认 `REMOTE_CRED = dev-cred`，与同仓库 Java 任务一致；若无权限连应用机，新建凭据并改 Jenkinsfile
+
+### dev-cred 连不上 43.131.62.217
+
+Java 任务连的是内网 `ops@10.218.196.2`，测试平台是公网 `ubuntu@43.131.62.217`，**不一定是同一把密钥**。在 Jenkins 机测试：
+
+```bash
+ssh -i <dev-cred对应私钥> ubuntu@43.131.62.217 'echo ok'
+```
+
+失败则为测试平台单独配一把 key，ID 如 `sparkit-tp-deploy-ssh`。
 
 ### Host key verification failed
 
