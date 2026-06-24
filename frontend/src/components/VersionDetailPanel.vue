@@ -184,7 +184,7 @@ import {
   type DataTableColumns,
 } from 'naive-ui';
 import { listBugs } from '@/api/bugs';
-import { listRequirements } from '@/api/requirements';
+import { listAllRequirements } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import { completeVersionNode, deleteVersion, getVersion, reopenVersionNode, updateVersion } from '@/api/versions';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
@@ -553,8 +553,7 @@ async function loadRequirements() {
   }
   loadingReqs.value = true;
   try {
-    const { data } = await listRequirements({ version_id: props.versionId });
-    requirements.value = data;
+    requirements.value = await listAllRequirements({ version_id: props.versionId });
   } finally {
     loadingReqs.value = false;
   }

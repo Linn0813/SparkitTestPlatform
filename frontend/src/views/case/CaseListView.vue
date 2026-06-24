@@ -159,7 +159,7 @@ import {
   type DataTableColumns,
 } from 'naive-ui';
 import { createCase, deleteCase, listCases, type ListCasesParams } from '@/api/cases';
-import { listRequirements } from '@/api/requirements';
+import { listAllRequirements } from '@/api/requirements';
 import CaseDetailPanel from '@/components/CaseDetailPanel.vue';
 import CaseImportModal from '@/components/CaseImportModal.vue';
 import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
@@ -597,8 +597,8 @@ async function loadMeta() {
     requirements.value = [];
     return;
   }
-  const [, req] = await Promise.all([fieldSchema.reload(true), listRequirements()]);
-  requirements.value = req.data;
+  const [, req] = await Promise.all([fieldSchema.reload(true), listAllRequirements()]);
+  requirements.value = req;
   filters.value = syncCustomFilterKeys(filters.value, fieldSchema.templateFields.value);
   sanitizeVisibleKeys();
 }

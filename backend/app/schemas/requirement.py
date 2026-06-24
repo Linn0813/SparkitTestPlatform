@@ -206,6 +206,13 @@ class RequirementOut(ORMBase):
     updated_at: datetime
 
 
+class RequirementListPageOut(BaseModel):
+    items: list[RequirementOut]
+    total: int
+    page: int
+    page_size: int
+
+
 class RequirementCreate(BaseModel):
     title: str = Field(min_length=1, max_length=512)
     external_url: Optional[str] = Field(default=None, max_length=1024)

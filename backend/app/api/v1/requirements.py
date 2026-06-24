@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,7 @@ from app.schemas.requirement import (
     RequirementCommentCreate,
     RequirementCommentOut,
     RequirementCreate,
+    RequirementListPageOut,
     RequirementNodeActionBody,
     RequirementNodeTaskCreate,
     RequirementNodeTaskOut,
@@ -67,6 +68,9 @@ from app.services.requirement_version import assert_requirement_version
 from app.services.versions import validate_version_id
 
 router = APIRouter(prefix="/requirements", tags=["requirements"])
+
+_DEFAULT_PAGE_SIZE = 20
+_MAX_PAGE_SIZE = 100
 
 
 async def _get_requirement_or_404(
@@ -141,7 +145,7 @@ async def _validate_requirement_fields(db: AsyncSession, project_id: str, data: 
         )
 
 
-@router.get("", response_model=list[RequirementOut])
+@router.get("", response_model=RequirementListPageOut)
 async def list_requirements(
     q: Optional[str] = None,
     version_id: Optional[str] = None,
@@ -155,6 +159,8 @@ async def list_requirements(
     developer_id: Optional[str] = None,
     dev_handoff_from: Optional[date] = None,
     dev_handoff_to: Optional[date] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE),
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -174,9 +180,16 @@ async def list_requirements(
         dev_handoff_from=dev_handoff_from,
         dev_handoff_to=dev_handoff_to,
     )
-    result = await db.execute(stmt.order_by(Requirement.num.desc()))
+    count_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
+    total = count_result.scalar_one()
+
+    offset = (page - 1) * page_size
+    result = await db.execute(
+        stmt.order_by(Requirement.num.desc()).offset(offset).limit(page_size)
+    )
     rows = result.scalars().all()
-    return [await requirement_out(r, db) for r in rows]
+    items = [await requirement_out(r, db) for r in rows]
+    return RequirementListPageOut(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.post("", response_model=RequirementOut, status_code=status.HTTP_201_CREATED)

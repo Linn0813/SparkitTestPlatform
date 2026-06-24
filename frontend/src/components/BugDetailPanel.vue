@@ -310,7 +310,7 @@ import {
   uploadAttachment,
 } from '@/api/bugs';
 import { listPlans } from '@/api/plans';
-import { listRequirements } from '@/api/requirements';
+import { listAllRequirements } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import BugFormFields, { type BugFormModel } from '@/components/BugFormFields.vue';
 import BugFollowerScheduleTable, {
@@ -646,11 +646,11 @@ async function load() {
     const [, s, req, pl] = await Promise.all([
       fieldSchema.reload(true),
       listBugStatuses(projectId),
-      listRequirements(),
+      listAllRequirements(),
       listPlans(),
     ]);
     statuses.value = s.data;
-    requirements.value = req.data;
+    requirements.value = req;
     plans.value = pl.data;
     customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, b.data.custom_fields);
     fillEditForm(b.data);

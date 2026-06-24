@@ -285,7 +285,7 @@ import {
   updatePlanResult,
 } from '@/api/plans';
 import { listBugs } from '@/api/bugs';
-import { listRequirements } from '@/api/requirements';
+import { listAllRequirements } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
 import CaseDetailPanel from '@/components/CaseDetailPanel.vue';
@@ -751,8 +751,7 @@ async function openAddCases() {
   filterRequirementId.value = null;
   selectedCaseIds.value = [];
   showAddCases.value = true;
-  const { data } = await listRequirements();
-  requirements.value = data;
+  requirements.value = await listAllRequirements();
   await loadCasePickerOptions();
 }
 

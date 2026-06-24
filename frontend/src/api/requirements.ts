@@ -10,7 +10,14 @@ import type {
 
 export type RequirementNodeAction = 'start' | 'complete' | 'skip' | 'reopen' | 'reject';
 
-export function listRequirements(params?: {
+export interface RequirementListPage {
+  items: Requirement[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface ListRequirementsParams {
   q?: string;
   version_id?: string;
   status?: string;
@@ -23,8 +30,28 @@ export function listRequirements(params?: {
   developer_id?: string;
   dev_handoff_from?: string;
   dev_handoff_to?: string;
-}) {
-  return http.get<Requirement[]>('/requirements', { params });
+  page?: number;
+  page_size?: number;
+}
+
+export function listRequirements(params?: ListRequirementsParams) {
+  return http.get<RequirementListPage>('/requirements', { params });
+}
+
+/** 下拉选项等场景：分页拉取全部需求 */
+export async function listAllRequirements(
+  params?: Omit<ListRequirementsParams, 'page' | 'page_size'>
+): Promise<Requirement[]> {
+  const pageSize = 100;
+  let page = 1;
+  const items: Requirement[] = [];
+  while (true) {
+    const { data } = await listRequirements({ ...params, page, page_size: pageSize });
+    items.push(...data.items);
+    if (items.length >= data.total) break;
+    page += 1;
+  }
+  return items;
 }
 
 export function getRequirement(id: string) {

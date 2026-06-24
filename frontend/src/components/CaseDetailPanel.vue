@@ -181,7 +181,7 @@ import {
 } from 'naive-ui';
 import { deleteCase, getCase, updateCase } from '@/api/cases';
 import { createPlanCaseComment, listPlanCaseComments, updatePlanResult } from '@/api/plans';
-import { listRequirements } from '@/api/requirements';
+import { listAllRequirements } from '@/api/requirements';
 import { PLAN_RESULT_OPTIONS, planResultLabel, planResultTagType } from '@/constants/planStatus';
 import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
 import InlineMarkdownContent from '@/components/InlineMarkdownContent.vue';
@@ -343,8 +343,8 @@ async function load() {
     caseItem.value = data;
     await ensureContextForProject(data.project_id);
     await loadModules();
-    const [, req] = await Promise.all([fieldSchema.reload(true), listRequirements()]);
-    requirements.value = req.data;
+    const [, req] = await Promise.all([fieldSchema.reload(true), listAllRequirements()]);
+    requirements.value = req;
     customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, data.custom_fields);
     fillEditForm(data);
     await loadExecutionComments();

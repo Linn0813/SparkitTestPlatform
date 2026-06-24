@@ -30,6 +30,17 @@
       style="margin-top: 8px"
     />
 
+    <div class="requirement-list-pagination">
+      <n-pagination
+        v-model:page="page"
+        v-model:page-size="pageSize"
+        :item-count="total"
+        :page-sizes="[10, 20, 50, 100]"
+        show-size-picker
+        show-quick-jumper
+      />
+    </div>
+
     <n-drawer
       v-model:show="createDrawerVisible"
       :width="REQUIREMENT_DRAWER_WIDTH"
@@ -84,6 +95,7 @@ import {
   NDataTable,
   NDrawer,
   NDrawerContent,
+  NPagination,
   NSpace,
   NTag,
   NText,
@@ -115,6 +127,7 @@ import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
 import type { Requirement, ProjectVersion } from '@/types/business';
 import { decodeFilterQuery, encodeFilterValues, hasFilterValues } from '@/utils/filterQueryCodec';
+import { pickAdjacentItemId } from '@/utils/listNavigation';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
 import { formatDevHandoffDate, formatRequirementDevelopers } from '@/utils/requirementListDerived';
 
@@ -132,12 +145,16 @@ const router = useRouter();
 const message = useMessage();
 const dialog = useDialog();
 const rows = ref<Requirement[]>([]);
+const total = ref(0);
+const page = ref(1);
+const pageSize = ref(20);
 const loading = ref(false);
 const createDrawerVisible = ref(false);
 const creating = ref(false);
 const drawerVisible = ref(false);
 const activeReqId = ref<string | null>(null);
 const applyingRoute = ref(false);
+const paginationReady = ref(false);
 const filters = ref<RequirementListFilterState>(emptyRequirementListFilters());
 const versions = ref<ProjectVersion[]>([]);
 
@@ -217,6 +234,7 @@ const filterTags = computed(() => {
           dev_handoff_from: null,
           dev_handoff_to: null,
         };
+        page.value = 1;
         syncQueryToRoute();
         void load();
       },
@@ -227,6 +245,7 @@ const filterTags = computed(() => {
 
 function clearFilterField(key: keyof RequirementListFilterState) {
   filters.value = clearRequirementFilterField(filters.value, key);
+  page.value = 1;
   syncQueryToRoute();
   void load();
 }
@@ -242,7 +261,12 @@ function buildListParams() {
     developer_id?: string;
     dev_handoff_from?: string;
     dev_handoff_to?: string;
-  } = {};
+    page?: number;
+    page_size?: number;
+  } = {
+    page: page.value,
+    page_size: pageSize.value,
+  };
   if (f.q.trim()) params.q = f.q.trim();
   if (f.version_id) params.version_id = f.version_id;
   const status = encodeFilterValues(f.status_keys);
@@ -274,6 +298,8 @@ function syncQueryToRoute() {
   if (f.dev_handoff_from) q.dev_handoff_from = f.dev_handoff_from;
   if (f.dev_handoff_to) q.dev_handoff_to = f.dev_handoff_to;
   if (activeReqId.value) q.id = activeReqId.value;
+  if (page.value > 1) q.page = String(page.value);
+  if (pageSize.value !== 20) q.page_size = String(pageSize.value);
   router.replace({ name: 'requirements', query: q });
 }
 
@@ -290,6 +316,10 @@ function applyRouteQuery() {
     dev_handoff_from: typeof q.dev_handoff_from === 'string' && q.dev_handoff_from ? q.dev_handoff_from : null,
     dev_handoff_to: typeof q.dev_handoff_to === 'string' && q.dev_handoff_to ? q.dev_handoff_to : null,
   };
+  const pageQ = typeof q.page === 'string' ? parseInt(q.page, 10) : NaN;
+  page.value = Number.isFinite(pageQ) && pageQ > 0 ? pageQ : 1;
+  const pageSizeQ = typeof q.page_size === 'string' ? parseInt(q.page_size, 10) : NaN;
+  pageSize.value = Number.isFinite(pageSizeQ) && pageSizeQ > 0 ? pageSizeQ : 20;
   const qid = typeof q.id === 'string' && q.id ? q.id : null;
   if (qid) {
     activeReqId.value = qid;
@@ -301,10 +331,12 @@ function applyRouteQuery() {
 }
 
 function applyFilters() {
+  const hadPage = page.value;
+  page.value = 1;
   applyingRoute.value = true;
   syncQueryToRoute();
   applyingRoute.value = false;
-  void load();
+  if (hadPage === 1) void load();
 }
 
 function resetFilters() {
@@ -460,9 +492,13 @@ function onDetailUpdated(row: Requirement) {
 async function load() {
   if (!ctx.projectId) {
     rows.value = [];
+    total.value = 0;
     versions.value = [];
     return;
   }
+  const prevIndex = activeReqId.value
+    ? rows.value.findIndex((r) => r.id === activeReqId.value)
+    : -1;
   loading.value = true;
   try {
     await projectConfig.reload();
@@ -470,12 +506,23 @@ async function load() {
       listRequirements(buildListParams()),
       listVersions(),
     ]);
-    rows.value = data;
+    total.value = data.total;
+    const maxPage = Math.max(1, Math.ceil(data.total / data.page_size) || 1);
+    if (page.value > maxPage) {
+      page.value = maxPage;
+      return;
+    }
+    rows.value = data.items;
+    if (data.page_size !== pageSize.value) pageSize.value = data.page_size;
     versions.value = versionRes.data;
-    const qid = route.query.id;
-    if (typeof qid === 'string' && qid && data.some((r) => r.id === qid)) {
-      activeReqId.value = qid;
-      drawerVisible.value = true;
+    if (
+      activeReqId.value &&
+      !data.items.some((r) => r.id === activeReqId.value) &&
+      prevIndex >= 0
+    ) {
+      const nextId = pickAdjacentItemId(data.items, prevIndex);
+      if (nextId) openDetail(nextId);
+      else closeDrawer();
     }
   } finally {
     loading.value = false;
@@ -528,6 +575,7 @@ function onRemove(row: Requirement) {
 
 onMounted(() => {
   applyRouteQuery();
+  paginationReady.value = true;
   void load();
 });
 
@@ -535,6 +583,7 @@ watch(
   () => ctx.projectId,
   () => {
     filters.value = emptyRequirementListFilters();
+    page.value = 1;
     activeReqId.value = null;
     drawerVisible.value = false;
     router.replace({ name: 'requirements', query: {} });
@@ -550,9 +599,31 @@ watch(
     void load();
   }
 );
+
+watch(pageSize, () => {
+  if (!paginationReady.value || applyingRoute.value) return;
+  if (page.value !== 1) {
+    page.value = 1;
+    return;
+  }
+  syncQueryToRoute();
+  void load();
+});
+
+watch(page, () => {
+  if (!paginationReady.value || applyingRoute.value) return;
+  syncQueryToRoute();
+  void load();
+});
 </script>
 
 <style scoped>
+.requirement-list-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 :deep(.prd-link) {
   display: inline-block;
   max-width: 100%;

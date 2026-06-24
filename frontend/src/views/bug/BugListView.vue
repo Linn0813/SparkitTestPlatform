@@ -113,7 +113,7 @@ import {
 } from 'naive-ui';
 import { createBug, listBugs, type ListBugsParams } from '@/api/bugs';
 import { listPlans } from '@/api/plans';
-import { listRequirements } from '@/api/requirements';
+import { listAllRequirements } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
 import BugFormFields, { type BugFormModel } from '@/components/BugFormFields.vue';
@@ -475,13 +475,13 @@ async function loadMeta() {
   const [st, , req, pl] = await Promise.all([
     listBugStatuses(ctx.projectId),
     fieldSchema.reload(true),
-    listRequirements(),
+    listAllRequirements(),
     listPlans(),
   ]);
   statuses.value = st.data;
   filters.value = syncCustomFilterKeys(filters.value, fieldSchema.templateFields.value);
   sanitizeVisibleKeys();
-  requirements.value = req.data;
+  requirements.value = req;
   plans.value = pl.data;
 }
 
