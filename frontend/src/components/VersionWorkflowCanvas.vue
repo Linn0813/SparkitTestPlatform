@@ -65,7 +65,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { NText } from 'naive-ui';
-import type { VersionNodeProgress, VersionWorkflowNodeDef } from '@/types/business';
+import type {
+  RequirementNodeState,
+  VersionNodeProgress,
+  VersionWorkflowNodeDef,
+} from '@/types/business';
 import {
   collectAllLaneIndexes,
   columnNodesForLane,

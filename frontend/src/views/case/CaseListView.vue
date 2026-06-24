@@ -441,7 +441,7 @@ function onBatchDelete() {
       batchDeleting.value = true;
       try {
         const results = await Promise.allSettled(ids.map((id) => deleteCase(id)));
-        const succeededIds = ids.filter((id, i) => results[i].status === 'fulfilled');
+        const succeededIds = ids.filter((_, i) => results[i].status === 'fulfilled');
         const failed = ids.length - succeededIds.length;
         removeCasesLocally(succeededIds);
         checkedRowKeys.value = [];
