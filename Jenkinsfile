@@ -1,12 +1,17 @@
-// SparkitTestPlatform — 云服务器自动部署
-// Jenkins 与应用在同一个 ubuntu 服务器上时，Pipeline 直接调用 update-cloud-server.sh
+// SparkitTestPlatform — Jenkins 与应用分机部署
+// Jenkins: 49.51.186.145:8080  →  SSH  →  应用: 43.131.62.217:3741
 //
-// 触发方式（二选一）：
-//   1. GitHub Webhook（推荐）— 见 dev/jenkins/README.md
-//   2. Poll SCM — 下方 triggers 已启用备用轮询
+// Jenkins 凭据 ID: sparkit-tp-deploy-ssh（ubuntu 私钥，见 dev/jenkins/README.md）
 
 pipeline {
     agent any
+
+    environment {
+        DEPLOY_HOST = '43.131.62.217'
+        DEPLOY_USER = 'ubuntu'
+        DEPLOY_SCRIPT = '/home/ubuntu/SparkitTestPlatform/dev/update-cloud-server.sh'
+        APP_URL = 'http://43.131.62.217:3741'
+    }
 
     options {
         skipDefaultCheckout(true)
@@ -16,44 +21,30 @@ pipeline {
     }
 
     triggers {
-        // push 后 Webhook 未到时，约每 2 分钟检查一次 main 是否有新提交
         pollSCM('H/2 * * * *')
     }
 
     stages {
-        stage('Deploy') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                }
-            }
+        stage('Deploy to app server') {
             steps {
-                sh '''
-                    set -euo pipefail
-                    DEPLOY_SCRIPT="/home/ubuntu/SparkitTestPlatform/dev/update-cloud-server.sh"
-                    if [[ ! -f "$DEPLOY_SCRIPT" ]]; then
-                      echo "找不到部署脚本: $DEPLOY_SCRIPT" >&2
-                      exit 1
-                    fi
-                    chmod +x "$DEPLOY_SCRIPT"
-                    # 宿主机 apt 安装 Jenkins 时以 ubuntu 执行（见 dev/jenkins/sudoers-jenkins-deploy）
-                    if id jenkins >/dev/null 2>&1 && [[ "$(whoami)" == "jenkins" ]]; then
-                      sudo -u ubuntu "$DEPLOY_SCRIPT"
-                    else
-                      "$DEPLOY_SCRIPT"
-                    fi
-                '''
+                sshagent(credentials: ['sparkit-tp-deploy-ssh']) {
+                    sh '''
+                        set -euo pipefail
+                        ssh -o StrictHostKeyChecking=accept-new \
+                            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+                            "bash -lc 'chmod +x ${DEPLOY_SCRIPT} && ${DEPLOY_SCRIPT}'"
+                    '''
+                }
             }
         }
     }
 
     post {
         success {
-            echo '✓ 部署成功 — http://43.131.62.217:3741'
+            echo "✓ 部署成功 — ${APP_URL}"
         }
         failure {
-            echo '✗ 部署失败 — 查看 Console Output 或服务器 journalctl -u sparkit-backend'
+            echo '✗ 部署失败 — 查看 Console Output；应用机: journalctl -u sparkit-backend'
         }
     }
 }

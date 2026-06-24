@@ -2,126 +2,118 @@
 
 push 到 `main` 后自动更新 **http://43.131.62.217:3741**。
 
-## 架构
+## 两台服务器架构
+
+| 机器 | IP | 角色 |
+|------|-----|------|
+| Jenkins | `49.51.186.145:8080` | 收到 Webhook，跑 Pipeline |
+| 应用 | `43.131.62.217:3741` | MySQL/MinIO + 后端 + Nginx |
 
 ```text
 GitHub push (main)
-    ↓ Webhook 或 Poll SCM
-Jenkins（云服务器）
-    ↓ 执行 Jenkinsfile
-dev/update-cloud-server.sh
-    ↓
-git pull → 后端依赖 → alembic → npm build → systemd + Nginx
+    ↓ Webhook
+Jenkins (49.51.186.145)
+    ↓ SSH ubuntu@43.131.62.217
+dev/update-cloud-server.sh（在应用机上执行）
 ```
 
-仓库根目录已有 **`Jenkinsfile`**，Pipeline 会调用 `update-cloud-server.sh`。
+仓库根目录 **`Jenkinsfile`** 已通过 SSH 远程调用部署脚本。
 
 ---
 
-## 选型：两种装法
+## 一次性配置（必做）
 
-| | **A. 宿主机 apt 安装**（推荐） | **B. Docker 跑 Jenkins** |
-|---|-------------------------------|---------------------------|
-| 复杂度 | 低 | 中（需 SSH 回宿主机部署） |
-| 端口 | 默认 **8080**（可改 8090） | **8090** |
-| 部署脚本 | jenkins 用户 `sudo -u ubuntu` 跑脚本 | Pipeline 里 SSH `ubuntu@127.0.0.1` |
-| 脚本 | `install-jenkins-host.sh` | `docker-compose.yml` |
+### 1. 应用机 `43.131.62.217`
 
-**同一台机器上跑 Jenkins + Sparkit，优先用方案 A。**
+确认代码与脚本可用：
+
+```bash
+cd ~/SparkitTestPlatform/dev
+chmod +x update-cloud-server.sh
+./update-cloud-server.sh   # 手动跑通一次
+```
+
+### 2. Jenkins 机 `49.51.186.145` — 生成部署密钥
+
+在 **Jenkins 所在机器**（或 Jenkins 容器内）执行：
+
+```bash
+ssh-keygen -t ed25519 -N "" -f ~/.jenkins_sparkit_tp_deploy -C "jenkins-sparkit-tp"
+cat ~/.jenkins_sparkit_tp_deploy.pub
+```
+
+把输出的 **公钥** 追加到应用机：
+
+```bash
+# 在 43.131.62.217 上
+echo 'ssh-ed25519 AAAA... jenkins-sparkit-tp' >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+在 **Jenkins 机** 测试：
+
+```bash
+ssh -i ~/.jenkins_sparkit_tp_deploy ubuntu@43.131.62.217 \
+  'bash -lc "~/SparkitTestPlatform/dev/update-cloud-server.sh"'
+```
+
+### 3. Jenkins Web UI — 添加 SSH 凭据
+
+1. **Manage Jenkins → Credentials → System → Global credentials → Add Credentials**
+2. Kind: **SSH Username with private key**
+3. ID: **`sparkit-tp-deploy-ssh`**（必须与 Jenkinsfile 一致）
+4. Username: `ubuntu`
+5. Private Key: Enter directly，粘贴 `~/.jenkins_sparkit_tp_deploy` 私钥全文
+6. Save
+
+### 4. Jenkins 任务 `dev-sparkit-testplatform`
+
+- Pipeline from SCM → `SparkitTestPlatform` → branch `main` → Script Path `Jenkinsfile`
+- 勾选 **GitHub hook trigger for GITScm polling**
+
+### 5. GitHub Webhook
+
+- URL: `http://49.51.186.145:8080/github-webhook/`
+- Events: push
 
 ---
 
-## 方案 A：宿主机安装（推荐）
+## 常见问题
 
-### 1. 安装 Jenkins
+### 构建 SUCCESS 但 Deploy skipped
 
-```bash
-cd ~/SparkitTestPlatform/dev/jenkins
-chmod +x install-jenkins-host.sh
-sudo ./install-jenkins-host.sh
-```
+旧版 Jenkinsfile 含 `when { branch 'main' }`，Pipeline 任务里分支名常匹配失败。已在新 Jenkinsfile 中移除，**push 最新 Jenkinsfile 后重新构建**。
 
-腾讯云安全组放行 Jenkins 端口（8080 或你改的 8090）。
+### sshagent / credentials not found
 
-### 2. 首次登录
+- 安装插件 **SSH Agent Plugin**
+- 凭据 ID 必须是 **`sparkit-tp-deploy-ssh`**
 
-```bash
-sudo cat /var/lib/jenkins/secrets/initialAdminPassword
-```
+### Host key verification failed
 
-浏览器打开 `http://43.131.62.217:8080`，装推荐插件，创建管理员账号。
-
-### 3. 创建 Pipeline 任务
-
-1. **新建 Item** → 名称 `sparkit-deploy` → 类型 **Pipeline**
-2. **Build Triggers**：
-   - 勾选 **GitHub hook trigger for GITScm polling**（配 Webhook 后生效）
-   - 或仅依赖 `Jenkinsfile` 里的 **Poll SCM**（约 2 分钟检查一次，无需 Webhook）
-3. **Pipeline**：
-   - Definition: **Pipeline script from SCM**
-   - SCM: **Git**
-   - Repository URL: `https://github.com/Linn0813/SparkitTestPlatform.git`
-   - Credentials: 若私有库，添加 GitHub PAT
-   - Branch: `*/main`
-   - Script Path: `Jenkinsfile`
-
-### 4. GitHub Webhook（push 即构建）
-
-1. Jenkins 安装插件 **GitHub Integration** / **GitHub hook trigger**
-2. Jenkins → 系统管理 → **GitHub** → 添加 Server（可选 PAT）
-3. GitHub 仓库 → **Settings → Webhooks → Add webhook**
-   - Payload URL: `http://43.131.62.217:8080/github-webhook/`（Docker 方案端口改为 8090）
-   - Content type: `application/json`
-   - Events: **Just the push event**
-4. Push 一次到 `main`，看 Jenkins 是否自动构建
-
----
-
-## 方案 B：Docker 安装 Jenkins
-
-```bash
-cd ~/SparkitTestPlatform/dev/jenkins
-docker compose up -d
-```
-
-- UI: **http://43.131.62.217:8090**
-- 安全组放行 **8090**
-- Pipeline 需通过 **SSH** 在宿主机执行部署（容器内无法 `systemctl restart`）：
-
-```groovy
-sshagent(credentials: ['sparkit-deploy-ssh']) {
-  sh 'ssh -o StrictHostKeyChecking=no ubuntu@172.17.0.1 "cd ~/SparkitTestPlatform/dev && ./update-cloud-server.sh"'
-}
-```
-
-在 Jenkins 凭据里添加 `ubuntu` 的 SSH 私钥；`172.17.0.1` 为 Docker 默认网关（宿主机）。
+Jenkinsfile 已加 `StrictHostKeyChecking=accept-new`；仍失败时在 Jenkins 机手动 ssh 一次应用机。
 
 ---
 
 ## 与 GitHub Actions 的关系
 
-仓库 `.github/workflows/ci.yml` 里已有 **push main 后 SSH 部署** 的 job。
-
-若启用 Jenkins，建议 **二选一**，避免重复部署：
-
-- 用 Jenkins → 删除或注释 `ci.yml` 里的 `deploy` job
-- 用 GitHub Actions → 不必装 Jenkins
+`.github/workflows/ci.yml` 里也有 push 部署 job，与 Jenkins **二选一**，避免重复部署。
 
 ---
 
 ## 手动触发 / 排错
 
 ```bash
-# 服务器上单独测部署脚本
-cd ~/SparkitTestPlatform/dev
-./update-cloud-server.sh
-
-# Jenkins 日志（宿主机安装）
-sudo journalctl -u jenkins -f
-
-# 后端日志
+# 应用机
+cd ~/SparkitTestPlatform/dev && ./update-cloud-server.sh
 sudo journalctl -u sparkit-backend -n 50 --no-pager
 ```
+
+---
+
+## 同机部署（Jenkins 与应用在同一台）
+
+若以后合并到一台机器，可改 Jenkinsfile 为本地执行 `update-cloud-server.sh`，见 git 历史或 `install-jenkins-host.sh`。
 
 ---
 
@@ -129,8 +121,6 @@ sudo journalctl -u sparkit-backend -n 50 --no-pager
 
 | 文件 | 用途 |
 |------|------|
-| `/Jenkinsfile` | Pipeline 定义 |
-| `dev/update-cloud-server.sh` | 实际部署步骤 |
-| `dev/jenkins/install-jenkins-host.sh` | 宿主机一键装 Jenkins |
-| `dev/jenkins/docker-compose.yml` | Docker 方式装 Jenkins |
-| `dev/jenkins/sudoers-jenkins-deploy` | sudo 权限示例 |
+| `/Jenkinsfile` | SSH 远程部署 Pipeline |
+| `dev/update-cloud-server.sh` | 在应用机上执行的部署步骤 |
+| `dev/jenkins/docker-compose.yml` | Docker 跑 Jenkins（可选） |
