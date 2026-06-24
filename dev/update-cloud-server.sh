@@ -43,14 +43,18 @@ sudo systemctl reload nginx
 
 echo ""
 echo "==> 健康检查"
-sleep 2
-if curl -sf http://127.0.0.1:8000/health >/dev/null; then
-  echo "后端正常: http://127.0.0.1:8000/health"
-else
-  echo "后端未响应，查看日志:" >&2
-  echo "  sudo journalctl -u sparkit-backend -n 40 --no-pager" >&2
-  exit 1
-fi
+for i in $(seq 1 15); do
+  if curl -sf http://127.0.0.1:8000/health >/dev/null; then
+    echo "后端正常: http://127.0.0.1:8000/health"
+    break
+  fi
+  if [[ $i -eq 15 ]]; then
+    echo "后端未响应，查看日志:" >&2
+    echo "  sudo journalctl -u sparkit-backend -n 40 --no-pager" >&2
+    exit 1
+  fi
+  sleep 2
+done
 
 PUBLIC_URL=""
 if [[ -f "$ROOT/backend/.env.local" ]]; then
