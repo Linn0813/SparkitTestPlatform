@@ -19,7 +19,7 @@ mysqldump -h OLD_HOST -u root -p --single-transaction --routines --triggers spar
 
 ## 3. 导入 macOS Docker 库
 
-确保容器已启动（`docker ps` 可见 `sparkit-mysql`）：
+确保容器已启动（`docker ps` 可见 `sparkit-tp-mysql`）：
 
 ```bash
 mysql -h 127.0.0.1 -P 3307 -u sparkit -psparkit sparkit < sparkit_backup.sql

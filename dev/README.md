@@ -95,7 +95,7 @@ chmod +x use-local-db.sh   # 首次
 
 | 现象 | 处理 |
 |------|------|
-| 连不上 MySQL | Docker Desktop 是否运行；`docker ps` 是否有 `sparkit-mysql` |
+| 连不上 MySQL | Docker Desktop 是否运行；`docker ps` 是否有 `sparkit-tp-mysql` |
 | 端口 3307 占用 | 修改 `docker-compose.yml` 端口映射或释放占用 |
 | 接口仍很慢 | 在公司内网应优先连 `DATABASE_HOST_LAN`；见启动日志 `Using deploy host:` |
 | 启动报连不上 MySQL | 配置 `DATABASE_HOST_LAN`/`WAN` 后重跑；确认部署机 `./deploy-host.sh` 已运行 |

@@ -1,7 +1,11 @@
+# Sparkit 测试管理平台（Python FastAPI + Vue）专用中间件
+# 容器名 sparkit-tp-*，与 Java 业务 sparkit-dev-* 区分
+name: sparkit-testplatform
+
 services:
   mysql:
     image: mysql:8.0
-    container_name: sparkit-mysql
+    container_name: sparkit-tp-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root
@@ -11,7 +15,7 @@ services:
     ports:
       - "3307:3306"
     volumes:
-      - sparkit_mysql_data:/var/lib/mysql
+      - sparkit_tp_mysql_data:/var/lib/mysql
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
@@ -21,7 +25,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: sparkit-minio
+    container_name: sparkit-tp-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -31,8 +35,11 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - sparkit_minio_data:/data
+      - sparkit_tp_minio_data:/data
 
 volumes:
-  sparkit_mysql_data:
-  sparkit_minio_data:
+  # 逻辑名 tp；物理卷名保持 sparkit_*，避免改名后丢已有数据
+  sparkit_tp_mysql_data:
+    name: sparkit_mysql_data
+  sparkit_tp_minio_data:
+    name: sparkit_minio_data

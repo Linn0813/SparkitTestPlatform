@@ -20,7 +20,7 @@ MINIO_USER="${MINIO_ROOT_USER:-minioadmin}"
 MINIO_PASS="${MINIO_ROOT_PASSWORD:-minioadmin}"
 BUCKET="${MINIO_BUCKET:-sparkit}"
 
-echo "==> 启动 MySQL (3307) + MinIO (9000 API / 9001 控制台)"
+echo "==> 启动测试平台中间件 sparkit-tp-mysql (3307) + sparkit-tp-minio (9000/9001)"
 docker compose up -d
 
 echo "==> 等待 MinIO..."
@@ -64,7 +64,7 @@ if [[ "$(uname)" == "Darwin" ]]; then
 fi
 
 echo ""
-echo "部署机中间件已启动。"
+echo "部署机中间件已启动（容器 sparkit-tp-mysql / sparkit-tp-minio）。"
 echo "  MySQL:  127.0.0.1:3307  (sparkit / sparkit)"
 echo "  MinIO:  API http://127.0.0.1:9000  控制台 http://127.0.0.1:9001"
 echo "  账号:   ${MINIO_USER} / （见 dev/.env.compose 或默认 minioadmin）"
