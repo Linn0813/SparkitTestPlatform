@@ -10,7 +10,7 @@ pipeline {
         GIT_CRED_ID = 'github-auth'
         GIT_BRANCH = 'main'
 
-        REMOTE_CRED = 'dev-cred'
+        REMOTE_CRED = 'sparkit-tp-deploy-ssh'
         REMOTE_SSH = 'ubuntu@43.131.62.217'
 
         DEPLOY_ROOT = '/home/ubuntu/SparkitTestPlatform'
