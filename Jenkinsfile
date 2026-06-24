@@ -1,6 +1,9 @@
 // SparkitTestPlatform — 测试管理平台（Python + Vue）
 // Jenkins: 49.51.186.145  --SSH-->  应用: 43.131.62.217:3741
 // 风格与同仓库 dev-sparkit-* Java 任务保持一致
+//
+// 自动构建：与 dev-sparkit-app 相同，不在 Jenkinsfile 里写 triggers。
+// 在 Jenkins 任务配置中勾选「GitHub hook trigger for GITScm polling」+ GitHub Webhook。
 
 pipeline {
     agent any
@@ -22,10 +25,6 @@ pipeline {
         timeout(time: 20, unit: 'MINUTES')
         disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '20'))
-    }
-
-    triggers {
-        pollSCM('H/2 * * * *')
     }
 
     stages {

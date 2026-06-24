@@ -29,6 +29,10 @@ backend/.env.local
 runner/.env.local
 dev/.env.compose.local
 
+# 本地开发连云（仅 Mac 使用，不上传 Git）
+dev/link-dev-to-cloud.sh
+dev/cloud-ssh-tunnel.sh
+
 backend/alembic/versions/001_stored_files_content_longblob.py
 backend/alembic/versions/002_stored_files_drop_content.py
 .codex_tmp/spreadsheet_bilingual/build_bilingual_workbook.mjs
