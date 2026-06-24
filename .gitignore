@@ -30,3 +30,6 @@ dev/.env.compose.local
 
 backend/alembic/versions/001_stored_files_content_longblob.py
 backend/alembic/versions/002_stored_files_drop_content.py
+.codex_tmp/spreadsheet_bilingual/build_bilingual_workbook.mjs
+.codex_tmp/spreadsheet_bilingual/inspect_workbook.mjs
+.codex_tmp/spreadsheet_bilingual/node_modules
