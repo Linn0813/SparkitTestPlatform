@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from collections import defaultdict
+from datetime import date
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.requirement_nodes import REQUIREMENT_NODE_ROLE_KEYS, requirement_node_label
+from app.constants.requirement_nodes import DEVELOPMENT_NODE_KEYS, REQUIREMENT_NODE_ROLE_KEYS, requirement_node_label
 from app.models.project import ProjectMember
+from app.models.project_version import ProjectVersion
 from app.models.requirement import Requirement, RequirementNodeProgress, RequirementNodeState, RequirementNodeTask
 from app.models.user import User
 from app.schemas.requirement import RequirementNodeProgressOut, RequirementNodeTaskOut, RequirementOut, RequirementWorkflowOut
@@ -207,3 +210,100 @@ async def requirement_out(row: Requirement, db: AsyncSession) -> RequirementOut:
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
+
+
+def _version_brief_from_row(row: ProjectVersion) -> VersionBrief:
+    return VersionBrief(id=row.id, num=row.num, name=row.name, released_at=row.released_at)
+
+
+def _dev_handoff_date_for_list(
+    req_id: str,
+    progress_by_req: dict[str, dict[str, RequirementNodeProgress]],
+    tasks_by_req_node: dict[tuple[str, str], list[RequirementNodeTask]],
+) -> date | None:
+    progress_map = progress_by_req.get(req_id, {})
+    ends: list[date] = []
+    for node_key in DEVELOPMENT_NODE_KEYS:
+        prog = progress_map.get(node_key)
+        if prog is not None and not prog.enabled:
+            continue
+        tasks = tasks_by_req_node.get((req_id, node_key), [])
+        _, planned_end = aggregate_node_planned_schedule(tasks)
+        if planned_end is not None:
+            ends.append(planned_end)
+    return max(ends) if ends else None
+
+
+async def requirement_out_list_batch(
+    rows: list[Requirement], db: AsyncSession
+) -> list[RequirementOut]:
+    """需求列表：批量加载关联，避免逐条 N+1 与完整工作流序列化。"""
+    if not rows:
+        return []
+
+    req_ids = [r.id for r in rows]
+    version_ids = {r.version_id for r in rows if r.version_id}
+    user_ids: set[str] = set()
+    for row in rows:
+        user_ids.update(collect_developer_user_ids(row))
+
+    versions_map: dict[str, VersionBrief] = {}
+    if version_ids:
+        ver_result = await db.execute(
+            select(ProjectVersion).where(ProjectVersion.id.in_(version_ids))
+        )
+        versions_map = {v.id: _version_brief_from_row(v) for v in ver_result.scalars().all()}
+
+    progress_by_req: dict[str, dict[str, RequirementNodeProgress]] = defaultdict(dict)
+    progress_result = await db.execute(
+        select(RequirementNodeProgress).where(RequirementNodeProgress.requirement_id.in_(req_ids))
+    )
+    for prog in progress_result.scalars().all():
+        progress_by_req[prog.requirement_id][prog.node_key] = prog
+
+    tasks_by_req_node: dict[tuple[str, str], list[RequirementNodeTask]] = defaultdict(list)
+    tasks_result = await db.execute(
+        select(RequirementNodeTask).where(RequirementNodeTask.requirement_id.in_(req_ids))
+    )
+    for task in tasks_result.scalars().all():
+        tasks_by_req_node[(task.requirement_id, task.node_key)].append(task)
+
+    users_map: dict[str, UserOut] = {}
+    if user_ids:
+        users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        users_map = {u.id: UserOut.model_validate(u) for u in users_result.scalars().all()}
+
+    out: list[RequirementOut] = []
+    for row in rows:
+        developer_ids = collect_developer_user_ids(row)
+        out.append(
+            RequirementOut(
+                id=row.id,
+                project_id=row.project_id,
+                num=row.num,
+                title=row.title,
+                external_url=row.external_url,
+                version_id=row.version_id,
+                version=versions_map.get(row.version_id) if row.version_id else None,
+                priority=row.priority,
+                req_type=row.req_type,
+                status=row.status,
+                frontend_rd_id=row.frontend_rd_id,
+                backend_rd_id=row.backend_rd_id,
+                pm_id=row.pm_id,
+                tech_owner_id=row.tech_owner_id,
+                qa_id=row.qa_id,
+                designer_id=row.designer_id,
+                role_assignee_ids=normalize_role_assignee_ids(row),
+                selected_role_keys=list(row.selected_role_keys or []),
+                custom_fields={},
+                dev_handoff_date=_dev_handoff_date_for_list(
+                    row.id, progress_by_req, tasks_by_req_node
+                ),
+                developers=build_developers_out(developer_ids, users_map),
+                created_by=row.created_by,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+            )
+        )
+    return out

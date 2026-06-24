@@ -1,0 +1,27 @@
+# Jenkins（Docker）— 与 Sparkit 应用分离，通过 SSH 触发宿主机部署脚本
+#
+#   cd dev/jenkins
+#   docker compose up -d
+#
+# 默认 UI: http://<服务器IP>:8090
+# 首次打开按向导安装；插件建议勾选 GitHub / Pipeline / SSH Agent
+#
+name: sparkit-jenkins
+
+services:
+  jenkins:
+    image: jenkins/jenkins:lts-jdk17
+    container_name: sparkit-jenkins
+    restart: unless-stopped
+    user: root
+    ports:
+      - "8090:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=true
+
+volumes:
+  jenkins_home:

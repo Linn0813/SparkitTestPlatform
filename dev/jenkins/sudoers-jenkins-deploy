@@ -1,0 +1,6 @@
+# 复制到服务器（仅示例，按实际路径调整）：
+#   sudo visudo -f /etc/sudoers.d/jenkins-sparkit-deploy
+#
+# 允许 jenkins 用户以 ubuntu 身份执行部署脚本（宿主机安装 Jenkins 时用）
+
+jenkins ALL=(ubuntu) NOPASSWD: /home/ubuntu/SparkitTestPlatform/dev/update-cloud-server.sh

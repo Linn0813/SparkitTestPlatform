@@ -12,6 +12,28 @@
 
 详见 [deploy-host.md](deploy-host.md)。
 
+## 部署机更新代码
+
+### Mac mini（公司内网 / Tailscale）
+
+代码 push 到远程后：
+
+```bash
+cd SparkitTestPlatform/dev
+./update-deploy.sh
+```
+
+然后重启 `./dev/run-backend.sh` 与 `./dev/run-frontend.sh`。
+
+### 云服务器（腾讯云）
+
+见 [deploy-cloud-server.md](deploy-cloud-server.md)，执行：
+
+```bash
+cd ~/SparkitTestPlatform/dev
+./update-cloud-server.sh
+```
+
 ## 在自己电脑开发、连部署机数据库
 
 **部署机（Mac mini）** 用本机 `127.0.0.1` 连 Docker MySQL，不要配 `DATABASE_HOST_LAN/WAN`。首次可执行 `./dev/configure-deploy-host-env.sh <Tailscale_IP>`，再 `./dev/run-backend.sh`。

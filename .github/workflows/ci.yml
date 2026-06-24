@@ -40,3 +40,24 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+
+  deploy:
+    name: Deploy to cloud server
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          script_stop: true
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd ~/SparkitTestPlatform/dev
+            chmod +x update-cloud-server.sh
+            ./update-cloud-server.sh

@@ -59,3 +59,15 @@ cp .env.compose.example .env.compose
 
 - MinIO：http://\<部署机IP\>:9001（默认 `minioadmin` / `minioadmin`）
 - 查看 bucket `sparkit` 内对象
+
+## 代码更新
+
+提交并 push 到远程后，在**部署机**上：
+
+```bash
+cd SparkitTestPlatform/dev
+chmod +x update-deploy.sh   # 首次
+./update-deploy.sh
+```
+
+按脚本提示重启 `./dev/run-backend.sh` 与 `./dev/run-frontend.sh`。

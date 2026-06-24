@@ -33,6 +33,17 @@ chmod +x deploy-host.sh configure-deploy-host-env.sh
 
 **项目设置 → 企微通知 → 站点访问地址** 填：`http://100.122.228.39:5174`
 
+### 代码更新（提交后发布到部署机）
+
+在部署机仓库目录执行：
+
+```bash
+cd SparkitTestPlatform/dev
+./update-deploy.sh
+```
+
+然后重启 `./dev/run-backend.sh` 与 `./dev/run-frontend.sh` 两个终端（Ctrl+C 后重新运行）。
+
 ## 2. 开发机（linns-macbook-pro，本地跑代码连远程库）
 
 ```bash
