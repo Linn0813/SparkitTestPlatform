@@ -93,6 +93,7 @@ from app.services.requirement_workflow import (
     validate_role_keys_for_project,
 )
 from app.services.template_fields import validate_template_fields
+from app.services.wecom import send_wecom_text_with_detail
 from app.services.version_workflow import (
     VersionWorkflowError,
     assert_version_workflow_node_deletable,
@@ -909,7 +910,7 @@ async def update_wecom(
     )
     row = result.scalar_one()
     for k, v in body.model_dump(exclude_unset=True).items():
-        if k == "app_public_url":
+        if k in ("app_public_url", "wecom_webhook_url"):
             v = (v or "").strip() or None
         setattr(row, k, v)
     await db.flush()
@@ -937,9 +938,15 @@ async def test_wecom(
         select(ProjectIntegration).where(ProjectIntegration.project_id == project_id)
     )
     row = result.scalar_one_or_none()
-    if not row or not row.wecom_webhook_url:
+    if not row or not (row.wecom_webhook_url or "").strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Webhook URL not configured")
-    ok = await send_wecom_markdown(row.wecom_webhook_url, f"### 测试消息\n{body.message}")
-    if not ok:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="WeCom send failed")
+    result_send = await send_wecom_text_with_detail(
+        row.wecom_webhook_url,
+        f"【Sparkit 测试】\n{body.message}",
+    )
+    if not result_send.ok:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=result_send.error or "WeCom send failed",
+        )
     return {"message": "ok"}

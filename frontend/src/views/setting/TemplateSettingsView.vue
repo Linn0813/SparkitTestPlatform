@@ -860,6 +860,9 @@ async function onTestWecom() {
   try {
     await testWecom(projectId);
     message.success('测试消息已发送，请到企微群查看');
+    if (!wecom.value.wecom_enabled) {
+      message.warning('测试成功；请打开上方「启用」开关，缺陷通知才会自动推送');
+    }
   } catch (e) {
     message.error(apiErrorMessage(e, '发送失败，请确认 Webhook URL 已保存且有效'));
   }
