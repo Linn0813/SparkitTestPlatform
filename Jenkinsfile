@@ -10,9 +10,8 @@ pipeline {
         GIT_CRED_ID = 'github-auth'
         GIT_BRANCH = 'main'
 
-        REMOTE_CRED = 'sparkit-tp-deploy-ssh'
+        REMOTE_KEY_FILE = 'sparkit-tp-deploy-key-file'
         DEPLOY_HOST = '43.131.62.217'
-        REMOTE_SSH = 'ubuntu@43.131.62.217'
 
         DEPLOY_ROOT = '/home/ubuntu/SparkitTestPlatform'
         DEPLOY_SCRIPT = "${DEPLOY_ROOT}/dev/update-cloud-server.sh"
@@ -42,16 +41,12 @@ pipeline {
 
         stage('Deploy to app server') {
             steps {
-                withCredentials([sshUserPrivateKey(
-                    credentialsId: "${REMOTE_CRED}",
-                    keyFileVariable: 'SSH_KEY',
-                    usernameVariable: 'SSH_USER'
-                )]) {
+                withCredentials([file(credentialsId: "${REMOTE_KEY_FILE}", variable: 'SSH_KEY')]) {
                     sh """
                         set -euo pipefail
                         chmod 600 "\${SSH_KEY}"
                         ssh -i "\${SSH_KEY}" -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \\
-                            "\${SSH_USER}@${DEPLOY_HOST}" \\
+                            ubuntu@${DEPLOY_HOST} \\
                             'set -euo pipefail && chmod +x ${DEPLOY_SCRIPT} && ${DEPLOY_SCRIPT}'
                     """
                 }
