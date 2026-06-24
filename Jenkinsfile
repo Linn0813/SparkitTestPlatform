@@ -11,6 +11,7 @@ pipeline {
         GIT_BRANCH = 'main'
 
         REMOTE_CRED = 'sparkit-tp-deploy-ssh'
+        DEPLOY_HOST = '43.131.62.217'
         REMOTE_SSH = 'ubuntu@43.131.62.217'
 
         DEPLOY_ROOT = '/home/ubuntu/SparkitTestPlatform'
@@ -41,16 +42,18 @@ pipeline {
 
         stage('Deploy to app server') {
             steps {
-                script {
-                    sshagent(credentials: ["${REMOTE_CRED}"]) {
-                        sh """
-                        ssh -o StrictHostKeyChecking=no ${REMOTE_SSH} '
-                            set -euo pipefail
-                            chmod +x ${DEPLOY_SCRIPT}
-                            ${DEPLOY_SCRIPT}
-                        '
-                        """
-                    }
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: "${REMOTE_CRED}",
+                    keyFileVariable: 'SSH_KEY',
+                    usernameVariable: 'SSH_USER'
+                )]) {
+                    sh """
+                        set -euo pipefail
+                        chmod 600 "\${SSH_KEY}"
+                        ssh -i "\${SSH_KEY}" -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \\
+                            "\${SSH_USER}@${DEPLOY_HOST}" \\
+                            'set -euo pipefail && chmod +x ${DEPLOY_SCRIPT} && ${DEPLOY_SCRIPT}'
+                    """
                 }
             }
         }
