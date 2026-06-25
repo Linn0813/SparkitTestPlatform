@@ -27,6 +27,8 @@
       :data="rows"
       :loading="loading"
       :row-props="rowProps"
+      class="requirement-list-table"
+      :class="{ 'requirement-list-table--blocked': listInteractionBlocked }"
       style="margin-top: 8px"
     />
 
@@ -152,6 +154,10 @@ const loading = ref(false);
 const createDrawerVisible = ref(false);
 const creating = ref(false);
 const drawerVisible = ref(false);
+/** 详情/新建抽屉打开时禁用列表点击，避免与抽屉内「保存」等同位置的操作列误触 */
+const listInteractionBlocked = computed(
+  () => drawerVisible.value || createDrawerVisible.value
+);
 const activeReqId = ref<string | null>(null);
 const applyingRoute = ref(false);
 const paginationReady = ref(false);
@@ -618,6 +624,11 @@ watch(page, () => {
 </script>
 
 <style scoped>
+.requirement-list-table--blocked {
+  pointer-events: none;
+  user-select: none;
+}
+
 .requirement-list-pagination {
   display: flex;
   justify-content: flex-end;
