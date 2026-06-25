@@ -11,11 +11,19 @@
       <n-space :size="4" align="center">
         <template v-if="editMode">
           <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
-          <n-button size="small" type="primary" :loading="saving" @click="saveBug">保存</n-button>
+          <n-button size="small" type="primary" :loading="saving" @click.stop="saveBug">保存</n-button>
         </template>
         <template v-else-if="canEdit">
           <n-button quaternary size="small" @click="enterEdit">编辑</n-button>
-          <n-button quaternary size="small" type="error" @click="onDelete">删除</n-button>
+          <n-button
+            quaternary
+            size="small"
+            type="error"
+            :disabled="toolbarActionLocked"
+            @click="onDelete"
+          >
+            删除
+          </n-button>
         </template>
         <n-button quaternary size="small" @click="emit('close')">关闭</n-button>
       </n-space>
@@ -275,7 +283,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import {
   NButton,
   NDescriptions,
@@ -377,6 +385,11 @@ const customFieldSaving = ref<string | null>(null);
 const viewStatusKey = ref<string | null>(null);
 const scheduleSavingUserId = ref<string | null>(null);
 const scheduleEstimateDrafts = ref<Record<string, number | null>>({});
+/** 保存完成后短暂锁定工具栏，避免「保存」按钮位被「删除」替换后误触 */
+const toolbarActionLocked = ref(false);
+let toolbarActionLockTimer: ReturnType<typeof setTimeout> | null = null;
+
+const TOOLBAR_ACTION_LOCK_MS = 500;
 
 const statuses = ref<BugStatusDef[]>([]);
 const customFields = ref<Record<string, unknown>>({});
@@ -763,6 +776,25 @@ async function onCustomFieldUpdate(field: TemplateField, value: string | null) {
   }
 }
 
+function lockToolbarActions() {
+  if (toolbarActionLockTimer !== null) {
+    clearTimeout(toolbarActionLockTimer);
+  }
+  toolbarActionLocked.value = true;
+  toolbarActionLockTimer = setTimeout(() => {
+    toolbarActionLocked.value = false;
+    toolbarActionLockTimer = null;
+  }, TOOLBAR_ACTION_LOCK_MS);
+}
+
+function stopToolbarActionLock() {
+  if (toolbarActionLockTimer !== null) {
+    clearTimeout(toolbarActionLockTimer);
+    toolbarActionLockTimer = null;
+  }
+  toolbarActionLocked.value = false;
+}
+
 async function saveBug() {
   if (!bug.value) return;
   const err = validateCustomFields(fieldSchema.templateFieldsForUi.value, customFields.value);
@@ -788,17 +820,21 @@ async function saveBug() {
       reporter_id: editForm.value.reporter_id ?? undefined,
       follower_ids: editForm.value.follower_ids,
     });
-    message.success('已保存');
-    editMode.value = false;
     await load();
+    editMode.value = false;
+    lockToolbarActions();
+    message.success('已保存');
     emit('updated');
+  } catch (e: unknown) {
+    const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+    message.error(typeof detail === 'string' ? detail : '保存失败');
   } finally {
     saving.value = false;
   }
 }
 
 function onDelete() {
-  if (!bug.value) return;
+  if (!bug.value || toolbarActionLocked.value) return;
   dialog.warning({
     title: '删除缺陷',
     content: `确定删除缺陷「${formatNumWithTitle(bug.value.num, bug.value.title)}」？`,
@@ -852,11 +888,16 @@ function onDeleteAttachment(att: BugAttachment) {
 watch(
   () => props.bugId,
   () => {
+    stopToolbarActionLock();
     editMode.value = false;
     load();
   },
   { immediate: true }
 );
+
+onUnmounted(() => {
+  stopToolbarActionLock();
+});
 </script>
 
 <style scoped>
@@ -874,11 +915,17 @@ watch(
 }
 
 .panel-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px 8px;
   flex-shrink: 0;
+  background: var(--n-color);
+  border-bottom: 1px solid var(--n-divider-color);
+  isolation: isolate;
 }
 
 .panel-title-row {
