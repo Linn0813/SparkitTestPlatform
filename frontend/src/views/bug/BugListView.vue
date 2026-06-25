@@ -113,7 +113,7 @@ import {
 } from 'naive-ui';
 import { createBug, listBugs, type ListBugsParams } from '@/api/bugs';
 import { listPlans } from '@/api/plans';
-import { listAllRequirements } from '@/api/requirements';
+import { listRequirementOptions, type RequirementSelectOption } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
 import BugFormFields, { type BugFormModel } from '@/components/BugFormFields.vue';
@@ -127,11 +127,12 @@ import {
 import { useBugListFilterVisibility } from '@/composables/useBugListFilterVisibility';
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { emptyCustomFields, validateCustomFields } from '@/constants/fieldTypes';
+import { FILTER_EMPTY_VALUE } from '@/schemas/entityFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
 import { useAuthStore } from '@/stores/auth';
-import type { BugItem, BugStatusDef, Requirement, TestPlan } from '@/types/business';
+import type { BugItem, BugStatusDef, TestPlan } from '@/types/business';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
 import { decodeFilterQuery, encodeFilterValues, hasFilterValues, resolveStatusKeysFromRouteQuery } from '@/utils/filterQueryCodec';
 import { pickAdjacentItemId } from '@/utils/listNavigation';
@@ -152,7 +153,7 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
 const statuses = ref<BugStatusDef[]>([]);
-const requirements = ref<Requirement[]>([]);
+const requirements = ref<RequirementSelectOption[]>([]);
 const plans = ref<TestPlan[]>([]);
 const loading = ref(false);
 const createDrawerVisible = ref(false);
@@ -472,16 +473,22 @@ async function loadMeta() {
     plans.value = [];
     return;
   }
-  const [st, , req, pl] = await Promise.all([
+  const selectedReqIds = filters.value.requirement_ids.filter(
+    (id) => id && id !== FILTER_EMPTY_VALUE
+  );
+  const [st, , reqRes, pl] = await Promise.all([
     listBugStatuses(ctx.projectId),
-    fieldSchema.reload(true),
-    listAllRequirements(),
+    fieldSchema.reload(),
+    listRequirementOptions({
+      limit: 100,
+      ids: selectedReqIds.length ? selectedReqIds.join(',') : undefined,
+    }),
     listPlans(),
   ]);
   statuses.value = st.data;
   filters.value = syncCustomFilterKeys(filters.value, fieldSchema.templateFields.value);
   sanitizeVisibleKeys();
-  requirements.value = req;
+  requirements.value = reqRes.data;
   plans.value = pl.data;
 }
 

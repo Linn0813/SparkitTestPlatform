@@ -165,6 +165,7 @@ export type RequirementStatus =
   | 'testing'
   | 'pending_release'
   | 'released'
+  | 'completed'
   | 'closed';
 
 export type RequirementPriority = string;

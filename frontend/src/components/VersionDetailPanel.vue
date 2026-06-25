@@ -184,7 +184,7 @@ import {
   type DataTableColumns,
 } from 'naive-ui';
 import { listBugs } from '@/api/bugs';
-import { listAllRequirements } from '@/api/requirements';
+import { fetchRequirementOptions } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import { completeVersionNode, deleteVersion, getVersion, reopenVersionNode, updateVersion } from '@/api/versions';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
@@ -196,7 +196,8 @@ import { versionStatusLabel, versionStatusTagType } from '@/constants/versionSta
 import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
 import { usePermissions } from '@/composables/usePermissions';
 import { useContextStore } from '@/stores/context';
-import type { BugItem, BugStatusDef, ProjectVersion, Requirement, VersionType } from '@/types/business';
+import type { BugItem, BugStatusDef, ProjectVersion, VersionType } from '@/types/business';
+import type { RequirementSelectOption } from '@/api/requirements';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
 import { formatDateOnly } from '@/utils/formatDateOnly';
 import { linkLabel, parseUrlsFromText } from '@/utils/parseUrls';
@@ -230,7 +231,7 @@ const memberLabel = (userId: string | null | undefined) =>
 const versionTypeOptions = VERSION_TYPE_OPTIONS;
 
 const version = ref<ProjectVersion | null>(null);
-const requirements = ref<Requirement[]>([]);
+const requirements = ref<RequirementSelectOption[]>([]);
 const bugs = ref<BugItem[]>([]);
 const statuses = ref<BugStatusDef[]>([]);
 const loading = ref(false);
@@ -420,7 +421,7 @@ function renderPrdLinks(externalUrl: string | null | undefined) {
   return h('div', { class: 'prd-links-stack' }, urls.map((url) => tooltipWrap(url)));
 }
 
-const requirementColumns: DataTableColumns<Requirement> = [
+const requirementColumns: DataTableColumns<RequirementSelectOption> = [
   { ...NUM_TABLE_COLUMN },
   {
     title: '标题',
@@ -553,7 +554,10 @@ async function loadRequirements() {
   }
   loadingReqs.value = true;
   try {
-    requirements.value = await listAllRequirements({ version_id: props.versionId });
+    requirements.value = await fetchRequirementOptions({
+      version_id: props.versionId,
+      limit: 100,
+    });
   } finally {
     loadingReqs.value = false;
   }

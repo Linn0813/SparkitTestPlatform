@@ -17,6 +17,22 @@ export interface RequirementListPage {
   page_size: number;
 }
 
+/** 下拉/筛选器用轻量需求选项 */
+export interface RequirementSelectOption {
+  id: string;
+  num: number;
+  title: string;
+  status: Requirement['status'];
+  external_url?: string | null;
+}
+
+export interface ListRequirementOptionsParams {
+  q?: string;
+  version_id?: string;
+  ids?: string;
+  limit?: number;
+}
+
 export interface ListRequirementsParams {
   q?: string;
   version_id?: string;
@@ -38,7 +54,32 @@ export function listRequirements(params?: ListRequirementsParams) {
   return http.get<RequirementListPage>('/requirements', { params });
 }
 
-/** 下拉选项等场景：分页拉取全部需求 */
+export function listRequirementOptions(params?: ListRequirementOptionsParams) {
+  return http.get<RequirementSelectOption[]>('/requirements/options', { params });
+}
+
+/** 便捷封装：返回 options 数组 */
+export async function fetchRequirementOptions(
+  params?: ListRequirementOptionsParams
+): Promise<RequirementSelectOption[]> {
+  const { data } = await listRequirementOptions(params);
+  return data;
+}
+
+/** 打开详情/编辑时：最近 N 条 + 已关联 id 的标签 */
+export function requirementOptionsParams(
+  linkedIds: string[] | undefined,
+  extra?: Omit<ListRequirementOptionsParams, 'ids'>
+): ListRequirementOptionsParams {
+  const ids = (linkedIds ?? []).filter(Boolean);
+  return {
+    limit: 100,
+    ...extra,
+    ...(ids.length ? { ids: ids.join(',') } : {}),
+  };
+}
+
+/** 下拉选项等场景：分页拉取全部需求（数据量大时优先用 listRequirementOptions） */
 export async function listAllRequirements(
   params?: Omit<ListRequirementsParams, 'page' | 'page_size'>
 ): Promise<Requirement[]> {
@@ -111,6 +152,10 @@ export function requirementNodeAction(id: string, nodeKey: string, action: Requi
 
 export function closeRequirement(id: string) {
   return http.post<Requirement>(`/requirements/${id}/close`);
+}
+
+export function completeRequirement(id: string) {
+  return http.post<Requirement>(`/requirements/${id}/complete`);
 }
 
 export function reopenClosedRequirement(id: string) {

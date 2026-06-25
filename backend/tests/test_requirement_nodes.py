@@ -247,6 +247,13 @@ def test_derive_status_closed_sticky():
     assert derive_requirement_status(req, nodes, defs) == RequirementStatus.closed
 
 
+def test_derive_status_completed_sticky():
+    req = _make_req(status=RequirementStatus.completed)
+    defs = _default_defs()
+    nodes = _nodes({"frontend_dev": RequirementNodeState.in_progress}, defs=defs)
+    assert derive_requirement_status(req, nodes, defs) == RequirementStatus.completed
+
+
 def test_derive_status_pending_review_when_review_lane_active():
     """评审节点未完成时应为待评审（打回后不再使用 rejected 状态）。"""
     req = _make_req(status=RequirementStatus.draft)

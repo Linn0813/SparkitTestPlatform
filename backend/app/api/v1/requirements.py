@@ -4,7 +4,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -18,6 +18,7 @@ from app.schemas.requirement import (
     RequirementCommentOut,
     RequirementCreate,
     RequirementListPageOut,
+    RequirementSelectOptionOut,
     RequirementNodeActionBody,
     RequirementNodeTaskCreate,
     RequirementNodeTaskOut,
@@ -34,15 +35,18 @@ from app.services.requirement_nodes import (
     RequirementNodeError,
     apply_node_action,
     close_requirement,
+    complete_requirement,
     load_node_map,
     reopen_from_closed,
     sync_requirement_status_from_workflow,
     update_requirement_enabled_nodes,
 )
+from app.services.list_filter_utils import parse_csv_filter
 from app.services.requirement_serializers import (
     build_node_task_outs,
     build_requirement_workflow_out,
     requirement_out,
+    requirement_out_list_batch,
     validate_requirement_role_user_ids,
 )
 from app.services.requirement_node_tasks import (
@@ -188,8 +192,58 @@ async def list_requirements(
         stmt.order_by(Requirement.num.desc()).offset(offset).limit(page_size)
     )
     rows = result.scalars().all()
-    items = [await requirement_out(r, db) for r in rows]
+    items = await requirement_out_list_batch(rows, db)
     return RequirementListPageOut(items=items, total=total, page=page, page_size=page_size)
+
+
+_OPTIONS_DEFAULT_LIMIT = 50
+_OPTIONS_MAX_LIMIT = 100
+
+
+@router.get("/options", response_model=list[RequirementSelectOptionOut])
+async def list_requirement_select_options(
+    q: Optional[str] = None,
+    version_id: Optional[str] = None,
+    ids: Optional[str] = Query(None, description="逗号分隔的需求 ID，用于保留已选筛选项标签"),
+    limit: int = Query(_OPTIONS_DEFAULT_LIMIT, ge=1, le=_OPTIONS_MAX_LIMIT),
+    ctx: ProjectContext = Depends(require_project_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """轻量需求选项：筛选下拉、关联选择等，不返回工作流/自定义字段。"""
+    id_list = parse_csv_filter(ids)
+    rows_by_id: dict[str, Requirement] = {}
+
+    if id_list:
+        id_result = await db.execute(
+            select(Requirement).where(
+                Requirement.project_id == ctx.project_id,
+                Requirement.id.in_(id_list),
+            )
+        )
+        for row in id_result.scalars().all():
+            rows_by_id[row.id] = row
+
+    remaining = max(0, limit - len(rows_by_id))
+    if remaining > 0:
+        stmt = select(Requirement).where(Requirement.project_id == ctx.project_id)
+        if version_id:
+            stmt = stmt.where(Requirement.version_id == version_id)
+        if q and q.strip():
+            q_stripped = q.strip()
+            qv = f"%{q_stripped}%"
+            clauses = [Requirement.title.ilike(qv)]
+            if q_stripped.isdigit():
+                clauses.append(Requirement.num == int(q_stripped))
+            stmt = stmt.where(or_(*clauses))
+        if id_list:
+            stmt = stmt.where(Requirement.id.notin_(id_list))
+        stmt = stmt.order_by(Requirement.num.desc()).limit(remaining)
+        result = await db.execute(stmt)
+        for row in result.scalars().all():
+            rows_by_id[row.id] = row
+
+    ordered = sorted(rows_by_id.values(), key=lambda r: r.num, reverse=True)
+    return [RequirementSelectOptionOut.model_validate(r) for r in ordered[:limit]]
 
 
 @router.post("", response_model=RequirementOut, status_code=status.HTTP_201_CREATED)
@@ -522,6 +576,21 @@ async def requirement_close(
     row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
     try:
         await close_requirement(db, row, actor_id=ctx.user.id)
+    except RequirementNodeError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.refresh(row)
+    return await requirement_out(row, db)
+
+
+@router.post("/{requirement_id}/complete", response_model=RequirementOut)
+async def requirement_complete(
+    requirement_id: str,
+    ctx: ProjectContext = Depends(require_project_context_catalog),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _get_requirement_or_404(requirement_id, ctx.project_id, db)
+    try:
+        await complete_requirement(db, row, actor_id=ctx.user.id)
     except RequirementNodeError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     await db.refresh(row)

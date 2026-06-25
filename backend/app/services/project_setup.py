@@ -27,6 +27,21 @@ from app.services.wecom_notify import (
 )
 
 
+async def ensure_list_templates_ready(
+    project_id: str, db: AsyncSession, scene: TemplateScene
+) -> None:
+    """列表热路径：模板已存在则跳过完整 ensure（避免每次 list 触发 workflow/role 等种子逻辑）。"""
+    existing = await db.execute(
+        select(ProjectFieldTemplate).where(
+            ProjectFieldTemplate.project_id == project_id,
+            ProjectFieldTemplate.scene == scene,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        return
+    await ensure_project_defaults(project_id, db)
+
+
 async def ensure_project_defaults(project_id: str, db: AsyncSession) -> None:
     for scene, fields in (
         (TemplateScene.functional_case, DEFAULT_CASE_FIELDS),

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.requirement_status import requirement_status_label
+from app.constants.requirement_status import HOLD_REQUIREMENT_STATUS_KEYS, requirement_status_label
 from app.constants.requirement_status_rules import StatusRuleLike, lane_match_requirements
 from app.services.requirement_status_rules import default_status_rule_likes, load_status_rules_for_derive
 from app.models.requirement import (
@@ -153,6 +153,10 @@ def _match_status_rule(
     return True
 
 
+def _is_hold_status(status: RequirementStatus) -> bool:
+    return status.value in HOLD_REQUIREMENT_STATUS_KEYS
+
+
 def derive_requirement_status(
     req: Requirement,
     nodes: NodeMap,
@@ -160,8 +164,8 @@ def derive_requirement_status(
     *,
     rules: list[StatusRuleLike] | None = None,
 ) -> RequirementStatus:
-    if req.status == RequirementStatus.closed:
-        return RequirementStatus.closed
+    if _is_hold_status(req.status):
+        return req.status
 
     rule_list = rules or default_status_rule_likes()
 
@@ -241,7 +245,7 @@ def auto_start_ready_nodes(
     actor_id: str | None = None,
 ) -> list[str]:
     """前置阶段 gate 已满足时，将 pending 节点自动置为进行中。"""
-    if req.status == RequirementStatus.closed:
+    if _is_hold_status(req.status):
         return []
 
     now = _utcnow()
@@ -344,8 +348,8 @@ async def apply_node_action(
     action: str,
     actor_id: str,
 ) -> RequirementStatus:
-    if req.status == RequirementStatus.closed:
-        raise RequirementNodeError("需求已关闭，请先重新打开")
+    if _is_hold_status(req.status):
+        raise RequirementNodeError("需求已关闭或已完成，请先重新打开")
 
     node = nodes.get(node_key)
     if not node:
@@ -459,6 +463,8 @@ async def close_requirement(
 ) -> RequirementStatus:
     if req.status == RequirementStatus.closed:
         raise RequirementNodeError("需求已关闭")
+    if req.status == RequirementStatus.completed:
+        raise RequirementNodeError("需求已完成，无法关闭")
     if req.status == RequirementStatus.released:
         raise RequirementNodeError("需求已发版，无法关闭")
 
@@ -474,6 +480,31 @@ async def close_requirement(
     return RequirementStatus.closed
 
 
+async def complete_requirement(
+    db: AsyncSession,
+    req: Requirement,
+    *,
+    actor_id: str,
+) -> RequirementStatus:
+    if req.status == RequirementStatus.completed:
+        raise RequirementNodeError("需求已完成")
+    if req.status == RequirementStatus.closed:
+        raise RequirementNodeError("需求已关闭，无法标记完成")
+    if req.status == RequirementStatus.released:
+        raise RequirementNodeError("需求已发版")
+
+    req.status = RequirementStatus.completed
+    await db.flush()
+    await log_requirement_activity(
+        db,
+        requirement_id=req.id,
+        actor_id=actor_id,
+        action_type="complete",
+        summary="标记需求为已完成",
+    )
+    return RequirementStatus.completed
+
+
 async def reopen_from_closed(
     db: AsyncSession,
     req: Requirement,
@@ -482,8 +513,8 @@ async def reopen_from_closed(
     *,
     actor_id: str,
 ) -> RequirementStatus:
-    if req.status != RequirementStatus.closed:
-        raise RequirementNodeError("需求未处于已关闭状态")
+    if not _is_hold_status(req.status):
+        raise RequirementNodeError("需求未处于已关闭或已完成状态")
 
     req.status = RequirementStatus.draft
     await db.flush()
@@ -497,7 +528,7 @@ async def reopen_from_closed(
         requirement_id=req.id,
         actor_id=actor_id,
         action_type="reopen_closed",
-        summary="重新打开了需求（已关闭后）",
+        summary="重新打开了需求",
     )
     return new_status
 

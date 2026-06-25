@@ -48,6 +48,7 @@ export const REQUIREMENT_STATUS_COLORS: Record<string, string> = {
   testing: '#811FA3',
   pending_release: '#FF9964',
   released: '#00C261',
+  completed: '#00C261',
   closed: '#AEAEB2',
 };
 

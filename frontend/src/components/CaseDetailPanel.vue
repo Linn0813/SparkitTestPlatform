@@ -181,7 +181,7 @@ import {
 } from 'naive-ui';
 import { deleteCase, getCase, updateCase } from '@/api/cases';
 import { createPlanCaseComment, listPlanCaseComments, updatePlanResult } from '@/api/plans';
-import { listAllRequirements } from '@/api/requirements';
+import { fetchRequirementOptions, requirementOptionsParams } from '@/api/requirements';
 import { PLAN_RESULT_OPTIONS, planResultLabel, planResultTagType } from '@/constants/planStatus';
 import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
 import InlineMarkdownContent from '@/components/InlineMarkdownContent.vue';
@@ -198,7 +198,8 @@ import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { usePermissions } from '@/composables/usePermissions';
 import { mergeCustomFields, validateCustomFields } from '@/constants/fieldTypes';
-import type { PlanCaseResultComment, Requirement, TestCase } from '@/types/business';
+import type { PlanCaseResultComment, TestCase } from '@/types/business';
+import type { RequirementSelectOption } from '@/api/requirements';
 import { displayUserLabel } from '@/utils/displayUser';
 import { modulePathLabel } from '@/utils/moduleTree';
 import { requirementOptionLabel } from '@/utils/requirementLabel';
@@ -240,7 +241,7 @@ const commentSaving = ref(false);
 const execResult = ref('not_run');
 const execComments = ref<PlanCaseResultComment[]>([]);
 const newExecComment = ref('');
-const requirements = ref<Requirement[]>([]);
+const requirements = ref<RequirementSelectOption[]>([]);
 const customFields = ref<Record<string, unknown>>({});
 
 const projectIdRef = computed(() => caseItem.value?.project_id ?? null);
@@ -343,7 +344,10 @@ async function load() {
     caseItem.value = data;
     await ensureContextForProject(data.project_id);
     await loadModules();
-    const [, req] = await Promise.all([fieldSchema.reload(true), listAllRequirements()]);
+    const [, req] = await Promise.all([
+      fieldSchema.reload(),
+      fetchRequirementOptions(requirementOptionsParams(data.requirement_ids)),
+    ]);
     requirements.value = req;
     customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, data.custom_fields);
     fillEditForm(data);

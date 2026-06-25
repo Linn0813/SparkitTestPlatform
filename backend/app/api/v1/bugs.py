@@ -67,7 +67,7 @@ from app.services.links import (
     validate_requirement_ids,
 )
 from app.services.file_storage import build_file_download_url, delete_object_safe, upload_bytes
-from app.services.project_setup import ensure_project_defaults
+from app.services.project_setup import ensure_list_templates_ready, ensure_project_defaults
 from app.services.versions import validate_version_id
 from app.services.serializers import bug_out, bug_out_list_batch
 from app.services.wecom_notify import (
@@ -147,7 +147,7 @@ async def list_bugs(
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
-    await ensure_project_defaults(ctx.project_id, db)
+    await ensure_list_templates_ready(ctx.project_id, db, TemplateScene.bug)
     tpl = await db.execute(
         select(ProjectFieldTemplate).where(
             ProjectFieldTemplate.project_id == ctx.project_id,

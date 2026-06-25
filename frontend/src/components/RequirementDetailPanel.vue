@@ -17,6 +17,15 @@
           <template v-else-if="canEdit">
             <n-button quaternary size="small" @click="enterEdit">编辑</n-button>
             <n-button
+              v-if="canCompleteRequirement"
+              quaternary
+              size="small"
+              :loading="completeSaving"
+              @click="onCompleteRequirement"
+            >
+              标记已完成
+            </n-button>
+            <n-button
               v-if="canCloseRequirement"
               quaternary
               size="small"
@@ -49,8 +58,8 @@
 
     <div class="panel-body" :class="{ 'panel-body--edit': editMode }">
       <template v-if="!editMode">
-        <div v-if="req.status === 'closed'" class="status-banner closed-banner">
-          <n-text depth="2">需求已关闭</n-text>
+        <div v-if="req.status === 'closed' || req.status === 'completed'" class="status-banner closed-banner">
+          <n-text depth="2">{{ req.status === 'closed' ? '需求已关闭' : '需求已完成' }}</n-text>
           <n-button v-if="canEdit" size="small" type="primary" :loading="nodeSaving" @click="onReopenClosed">
             重新打开
           </n-button>
@@ -193,6 +202,7 @@ import {
   listRequirementActivities,
   listRequirementComments,
   closeRequirement,
+  completeRequirement,
   reopenClosedRequirement,
   requirementNodeAction,
   syncRequirementStatus,
@@ -255,6 +265,7 @@ const loading = ref(false);
 const saving = ref(false);
 const nodeSaving = ref(false);
 const closeSaving = ref(false);
+const completeSaving = ref(false);
 const commentSaving = ref(false);
 const newComment = ref('');
 const editMode = ref(false);
@@ -302,12 +313,18 @@ const projectRoleFields = computed<ProjectRoleField[]>(() =>
 
 const canEdit = computed(() => req.value && canManageCatalog(req.value.project_id));
 
-const workflowFrozen = computed(() => req.value?.status === 'closed');
+const workflowFrozen = computed(() => req.value?.status === 'closed' || req.value?.status === 'completed');
 
 const canCloseRequirement = computed(() => {
   if (!canEdit.value || !req.value) return false;
   const s = req.value.status;
-  return s !== 'closed' && s !== 'released';
+  return s !== 'closed' && s !== 'released' && s !== 'completed';
+});
+
+const canCompleteRequirement = computed(() => {
+  if (!canEdit.value || !req.value) return false;
+  const s = req.value.status;
+  return s !== 'closed' && s !== 'released' && s !== 'completed';
 });
 
 const baseCanvasNodes = computed<WorkflowCanvasNode[]>(() =>
@@ -695,6 +712,32 @@ function onCloseRequirement() {
         message.error(typeof detail === 'string' ? detail : '关闭失败');
       } finally {
         closeSaving.value = false;
+      }
+    },
+  });
+}
+
+function onCompleteRequirement() {
+  if (!req.value) return;
+  dialog.info({
+    title: '标记已完成',
+    content: `确定将「${req.value.title}」标记为已完成？适用于无需发版但工作已结束的需求，标记后工作流将冻结，可稍后重新打开。`,
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      completeSaving.value = true;
+      try {
+        const { data } = await completeRequirement(req.value!.id);
+        req.value = data;
+        clearNodeSelection();
+        await refreshActivities();
+        message.success('已标记为已完成');
+        emit('updated', data);
+      } catch (e: unknown) {
+        const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+        message.error(typeof detail === 'string' ? detail : '操作失败');
+      } finally {
+        completeSaving.value = false;
       }
     },
   });

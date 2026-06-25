@@ -310,7 +310,7 @@ import {
   uploadAttachment,
 } from '@/api/bugs';
 import { listPlans } from '@/api/plans';
-import { listAllRequirements } from '@/api/requirements';
+import { fetchRequirementOptions, requirementOptionsParams } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import BugFormFields, { type BugFormModel } from '@/components/BugFormFields.vue';
 import BugFollowerScheduleTable, {
@@ -340,7 +340,8 @@ import {
   isPreviewableAttachment,
   isVideoAttachment,
 } from '@/utils/attachmentPreview';
-import type { BugActivity, BugAttachment, BugComment, BugItem, BugStatusDef, Requirement, TemplateField, TestPlan } from '@/types/business';
+import type { BugActivity, BugAttachment, BugComment, BugItem, BugStatusDef, TemplateField, TestPlan } from '@/types/business';
+import type { RequirementSelectOption } from '@/api/requirements';
 import { displayUserLabel } from '@/utils/displayUser';
 import { formatNumWithTitle } from '@/utils/entityNum';
 import { formatVersionWithRelease } from '@/utils/versionLabel';
@@ -379,7 +380,7 @@ const scheduleEstimateDrafts = ref<Record<string, number | null>>({});
 
 const statuses = ref<BugStatusDef[]>([]);
 const customFields = ref<Record<string, unknown>>({});
-const requirements = ref<Requirement[]>([]);
+const requirements = ref<RequirementSelectOption[]>([]);
 const plans = ref<TestPlan[]>([]);
 const comments = ref<BugComment[]>([]);
 const activities = ref<BugActivity[]>([]);
@@ -644,17 +645,18 @@ async function load() {
     const projectId = b.data.project_id;
     await ensureContextForProject(projectId);
     const [, s, req, pl] = await Promise.all([
-      fieldSchema.reload(true),
+      fieldSchema.reload(),
       listBugStatuses(projectId),
-      listAllRequirements(),
+      fetchRequirementOptions(requirementOptionsParams(b.data.requirement_ids)),
       listPlans(),
+      loadCommentsAndActivities(),
+      loadAttachments(),
     ]);
     statuses.value = s.data;
     requirements.value = req;
     plans.value = pl.data;
     customFields.value = mergeCustomFields(fieldSchema.templateFieldsForUi.value, b.data.custom_fields);
     fillEditForm(b.data);
-    await Promise.all([loadCommentsAndActivities(), loadAttachments()]);
   } finally {
     loading.value = false;
   }

@@ -33,6 +33,7 @@ def lane_match_requirements(
 # sort 越小越优先
 DEFAULT_REQUIREMENT_STATUS_RULES: tuple[StatusRuleLike, ...] = (
     StatusRuleLike(status="closed", node_keys=(), sort=0, trigger_type="status_hold"),
+    StatusRuleLike(status="completed", node_keys=(), sort=0, trigger_type="status_hold"),
     StatusRuleLike(
         status="released",
         node_keys=("released",),

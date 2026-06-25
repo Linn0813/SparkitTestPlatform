@@ -30,6 +30,7 @@ class RequirementStatus(str, enum.Enum):
     testing = "testing"
     pending_release = "pending_release"
     released = "released"
+    completed = "completed"
     rejected = "rejected"
     closed = "closed"
 

@@ -213,6 +213,18 @@ class RequirementListPageOut(BaseModel):
     page_size: int
 
 
+class RequirementSelectOptionOut(BaseModel):
+    """下拉/筛选器用轻量选项，避免拉取完整 RequirementOut。"""
+
+    id: str
+    num: int
+    title: str
+    status: RequirementStatus
+    external_url: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class RequirementCreate(BaseModel):
     title: str = Field(min_length=1, max_length=512)
     external_url: Optional[str] = Field(default=None, max_length=1024)

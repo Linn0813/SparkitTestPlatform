@@ -285,7 +285,7 @@ import {
   updatePlanResult,
 } from '@/api/plans';
 import { listBugs } from '@/api/bugs';
-import { listAllRequirements } from '@/api/requirements';
+import { fetchRequirementOptions } from '@/api/requirements';
 import { listBugStatuses } from '@/api/templates';
 import BugDetailPanel from '@/components/BugDetailPanel.vue';
 import CaseDetailPanel from '@/components/CaseDetailPanel.vue';
@@ -297,7 +297,8 @@ import {
   isPlanArchived,
   planStatusLabel,
 } from '@/constants/planStatus';
-import type { BugItem, BugStatusDef, PlanCase, PlanStats, Requirement, TestCase, TestPlan } from '@/types/business';
+import type { BugItem, BugStatusDef, PlanCase, PlanStats, TestCase, TestPlan } from '@/types/business';
+import type { RequirementSelectOption } from '@/api/requirements';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
 import { requirementOptionLabel } from '@/utils/requirementLabel';
 
@@ -313,7 +314,7 @@ const planStatus = ref('draft');
 const planCases = ref<PlanCase[]>([]);
 const stats = ref<PlanStats | null>(null);
 const pickerCases = ref<TestCase[]>([]);
-const requirements = ref<Requirement[]>([]);
+const requirements = ref<RequirementSelectOption[]>([]);
 const loading = ref(false);
 const pickerLoading = ref(false);
 const showAddCases = ref(false);
@@ -751,7 +752,7 @@ async function openAddCases() {
   filterRequirementId.value = null;
   selectedCaseIds.value = [];
   showAddCases.value = true;
-  requirements.value = await listAllRequirements();
+  requirements.value = await fetchRequirementOptions({ limit: 100 });
   await loadCasePickerOptions();
 }
 

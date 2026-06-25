@@ -159,7 +159,7 @@ import {
   type DataTableColumns,
 } from 'naive-ui';
 import { createCase, deleteCase, listCases, type ListCasesParams } from '@/api/cases';
-import { listAllRequirements } from '@/api/requirements';
+import { listRequirementOptions, type RequirementSelectOption } from '@/api/requirements';
 import CaseDetailPanel from '@/components/CaseDetailPanel.vue';
 import CaseImportModal from '@/components/CaseImportModal.vue';
 import DynamicFieldForm from '@/components/DynamicFieldForm.vue';
@@ -175,8 +175,9 @@ import { useCaseListFilterVisibility } from '@/composables/useCaseListFilterVisi
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { emptyCustomFields, validateCustomFields } from '@/constants/fieldTypes';
 import { usePermissions } from '@/composables/usePermissions';
+import { FILTER_EMPTY_VALUE } from '@/schemas/entityFieldSchema';
 import { useContextStore } from '@/stores/context';
-import type { Requirement, TestCase } from '@/types/business';
+import type { TestCase } from '@/types/business';
 import { modulePathLabel } from '@/utils/moduleTree';
 import { decodeFilterQuery, encodeFilterValues, hasFilterValues } from '@/utils/filterQueryCodec';
 import { pickAdjacentItemId } from '@/utils/listNavigation';
@@ -196,7 +197,7 @@ const cases = ref<TestCase[]>([]);
 const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
-const requirements = ref<Requirement[]>([]);
+const requirements = ref<RequirementSelectOption[]>([]);
 const loading = ref(false);
 const applyingRoute = ref(false);
 const paginationReady = ref(false);
@@ -597,8 +598,17 @@ async function loadMeta() {
     requirements.value = [];
     return;
   }
-  const [, req] = await Promise.all([fieldSchema.reload(true), listAllRequirements()]);
-  requirements.value = req;
+  const selectedReqIds = filters.value.requirement_ids.filter(
+    (id) => id && id !== FILTER_EMPTY_VALUE
+  );
+  const [, reqRes] = await Promise.all([
+    fieldSchema.reload(),
+    listRequirementOptions({
+      limit: 100,
+      ids: selectedReqIds.length ? selectedReqIds.join(',') : undefined,
+    }),
+  ]);
+  requirements.value = reqRes.data;
   filters.value = syncCustomFilterKeys(filters.value, fieldSchema.templateFields.value);
   sanitizeVisibleKeys();
 }

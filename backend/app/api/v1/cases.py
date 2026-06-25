@@ -43,7 +43,7 @@ from app.services.links import (
 from app.services.case_purge import hard_delete_test_cases
 from app.services.custom_field_filters import parse_custom_filters
 from app.services.list_filter_utils import parse_csv_filter, split_empty_values
-from app.services.project_setup import ensure_project_defaults
+from app.services.project_setup import ensure_list_templates_ready, ensure_project_defaults
 from app.services.serializers import case_out
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -257,7 +257,7 @@ async def list_cases(
     ctx: ProjectContext = Depends(require_project_context),
     db: AsyncSession = Depends(get_db),
 ):
-    await ensure_project_defaults(ctx.project_id, db)
+    await ensure_list_templates_ready(ctx.project_id, db, TemplateScene.functional_case)
     tpl = await db.execute(
         select(ProjectFieldTemplate).where(
             ProjectFieldTemplate.project_id == ctx.project_id,
