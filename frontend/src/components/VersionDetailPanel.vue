@@ -12,11 +12,19 @@
         <n-space :size="4" align="center">
           <template v-if="editMode">
             <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
-            <n-button size="small" type="primary" :loading="saving" @click="saveVersion">保存</n-button>
+            <n-button size="small" type="primary" :loading="saving" @click.stop="saveVersion">保存</n-button>
           </template>
           <template v-else-if="canEdit">
             <n-button quaternary size="small" @click="enterEdit">编辑</n-button>
-            <n-button quaternary size="small" type="error" @click="onDelete">删除</n-button>
+            <n-button
+              quaternary
+              size="small"
+              type="error"
+              :disabled="toolbarActionLocked"
+              @click="onDelete"
+            >
+              删除
+            </n-button>
           </template>
           <n-button quaternary size="small" @click="emit('close')">关闭</n-button>
         </n-space>
@@ -158,7 +166,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue';
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   NButton,
@@ -242,6 +250,11 @@ const selectedNodeKey = ref<string | null>(null);
 const actingKey = ref<string | null>(null);
 const editMode = ref(false);
 const saving = ref(false);
+/** 保存完成后短暂锁定工具栏，避免「保存」按钮位被「删除」替换后误触 */
+const toolbarActionLocked = ref(false);
+let toolbarActionLockTimer: ReturnType<typeof setTimeout> | null = null;
+
+const TOOLBAR_ACTION_LOCK_MS = 500;
 const editForm = ref({
   name: '',
   build_number: '' as string,
@@ -326,6 +339,25 @@ function enterEdit() {
   editMode.value = true;
 }
 
+function lockToolbarActions() {
+  if (toolbarActionLockTimer !== null) {
+    clearTimeout(toolbarActionLockTimer);
+  }
+  toolbarActionLocked.value = true;
+  toolbarActionLockTimer = setTimeout(() => {
+    toolbarActionLocked.value = false;
+    toolbarActionLockTimer = null;
+  }, TOOLBAR_ACTION_LOCK_MS);
+}
+
+function stopToolbarActionLock() {
+  if (toolbarActionLockTimer !== null) {
+    clearTimeout(toolbarActionLockTimer);
+    toolbarActionLockTimer = null;
+  }
+  toolbarActionLocked.value = false;
+}
+
 function cancelEdit() {
   editMode.value = false;
 }
@@ -360,6 +392,7 @@ async function saveVersion() {
     });
     version.value = data;
     editMode.value = false;
+    lockToolbarActions();
     emit('updated', data);
     message.success('已保存');
   } catch (e: unknown) {
@@ -372,7 +405,7 @@ async function saveVersion() {
 }
 
 function onDelete() {
-  if (!version.value) return;
+  if (!version.value || toolbarActionLocked.value) return;
   dialog.warning({
     title: '删除版本',
     content: `确定删除「${version.value.name}」？`,
@@ -593,8 +626,16 @@ async function load() {
   await Promise.all([loadVersion(), loadRequirements(), loadBugs(), loadStatuses()]);
 }
 
-watch(() => props.versionId, load);
+watch(() => props.versionId, () => {
+  stopToolbarActionLock();
+  editMode.value = false;
+  load();
+});
 watch(() => ctx.projectId, load);
+
+onUnmounted(() => {
+  stopToolbarActionLock();
+});
 onMounted(load);
 </script>
 
@@ -612,9 +653,14 @@ onMounted(load);
   min-height: 0;
 }
 .header-block {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   flex-shrink: 0;
   padding: 12px 16px 0;
   border-bottom: 1px solid var(--n-border-color);
+  background: var(--n-color);
+  isolation: isolate;
 }
 .panel-toolbar {
   display: flex;
