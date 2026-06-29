@@ -16,19 +16,25 @@ logger = logging.getLogger(__name__)
 
 @lru_cache
 def _client() -> Minio:
-    return Minio(
-        settings.minio_endpoint,
-        access_key=settings.minio_access_key,
-        secret_key=settings.minio_secret_key,
-        secure=settings.minio_secure,
-    )
+    kwargs = {
+        "access_key": settings.minio_access_key,
+        "secret_key": settings.minio_secret_key,
+        "secure": settings.minio_secure,
+    }
+    if settings.minio_region:
+        kwargs["region"] = settings.minio_region
+    return Minio(settings.minio_endpoint, **kwargs)
 
 
 def ensure_bucket_sync() -> None:
     client = _client()
     bucket = settings.minio_bucket
-    if not client.bucket_exists(bucket):
-        client.make_bucket(bucket)
+    try:
+        if not client.bucket_exists(bucket):
+            client.make_bucket(bucket)
+    except Exception:
+        # 腾讯云 COS 等托管存储 bucket 已存在，bucket_exists 检查可能报错，直接跳过
+        pass
 
 
 async def ensure_bucket() -> None:

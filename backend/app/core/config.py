@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     minio_secret_key: str = "minioadmin"
     minio_bucket: str = "sparkit"
     minio_secure: bool = False
+    minio_region: Optional[str] = None
 
     @model_validator(mode="after")
     def resolve_remote_deploy_hosts(self):

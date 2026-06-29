@@ -4,7 +4,8 @@
 
 | 组件 | 方式 | 端口 |
 |------|------|------|
-| MySQL / MinIO | Docker `sparkit-tp-*` | 3307 / 9000（仅本机） |
+| MySQL | Docker `sparkit-tp-mysql` | 3307（仅本机） |
+| 文件存储 | 腾讯云 COS | — |
 | 后端 FastAPI | systemd `sparkit-backend` | 8000（仅本机） |
 | 前端 Vue | `npm run build` + Nginx | **3741**（对外） |
 
@@ -14,7 +15,7 @@
 
 ## 首次部署
 
-详见历史对话或按顺序执行：`deploy-host.sh` → 初始化库 → 配置 `backend/.env.local` → systemd → Nginx。
+详见历史对话或按顺序执行：初始化 MySQL → 配置 `backend/.env.local` → systemd → Nginx。
 
 ---
 
@@ -66,13 +67,3 @@ sudo systemctl status sparkit-backend --no-pager
 sudo journalctl -u sparkit-backend -n 50 --no-pager
 ss -tlnp | grep -E ':3741|:8000'
 ```
-
----
-
-## 与 Mac mini 部署机的区别
-
-| | 云服务器 | Mac mini（公司） |
-|---|---------|-----------------|
-| 更新脚本 | `./dev/update-cloud-server.sh` | `./dev/update-cloud-server.sh` 不适用；用 `./dev/update-deploy.sh` |
-| 前端 | `npm run build` + Nginx | `npm run dev`（开发模式） |
-| 后端 | systemd 常驻 | 终端 `./dev/run-backend.sh` |

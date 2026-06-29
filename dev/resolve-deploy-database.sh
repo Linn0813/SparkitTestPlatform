@@ -50,8 +50,8 @@ LAN="$(read_env_var DATABASE_HOST_LAN || true)"
 WAN="$(read_env_var DATABASE_HOST_WAN || true)"
 
 if [[ -z "$LAN" && -z "$WAN" ]]; then
-  echo "未配置 DATABASE_HOST_LAN / DATABASE_HOST_WAN（见 backend/.env）" >&2
-  echo "开发机连远程库请先执行: ./dev/link-dev-to-deploy.sh <内网IP> [外网IP]" >&2
+  echo "未配置 DATABASE_HOST_LAN / DATABASE_HOST_WAN（见 backend/.env.local）" >&2
+  echo "开发机连云端库请先开启 SSH 隧道: SSH_KEY=~/.sparkit_tp_deploy_pem ./dev/cloud-ssh-tunnel.sh <服务器IP>" >&2
   exit 1
 fi
 
@@ -66,6 +66,6 @@ for host in "$LAN" "$WAN"; do
   echo "不可达: ${host}:${PORT}" >&2
 done
 
-echo "无法连接部署机 MySQL（已尝试内网与外网地址，端口 ${PORT}）" >&2
-echo "请确认部署机已执行: cd dev && ./deploy-host.sh" >&2
+echo "无法连接远端 MySQL（已尝试内网与外网地址，端口 ${PORT}）" >&2
+echo "请确认 SSH 隧道已开启或云服务器 MySQL 正常运行" >&2
 exit 1
