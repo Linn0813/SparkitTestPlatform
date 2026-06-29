@@ -790,6 +790,7 @@ async function onCustomFieldUpdate(field: TemplateField, value: string | null) {
 }
 
 async function saveBug() {
+  console.log('[BugDetailPanel] saveBug called');
   if (!bug.value) return;
   const err = validateCustomFields(fieldSchema.templateFieldsForUi.value, customFields.value);
   if (err) {
@@ -829,6 +830,7 @@ async function saveBug() {
 }
 
 function onDelete() {
+  console.log('[BugDetailPanel] onDelete called');
   if (!bug.value || toolbarActionLocked.value || saving.value) return;
   dialog.warning({
     title: '删除缺陷',
