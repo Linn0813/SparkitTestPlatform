@@ -9,7 +9,11 @@
           <n-button quaternary size="small" :disabled="!hasPrev" @click="emit('prev')">上一条</n-button>
           <n-button quaternary size="small" :disabled="!hasNext" @click="emit('next')">下一条</n-button>
         </n-space>
-        <n-space :size="4" align="center">
+        <n-space
+          :size="4"
+          align="center"
+          :class="{ 'toolbar-actions--locked': saving || toolbarActionLocked }"
+        >
           <template v-if="editMode">
             <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
             <n-button size="small" type="primary" :loading="saving" @click.stop="saveReq">保存</n-button>
@@ -236,6 +240,7 @@ import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { useRequirementProjectConfig } from '@/composables/useRequirementProjectConfig';
 import { buildRequirementDetailRows, type RequirementDetailFieldContext } from '@/schemas/entityFieldSchema';
 import { usePermissions } from '@/composables/usePermissions';
+import { useToolbarActionLock } from '@/composables/useToolbarActionLock';
 import type { Requirement, RequirementActivity, RequirementComment } from '@/types/business';
 import {
   assigneeFieldsForSelectedRoles,
@@ -283,12 +288,9 @@ const selectedNodeKey = ref<string | null>(null);
 const editBaseUpdatedAt = ref<string | null>(null);
 const editStaleRemote = ref(false);
 let editStalePollTimer: ReturnType<typeof setInterval> | null = null;
-/** 保存完成后短暂锁定工具栏，避免「保存」按钮位被「删除」替换后误触 */
-const toolbarActionLocked = ref(false);
-let toolbarActionLockTimer: ReturnType<typeof setTimeout> | null = null;
+const { toolbarActionLocked, lockToolbarActions, stopToolbarActionLock } = useToolbarActionLock();
 
 const EDIT_STALE_POLL_MS = 30_000;
-const TOOLBAR_ACTION_LOCK_MS = 500;
 
 const { options: memberOptions } = useProjectMemberOptions(computed(() => req.value?.project_id ?? null));
 const projectConfig = useRequirementProjectConfig(() => req.value?.project_id ?? null);
@@ -539,25 +541,6 @@ function stopEditStalePoll() {
   }
 }
 
-function lockToolbarActions() {
-  if (toolbarActionLockTimer !== null) {
-    clearTimeout(toolbarActionLockTimer);
-  }
-  toolbarActionLocked.value = true;
-  toolbarActionLockTimer = setTimeout(() => {
-    toolbarActionLocked.value = false;
-    toolbarActionLockTimer = null;
-  }, TOOLBAR_ACTION_LOCK_MS);
-}
-
-function stopToolbarActionLock() {
-  if (toolbarActionLockTimer !== null) {
-    clearTimeout(toolbarActionLockTimer);
-    toolbarActionLockTimer = null;
-  }
-  toolbarActionLocked.value = false;
-}
-
 function startEditStalePoll() {
   stopEditStalePoll();
   const id = req.value?.id;
@@ -637,6 +620,7 @@ async function saveReq() {
     return;
   }
   saving.value = true;
+  lockToolbarActions();
   try {
     const workflowSources = editWorkflowNodeSources.value;
     enabledDraft.value = syncEnabledDraftWithSelectedRoles(
@@ -670,8 +654,8 @@ async function saveReq() {
     editBaseUpdatedAt.value = null;
     editStaleRemote.value = false;
     await load();
-    editMode.value = false;
     lockToolbarActions();
+    editMode.value = false;
     const selected = req.value?.nodes.find((n) => n.node_key === selectedNodeKey.value);
     if (!selected?.enabled) {
       selectedNodeKey.value = null;
@@ -692,7 +676,7 @@ async function saveReq() {
 }
 
 function onDelete() {
-  if (!req.value || toolbarActionLocked.value) return;
+  if (!req.value || toolbarActionLocked.value || saving.value) return;
   dialog.warning({
     title: '删除需求',
     content: `确定删除「${req.value.title}」？`,
@@ -850,6 +834,10 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 16px;
+}
+
+.toolbar-actions--locked {
+  pointer-events: none;
 }
 .panel-title-row {
   display: flex;

@@ -8,7 +8,11 @@
         <n-button quaternary size="small" :disabled="!hasPrev" @click="emit('prev')">上一条</n-button>
         <n-button quaternary size="small" :disabled="!hasNext" @click="emit('next')">下一条</n-button>
       </n-space>
-      <n-space :size="4" align="center">
+      <n-space
+        :size="4"
+        align="center"
+        :class="{ 'toolbar-actions--locked': saving || toolbarActionLocked }"
+      >
         <template v-if="editMode">
           <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
           <n-button size="small" type="primary" :loading="saving" @click.stop="saveCase">保存</n-button>
@@ -169,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
   NButton,
   NDescriptions,
@@ -205,6 +209,7 @@ import { ensureContextForProject } from '@/composables/useProjectTemplate';
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { usePermissions } from '@/composables/usePermissions';
+import { useToolbarActionLock } from '@/composables/useToolbarActionLock';
 import { mergeCustomFields, validateCustomFields } from '@/constants/fieldTypes';
 import type { PlanCaseResultComment, TestCase } from '@/types/business';
 import type { RequirementSelectOption } from '@/api/requirements';
@@ -251,11 +256,7 @@ const execComments = ref<PlanCaseResultComment[]>([]);
 const newExecComment = ref('');
 const requirements = ref<RequirementSelectOption[]>([]);
 const customFields = ref<Record<string, unknown>>({});
-/** 保存完成后短暂锁定工具栏，避免「保存」按钮位被「删除」替换后误触 */
-const toolbarActionLocked = ref(false);
-let toolbarActionLockTimer: ReturnType<typeof setTimeout> | null = null;
-
-const TOOLBAR_ACTION_LOCK_MS = 500;
+const { toolbarActionLocked, lockToolbarActions, stopToolbarActionLock } = useToolbarActionLock();
 
 const projectIdRef = computed(() => caseItem.value?.project_id ?? null);
 const { nameByUserId } = useProjectMemberOptions(projectIdRef);
@@ -387,25 +388,6 @@ function cancelEdit() {
   editMode.value = false;
 }
 
-function lockToolbarActions() {
-  if (toolbarActionLockTimer !== null) {
-    clearTimeout(toolbarActionLockTimer);
-  }
-  toolbarActionLocked.value = true;
-  toolbarActionLockTimer = setTimeout(() => {
-    toolbarActionLocked.value = false;
-    toolbarActionLockTimer = null;
-  }, TOOLBAR_ACTION_LOCK_MS);
-}
-
-function stopToolbarActionLock() {
-  if (toolbarActionLockTimer !== null) {
-    clearTimeout(toolbarActionLockTimer);
-    toolbarActionLockTimer = null;
-  }
-  toolbarActionLocked.value = false;
-}
-
 async function saveCase() {
   if (!caseItem.value) return;
   const err = validateCustomFields(fieldSchema.templateFieldsForUi.value, customFields.value);
@@ -421,6 +403,7 @@ async function saveCase() {
     message.warning('请选择模块');
     return;
   }
+  lockToolbarActions();
   saving.value = true;
   try {
     const { data } = await updateCase(props.caseId, {
@@ -434,8 +417,8 @@ async function saveCase() {
       custom_fields: customFields.value,
     });
     caseItem.value = data;
-    editMode.value = false;
     lockToolbarActions();
+    editMode.value = false;
     message.success('已保存');
     emit('updated');
   } catch (e: unknown) {
@@ -447,7 +430,7 @@ async function saveCase() {
 }
 
 function onDelete() {
-  if (toolbarActionLocked.value) return;
+  if (toolbarActionLocked.value || saving.value) return;
   dialog.warning({
     title: '删除用例',
     content: '确定删除该用例？此操作不可恢复。',
@@ -529,9 +512,6 @@ watch(
   { immediate: true, deep: true }
 );
 
-onUnmounted(() => {
-  stopToolbarActionLock();
-});
 </script>
 
 <style scoped>
@@ -561,6 +541,10 @@ onUnmounted(() => {
   flex-shrink: 0;
   background: var(--n-color);
   isolation: isolate;
+}
+
+.toolbar-actions--locked {
+  pointer-events: none;
 }
 
 .panel-title-row {

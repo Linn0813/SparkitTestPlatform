@@ -8,7 +8,11 @@
         <n-button quaternary size="small" :disabled="!hasPrev" @click="emit('prev')">上一条</n-button>
         <n-button quaternary size="small" :disabled="!hasNext" @click="emit('next')">下一条</n-button>
       </n-space>
-      <n-space :size="4" align="center">
+      <n-space
+        :size="4"
+        align="center"
+        :class="{ 'toolbar-actions--locked': saving || toolbarActionLocked }"
+      >
         <template v-if="editMode">
           <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
           <n-button size="small" type="primary" :loading="saving" @click.stop="saveBug">保存</n-button>
@@ -283,7 +287,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
   NButton,
   NDescriptions,
@@ -339,6 +343,7 @@ import { ensureContextForProject } from '@/composables/useProjectTemplate';
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { usePermissions } from '@/composables/usePermissions';
+import { useToolbarActionLock } from '@/composables/useToolbarActionLock';
 import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
 import { mergeCustomFields, validateCustomFields } from '@/constants/fieldTypes';
@@ -385,11 +390,7 @@ const customFieldSaving = ref<string | null>(null);
 const viewStatusKey = ref<string | null>(null);
 const scheduleSavingUserId = ref<string | null>(null);
 const scheduleEstimateDrafts = ref<Record<string, number | null>>({});
-/** 保存完成后短暂锁定工具栏，避免「保存」按钮位被「删除」替换后误触 */
-const toolbarActionLocked = ref(false);
-let toolbarActionLockTimer: ReturnType<typeof setTimeout> | null = null;
-
-const TOOLBAR_ACTION_LOCK_MS = 500;
+const { toolbarActionLocked, lockToolbarActions, stopToolbarActionLock } = useToolbarActionLock();
 
 const statuses = ref<BugStatusDef[]>([]);
 const customFields = ref<Record<string, unknown>>({});
@@ -776,25 +777,6 @@ async function onCustomFieldUpdate(field: TemplateField, value: string | null) {
   }
 }
 
-function lockToolbarActions() {
-  if (toolbarActionLockTimer !== null) {
-    clearTimeout(toolbarActionLockTimer);
-  }
-  toolbarActionLocked.value = true;
-  toolbarActionLockTimer = setTimeout(() => {
-    toolbarActionLocked.value = false;
-    toolbarActionLockTimer = null;
-  }, TOOLBAR_ACTION_LOCK_MS);
-}
-
-function stopToolbarActionLock() {
-  if (toolbarActionLockTimer !== null) {
-    clearTimeout(toolbarActionLockTimer);
-    toolbarActionLockTimer = null;
-  }
-  toolbarActionLocked.value = false;
-}
-
 async function saveBug() {
   if (!bug.value) return;
   const err = validateCustomFields(fieldSchema.templateFieldsForUi.value, customFields.value);
@@ -806,6 +788,7 @@ async function saveBug() {
     message.warning('请填写缺陷标题');
     return;
   }
+  lockToolbarActions();
   saving.value = true;
   try {
     await updateBug(props.bugId, {
@@ -821,8 +804,8 @@ async function saveBug() {
       follower_ids: editForm.value.follower_ids,
     });
     await load();
-    editMode.value = false;
     lockToolbarActions();
+    editMode.value = false;
     message.success('已保存');
     emit('updated');
   } catch (e: unknown) {
@@ -834,7 +817,7 @@ async function saveBug() {
 }
 
 function onDelete() {
-  if (!bug.value || toolbarActionLocked.value) return;
+  if (!bug.value || toolbarActionLocked.value || saving.value) return;
   dialog.warning({
     title: '删除缺陷',
     content: `确定删除缺陷「${formatNumWithTitle(bug.value.num, bug.value.title)}」？`,
@@ -895,9 +878,6 @@ watch(
   { immediate: true }
 );
 
-onUnmounted(() => {
-  stopToolbarActionLock();
-});
 </script>
 
 <style scoped>
@@ -926,6 +906,10 @@ onUnmounted(() => {
   background: var(--n-color);
   border-bottom: 1px solid var(--n-divider-color);
   isolation: isolate;
+}
+
+.toolbar-actions--locked {
+  pointer-events: none;
 }
 
 .panel-title-row {

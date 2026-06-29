@@ -9,7 +9,11 @@
           <n-button quaternary size="small" :disabled="!hasPrev" @click="emit('prev')">上一条</n-button>
           <n-button quaternary size="small" :disabled="!hasNext" @click="emit('next')">下一条</n-button>
         </n-space>
-        <n-space :size="4" align="center">
+        <n-space
+          :size="4"
+          align="center"
+          :class="{ 'toolbar-actions--locked': saving || toolbarActionLocked }"
+        >
           <template v-if="editMode">
             <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
             <n-button size="small" type="primary" :loading="saving" @click.stop="saveVersion">保存</n-button>
@@ -166,7 +170,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, h, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   NButton,
@@ -203,6 +207,7 @@ import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { versionStatusLabel, versionStatusTagType } from '@/constants/versionStatus';
 import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
 import { usePermissions } from '@/composables/usePermissions';
+import { useToolbarActionLock } from '@/composables/useToolbarActionLock';
 import { useContextStore } from '@/stores/context';
 import type { BugItem, BugStatusDef, ProjectVersion, VersionType } from '@/types/business';
 import type { RequirementSelectOption } from '@/api/requirements';
@@ -250,11 +255,7 @@ const selectedNodeKey = ref<string | null>(null);
 const actingKey = ref<string | null>(null);
 const editMode = ref(false);
 const saving = ref(false);
-/** 保存完成后短暂锁定工具栏，避免「保存」按钮位被「删除」替换后误触 */
-const toolbarActionLocked = ref(false);
-let toolbarActionLockTimer: ReturnType<typeof setTimeout> | null = null;
-
-const TOOLBAR_ACTION_LOCK_MS = 500;
+const { toolbarActionLocked, lockToolbarActions, stopToolbarActionLock } = useToolbarActionLock();
 const editForm = ref({
   name: '',
   build_number: '' as string,
@@ -339,25 +340,6 @@ function enterEdit() {
   editMode.value = true;
 }
 
-function lockToolbarActions() {
-  if (toolbarActionLockTimer !== null) {
-    clearTimeout(toolbarActionLockTimer);
-  }
-  toolbarActionLocked.value = true;
-  toolbarActionLockTimer = setTimeout(() => {
-    toolbarActionLocked.value = false;
-    toolbarActionLockTimer = null;
-  }, TOOLBAR_ACTION_LOCK_MS);
-}
-
-function stopToolbarActionLock() {
-  if (toolbarActionLockTimer !== null) {
-    clearTimeout(toolbarActionLockTimer);
-    toolbarActionLockTimer = null;
-  }
-  toolbarActionLocked.value = false;
-}
-
 function cancelEdit() {
   editMode.value = false;
 }
@@ -383,6 +365,7 @@ async function saveVersion() {
     if (!confirmed) return;
   }
   saving.value = true;
+  lockToolbarActions();
   try {
     const { data } = await updateVersion(version.value.id, {
       name: editForm.value.name.trim(),
@@ -391,8 +374,8 @@ async function saveVersion() {
       version_type: editForm.value.version_type,
     });
     version.value = data;
-    editMode.value = false;
     lockToolbarActions();
+    editMode.value = false;
     emit('updated', data);
     message.success('已保存');
   } catch (e: unknown) {
@@ -405,7 +388,7 @@ async function saveVersion() {
 }
 
 function onDelete() {
-  if (!version.value || toolbarActionLocked.value) return;
+  if (!version.value || toolbarActionLocked.value || saving.value) return;
   dialog.warning({
     title: '删除版本',
     content: `确定删除「${version.value.name}」？`,
@@ -633,9 +616,6 @@ watch(() => props.versionId, () => {
 });
 watch(() => ctx.projectId, load);
 
-onUnmounted(() => {
-  stopToolbarActionLock();
-});
 onMounted(load);
 </script>
 
@@ -667,6 +647,10 @@ onMounted(load);
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.toolbar-actions--locked {
+  pointer-events: none;
 }
 .panel-title-row {
   display: flex;
