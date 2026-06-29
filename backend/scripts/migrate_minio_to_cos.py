@@ -24,7 +24,7 @@ from minio import Minio
 from io import BytesIO
 
 # ── 云服务器旧 MinIO ──────────────────────────────────────
-OLD_ENDPOINT = "43.131.62.217:9000"
+OLD_ENDPOINT = "127.0.0.1:9000"
 OLD_ACCESS_KEY = "minioadmin"
 OLD_SECRET_KEY = "minioadmin"
 OLD_BUCKET = "sparkit"
