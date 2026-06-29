@@ -33,6 +33,8 @@ cd "$ROOT/frontend"
 npm install --silent
 rm -f tsconfig.tsbuildinfo
 npm run build
+BUILD_TIME="$(node -e "const fs=require('fs');const p='dist/index.html';if(!fs.existsSync(p)){process.exit(1)};const s=fs.statSync(p).mtime;console.log(s.toLocaleString('zh-CN',{hour12:false}))")"
+echo "前端构建完成: dist/index.html 更新时间 ${BUILD_TIME}"
 
 echo "==> 重启后端"
 sudo systemctl restart sparkit-backend

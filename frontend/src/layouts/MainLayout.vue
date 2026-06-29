@@ -24,6 +24,9 @@
         </template>
         <n-text v-else depth="3" class="header-hint">{{ headerHint }}</n-text>
         <div style="flex: 1" />
+        <n-text depth="3" class="build-time" :title="`前端构建时间 ${appBuildTimeLabel}`">
+          构建 {{ appBuildTimeLabel }}
+        </n-text>
         <n-dropdown :options="userMenuOptions" @select="onUserMenu">
           <n-button quaternary>{{ auth.user?.name }}</n-button>
         </n-dropdown>
@@ -56,6 +59,7 @@ import { useUserAdminMenu } from '@/composables/useUserAdminMenu';
 import { findMenuLabel } from '@/config/sidebarMenu';
 import { useAuthStore } from '@/stores/auth';
 import { useContextStore } from '@/stores/context';
+import { appBuildTimeLabel } from '@/utils/buildInfo';
 
 const route = useRoute();
 const router = useRouter();
@@ -121,5 +125,11 @@ function onUserMenu(key: string) {
 
 .header-hint {
   font-size: 13px;
+}
+
+.build-time {
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: text;
 }
 </style>
