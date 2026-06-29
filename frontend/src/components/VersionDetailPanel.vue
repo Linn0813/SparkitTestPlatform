@@ -12,6 +12,7 @@
         <n-space
           :size="4"
           align="center"
+          class="toolbar-actions"
           :class="{ 'toolbar-actions--locked': saving || toolbarActionLocked }"
         >
           <template v-if="editMode">
@@ -20,17 +21,18 @@
           </template>
           <template v-else-if="canEdit">
             <n-button quaternary size="small" @click="enterEdit">编辑</n-button>
-            <n-button
-              quaternary
-              size="small"
-              type="error"
-              :disabled="toolbarActionLocked"
-              @click="onDelete"
-            >
-              删除
-            </n-button>
           </template>
           <n-button quaternary size="small" @click="emit('close')">关闭</n-button>
+          <n-button
+            v-if="canEdit && !editMode"
+            quaternary
+            size="small"
+            type="error"
+            :disabled="toolbarActionLocked"
+            @click.stop="onDelete"
+          >
+            删除
+          </n-button>
         </n-space>
       </div>
 
@@ -647,6 +649,11 @@ onMounted(load);
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.toolbar-actions {
+  min-width: 168px;
+  justify-content: flex-end;
 }
 
 .toolbar-actions--locked {

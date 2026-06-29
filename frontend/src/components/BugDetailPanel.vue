@@ -3,35 +3,46 @@
     <n-spin size="medium" />
   </div>
   <div v-else-if="bug" class="bug-detail-panel">
-    <div class="panel-toolbar">
-      <n-space :size="4" align="center">
-        <n-button quaternary size="small" :disabled="!hasPrev" @click="emit('prev')">上一条</n-button>
-        <n-button quaternary size="small" :disabled="!hasNext" @click="emit('next')">下一条</n-button>
-      </n-space>
-      <n-space
-        :size="4"
-        align="center"
-        :class="{ 'toolbar-actions--locked': saving || toolbarActionLocked }"
-      >
-        <template v-if="editMode">
-          <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
-          <n-button size="small" type="primary" :loading="saving" @click.stop="saveBug">保存</n-button>
-        </template>
-        <template v-else-if="canEdit">
-          <n-button quaternary size="small" @click="enterEdit">编辑</n-button>
-          <n-button
-            quaternary
-            size="small"
-            type="error"
-            :disabled="toolbarActionLocked"
-            @click="onDelete"
-          >
-            删除
-          </n-button>
-        </template>
-        <n-button quaternary size="small" @click="emit('close')">关闭</n-button>
-      </n-space>
-    </div>
+    <div class="header-block">
+      <div class="panel-toolbar">
+        <n-space :size="4" align="center">
+          <n-button quaternary size="small" :disabled="!hasPrev" @click="emit('prev')">上一条</n-button>
+          <n-button quaternary size="small" :disabled="!hasNext" @click="emit('next')">下一条</n-button>
+        </n-space>
+        <n-space
+          :size="4"
+          align="center"
+          class="toolbar-actions"
+          :class="{ 'toolbar-actions--locked': saving || toolbarActionLocked }"
+        >
+          <template v-if="editMode">
+            <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
+            <n-button
+              size="small"
+              type="primary"
+              class="toolbar-save-btn"
+              :loading="saving"
+              @click.stop="saveBug"
+            >
+              保存
+            </n-button>
+          </template>
+          <template v-else-if="canEdit">
+            <n-button quaternary size="small" @click="enterEdit">编辑</n-button>
+            <n-button
+              quaternary
+              size="small"
+              type="error"
+              class="toolbar-delete-btn"
+              :disabled="toolbarActionLocked"
+              @click.stop="onDelete"
+            >
+              删除
+            </n-button>
+          </template>
+          <n-button quaternary size="small" @click="emit('close')">关闭</n-button>
+        </n-space>
+      </div>
 
     <div v-if="!editMode" class="panel-title-row">
       <n-text strong class="bug-title">{{ bug.title }}</n-text>
@@ -57,6 +68,7 @@
           </template>
         </n-tag>
       </n-dropdown>
+    </div>
     </div>
 
     <div class="panel-body" :class="{ 'panel-body--edit': editMode }">
@@ -894,18 +906,27 @@ watch(
   min-height: 0;
 }
 
-.panel-toolbar {
+.header-block {
   position: sticky;
   top: 0;
   z-index: 20;
+  flex-shrink: 0;
+  background: var(--n-color);
+  border-bottom: 1px solid var(--n-divider-color);
+  isolation: isolate;
+}
+
+.panel-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px 8px;
   flex-shrink: 0;
-  background: var(--n-color);
-  border-bottom: 1px solid var(--n-divider-color);
-  isolation: isolate;
+}
+
+.toolbar-actions {
+  min-width: 168px;
+  justify-content: flex-end;
 }
 
 .toolbar-actions--locked {
@@ -918,7 +939,6 @@ watch(
   justify-content: space-between;
   gap: 12px;
   padding: 0 16px 12px;
-  border-bottom: 1px solid var(--n-border-color);
   flex-shrink: 0;
 }
 

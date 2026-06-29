@@ -38,17 +38,18 @@
             >
               关闭需求
             </n-button>
-            <n-button
-              quaternary
-              size="small"
-              type="error"
-              :disabled="toolbarActionLocked"
-              @click="onDelete"
-            >
-              删除
-            </n-button>
           </template>
           <n-button quaternary size="small" @click="emit('close')">关闭</n-button>
+          <n-button
+            v-if="canEdit && !editMode"
+            quaternary
+            size="small"
+            type="error"
+            :disabled="toolbarActionLocked"
+            @click.stop="onDelete"
+          >
+            删除
+          </n-button>
         </n-space>
       </div>
 
