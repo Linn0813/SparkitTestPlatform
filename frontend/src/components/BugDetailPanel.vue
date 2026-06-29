@@ -16,8 +16,9 @@
           :class="{ 'toolbar-actions--locked': saving || toolbarActionLocked }"
         >
           <template v-if="editMode">
-            <n-button quaternary size="small" @click="cancelEdit">取消</n-button>
+            <n-button key="cancel-btn" quaternary size="small" @click="cancelEdit">取消</n-button>
             <n-button
+              key="save-btn"
               size="small"
               type="primary"
               class="toolbar-save-btn"
@@ -28,8 +29,9 @@
             </n-button>
           </template>
           <template v-else-if="canEdit">
-            <n-button quaternary size="small" @click="enterEdit">编辑</n-button>
+            <n-button key="edit-btn" quaternary size="small" @click="enterEdit">编辑</n-button>
             <n-button
+              key="delete-btn"
               quaternary
               size="small"
               type="error"
@@ -40,7 +42,7 @@
               删除
             </n-button>
           </template>
-          <n-button quaternary size="small" @click="emit('close')">关闭</n-button>
+          <n-button key="close-btn" quaternary size="small" @click="emit('close')">关闭</n-button>
         </n-space>
       </div>
 
@@ -790,7 +792,6 @@ async function onCustomFieldUpdate(field: TemplateField, value: string | null) {
 }
 
 async function saveBug() {
-  console.log('[BugDetailPanel] saveBug called');
   if (!bug.value) return;
   const err = validateCustomFields(fieldSchema.templateFieldsForUi.value, customFields.value);
   if (err) {
@@ -830,7 +831,6 @@ async function saveBug() {
 }
 
 function onDelete() {
-  console.log('[BugDetailPanel] onDelete called');
   if (!bug.value || toolbarActionLocked.value || saving.value) return;
   dialog.warning({
     title: '删除缺陷',
