@@ -272,35 +272,6 @@ export function computeRenderLanes(
   return { singleLanes, groupLanes, childLanes };
 }
 
-/**
- * 对子任务列表分配 lane，时间不重叠的子任务共享同一 lane。
- * 返回每个 childIndex 对应的 lane offset（相对于 group lane + 1）。
- */
-function assignChildLaneOffsets(children: ScheduleBarLayout[]): number[] {
-  const laneEnds: number[] = [];
-  const offsets: number[] = new Array(children.length).fill(0);
-  for (let i = 0; i < children.length; i++) {
-    const c = children[i];
-    const endCol = c.startCol + c.spanCols - 1;
-    let lane = 0;
-    // 严格小于：首尾相接（startCol == laneEnds[lane]）视为不重叠，可共享 lane
-    while (lane < laneEnds.length && c.startCol < laneEnds[lane]) {
-      lane += 1;
-    }
-    if (lane === laneEnds.length) laneEnds.push(endCol);
-    else laneEnds[lane] = Math.max(laneEnds[lane], endCol);
-    offsets[i] = lane;
-  }
-  return offsets;
-}
-
-/** 展开一个 group 时，子任务实际占用的 lane 数（考虑时间重叠压缩） */
-function childLaneCount(children: ScheduleBarLayout[]): number {
-  if (children.length === 0) return 0;
-  const offsets = assignChildLaneOffsets(children);
-  return Math.max(...offsets) + 1;
-}
-
 
 /** @deprecated Use layoutScheduleRow; kept for flat lane helpers */
 export function layoutScheduleBars(
