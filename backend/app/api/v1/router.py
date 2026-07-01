@@ -10,6 +10,7 @@ from app.api.v1 import (
     files,
     plans,
     projects,
+    quality,
     requirements,
     templates,
     ui_automation,
@@ -34,3 +35,4 @@ api_router.include_router(files.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(wecom_rules.router)
 api_router.include_router(ui_automation.router)
+api_router.include_router(quality.router)

@@ -15,6 +15,7 @@ export const SIDEBAR_MAIN_ITEMS: SidebarMenuItem[] = [
   { label: '测试用例', key: 'cases' },
   { label: '测试计划', key: 'plans', activeAliases: ['plan-detail'] },
   { label: 'UI 自动化', key: 'ui-automation', activeAliases: ['ui-run-detail'] },
+  { label: '质量指标', key: 'quality' },
   { label: '缺陷管理', key: 'bugs' },
   { label: '项目配置', key: 'setting-project-config' },
 ];

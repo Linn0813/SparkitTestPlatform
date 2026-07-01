@@ -71,6 +71,11 @@ const router = createRouter({
           name: 'ui-run-detail',
           component: () => import('@/views/ui-automation/UIRunDetailView.vue'),
         },
+        {
+          path: 'quality',
+          name: 'quality',
+          component: () => import('@/views/quality/QualityView.vue'),
+        },
         { path: 'bugs', name: 'bugs', component: () => import('@/views/bug/BugListView.vue') },
         {
           path: 'bugs/:id',
