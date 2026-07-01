@@ -587,6 +587,7 @@ export interface MemberScheduleItem {
   requirement_id?: string | null;
   requirement_num?: number | null;
   requirement_title?: string | null;
+  requirement_task_count?: number | null;  // 该需求下总节点任务数
   node_key?: string | null;
   node_label?: string | null;
   role_key?: string | null;

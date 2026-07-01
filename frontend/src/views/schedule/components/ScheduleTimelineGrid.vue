@@ -74,7 +74,7 @@
               >
                 <span class="schedule-bar__body">
                   <span class="schedule-bar__title">{{ groupDisplayTitle(group) }}</span>
-                  <span class="schedule-bar__phase">{{ group.items.length }} 项</span>
+                  <span class="schedule-bar__phase">{{ group.total_task_count }} 项</span>
                   <span class="schedule-bar__points-inline">
                     {{ formatPoints(group.total_estimate_points) }}
                   </span>
@@ -125,14 +125,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { MemberScheduleItem, MemberScheduleRow } from '@/types/business';
 import {
-  SCHEDULE_BAR_GAP,
   SCHEDULE_BAR_LANE_HEIGHT,
+  SCHEDULE_BAR_CHILD_LANE_HEIGHT,
   SCHEDULE_COL_MIN_WIDTH,
   SCHEDULE_HEADER_HEIGHT,
-  SCHEDULE_ROW_PADDING_Y,
+  laneTopForIndex,
   rowHeightForMember,
 } from '@/views/schedule/scheduleMetrics';
 import {
@@ -228,16 +228,11 @@ function cellClass(day: string) {
   };
 }
 
-function rowHeight(member: MemberScheduleRow): number {
-  return rowHeightForMember(
-    member,
-    props.rangeStart,
-    props.rangeEnd,
-    props.expandedGroupKeys
-  );
-}
+// 缓存：key = memberId，只在该成员展开状态或 range/members 变化时失效
+const renderLanesCache = new Map<string, { keysSnapshot: string; result: ReturnType<typeof computeRenderLanes> }>();
+const rowHeightCache = new Map<string, { keysSnapshot: string; height: number }>();
 
-// 缓存每个 member 的 layout 和 renderLanes，避免模板里重复计算
+// rowLayoutMap: 只依赖 members/rangeStart/rangeEnd，不依赖 expandedGroupKeys
 const rowLayoutMap = computed(() => {
   const map = new Map<string, ReturnType<typeof layoutScheduleRow>>();
   for (const member of props.members) {
@@ -246,23 +241,44 @@ const rowLayoutMap = computed(() => {
   return map;
 });
 
-const renderLanesMap = computed(() => {
-  const map = new Map<string, ReturnType<typeof computeRenderLanes>>();
-  for (const member of props.members) {
-    const layout = rowLayoutMap.value.get(member.user_id)!;
-    map.set(member.user_id, computeRenderLanes(layout, member.user_id, props.expandedGroupKeys));
-  }
-  return map;
-});
+// members/range 变化时清空缓存
+watch(
+  () => [props.members, props.rangeStart, props.rangeEnd],
+  () => {
+    renderLanesCache.clear();
+    rowHeightCache.clear();
+  },
+  { deep: false }
+);
 
 function rowLayoutFor(member: MemberScheduleRow) {
   return rowLayoutMap.value.get(member.user_id)
     ?? layoutScheduleRow(member.scheduled_items, props.rangeStart, props.rangeEnd);
 }
 
+function memberExpandSnapshot(memberId: string): string {
+  return [...props.expandedGroupKeys]
+    .filter(k => k.startsWith(memberId + ':'))
+    .sort()
+    .join(',');
+}
+
 function renderLanesFor(member: MemberScheduleRow) {
-  return renderLanesMap.value.get(member.user_id)
-    ?? computeRenderLanes(rowLayoutFor(member), member.user_id, props.expandedGroupKeys);
+  const snapshot = memberExpandSnapshot(member.user_id);
+  const cached = renderLanesCache.get(member.user_id);
+  if (cached && cached.keysSnapshot === snapshot) return cached.result;
+  const result = computeRenderLanes(rowLayoutFor(member), member.user_id, props.expandedGroupKeys);
+  renderLanesCache.set(member.user_id, { keysSnapshot: snapshot, result });
+  return result;
+}
+
+function rowHeight(member: MemberScheduleRow): number {
+  const snapshot = memberExpandSnapshot(member.user_id);
+  const cached = rowHeightCache.get(member.user_id);
+  if (cached && cached.keysSnapshot === snapshot) return cached.height;
+  const height = rowHeightForMember(member, props.rangeStart, props.rangeEnd, props.expandedGroupKeys);
+  rowHeightCache.set(member.user_id, { keysSnapshot: snapshot, height });
+  return height;
 }
 
 function isGroupExpanded(memberId: string, requirementId: string): boolean {
@@ -273,28 +289,28 @@ function onToggleGroup(memberId: string, requirementId: string) {
   emit('toggle-group', memberId, requirementId);
 }
 
-function laneTop(lane: number): number {
-  return SCHEDULE_ROW_PADDING_Y + lane * (SCHEDULE_BAR_LANE_HEIGHT + SCHEDULE_BAR_GAP);
-}
-
 function barStyle(bar: ScheduleBarLayout, member: MemberScheduleRow): Record<string, string> {
   const { left, width } = spanOffsetStyle(bar.startCol, bar.spanCols, 8, 16);
-  const lane = renderLanesFor(member).singleLanes.get(bar.item.id) ?? bar.lane;
+  const rl = renderLanesFor(member);
+  const lane = rl.singleLanes.get(bar.item.id) ?? bar.lane;
   return {
     left,
     width: `max(${width}, 72px)`,
-    top: `${laneTop(lane)}px`,
+    top: `${laneTopForIndex(lane)}px`,
+    height: `${SCHEDULE_BAR_LANE_HEIGHT}px`,
     zIndex: String(10 + lane),
   };
 }
 
 function groupBarStyle(group: ScheduleRequirementGroup, member: MemberScheduleRow): Record<string, string> {
   const { left, width } = spanOffsetStyle(group.startCol, group.spanCols, 8, 16);
-  const lane = renderLanesFor(member).groupLanes.get(group.requirement_id) ?? group.lane;
+  const rl = renderLanesFor(member);
+  const lane = rl.groupLanes.get(group.requirement_id) ?? group.lane;
   return {
     left,
     width: `max(${width}, 88px)`,
-    top: `${laneTop(lane)}px`,
+    top: `${laneTopForIndex(lane)}px`,
+    height: `${SCHEDULE_BAR_LANE_HEIGHT}px`,
     zIndex: String(10 + lane),
   };
 }
@@ -306,12 +322,14 @@ function childBarStyle(
   member: MemberScheduleRow
 ): Record<string, string> {
   const { left, width } = spanOffsetStyle(child.startCol, child.spanCols, 12, 20);
-  const childLanesForGroup = renderLanesFor(member).childLanes.get(group.requirement_id);
+  const rl = renderLanesFor(member);
+  const childLanesForGroup = rl.childLanes.get(group.requirement_id);
   const lane = childLanesForGroup?.[childIndex] ?? (group.lane + 1 + childIndex);
   return {
     left,
     width: `max(${width}, 68px)`,
-    top: `${laneTop(lane)}px`,
+    top: `${laneTopForIndex(lane)}px`,
+    height: `${SCHEDULE_BAR_CHILD_LANE_HEIGHT}px`,
     zIndex: String(10 + lane),
   };
 }
@@ -481,7 +499,6 @@ function formatPoints(v: number): string {
   position: absolute;
   display: flex;
   align-items: stretch;
-  min-height: 36px;
   padding: 0;
   border: 1px solid var(--schedule-border, #e5e6eb);
   border-radius: 8px;
@@ -543,7 +560,6 @@ function formatPoints(v: number): string {
   border: 1px solid var(--schedule-border, #e5e6eb);
 }
 .schedule-bar--group {
-  min-height: 38px;
   background: color-mix(in srgb, var(--schedule-today-bg, #eef5ff) 35%, #fff);
   padding: 0;
 }
@@ -591,7 +607,6 @@ function formatPoints(v: number): string {
   color: var(--n-text-color-1);
 }
 .schedule-bar--child {
-  min-height: 36px;
   opacity: 0.98;
 }
 .schedule-bar--child .schedule-bar__body {

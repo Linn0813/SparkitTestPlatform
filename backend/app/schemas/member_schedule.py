@@ -20,6 +20,7 @@ class MemberScheduleItemOut(BaseModel):
     requirement_id: Optional[str] = None
     requirement_num: Optional[int] = None
     requirement_title: Optional[str] = None
+    requirement_task_count: Optional[int] = None  # 该需求下总节点任务数，用于判断是否显示为 group
     node_key: Optional[str] = None
     node_label: Optional[str] = None
     role_key: Optional[str] = None

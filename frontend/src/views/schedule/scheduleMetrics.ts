@@ -2,7 +2,8 @@ import type { MemberScheduleRow } from '@/types/business';
 import { countRowLanes, layoutScheduleRow } from '@/utils/scheduleLayout';
 
 export const SCHEDULE_HEADER_HEIGHT = 52;
-export const SCHEDULE_BAR_LANE_HEIGHT = 40;
+export const SCHEDULE_BAR_LANE_HEIGHT = 42;       // group bar 高度
+export const SCHEDULE_BAR_CHILD_LANE_HEIGHT = 32; // child bar 高度（视觉上矮，但占用同样的 lane 空间）
 export const SCHEDULE_BAR_GAP = 6;
 export const SCHEDULE_ROW_PADDING_Y = 10;
 /** 列宽自适应时的最小列宽，过窄时启用横向滚动 */
@@ -23,6 +24,11 @@ export function sidebarContentHeight(_member: MemberScheduleRow): number {
   return SIDEBAR_PADDING_Y + SIDEBAR_USER_BLOCK + SIDEBAR_BLOCK_GAP + statsBlock;
 }
 
+/** lane top 偏移，所有 lane 统一用 SCHEDULE_BAR_LANE_HEIGHT 间距 */
+export function laneTopForIndex(lane: number): number {
+  return SCHEDULE_ROW_PADDING_Y + lane * (SCHEDULE_BAR_LANE_HEIGHT + SCHEDULE_BAR_GAP);
+}
+
 function timelineContentHeight(
   member: MemberScheduleRow,
   rangeStart: string,
@@ -30,11 +36,9 @@ function timelineContentHeight(
   expandedGroupKeys: Set<string>
 ): number {
   const layout = layoutScheduleRow(member.scheduled_items, rangeStart, rangeEnd);
-  const lanes = countRowLanes(layout, member.user_id, expandedGroupKeys);
-  if (lanes === 0) return 0;
-  return (
-    SCHEDULE_ROW_PADDING_Y * 2 + lanes * (SCHEDULE_BAR_LANE_HEIGHT + SCHEDULE_BAR_GAP)
-  );
+  const { totalLanes } = countRowLanes(layout, member.user_id, expandedGroupKeys);
+  if (totalLanes === 0) return 0;
+  return SCHEDULE_ROW_PADDING_Y * 2 + totalLanes * (SCHEDULE_BAR_LANE_HEIGHT + SCHEDULE_BAR_GAP);
 }
 
 export function rowHeightForMember(

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional, Protocol
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bug import Bug, BugFollowerLink
@@ -60,6 +60,7 @@ def _build_task_item(
     task: RequirementNodeTask,
     req: Requirement,
     node_labels: dict[str, str],
+    req_task_counts: dict[str, int],
 ) -> MemberScheduleItemOut:
     return MemberScheduleItemOut(
         item_type="requirement_node_task",
@@ -72,6 +73,7 @@ def _build_task_item(
         requirement_id=req.id,
         requirement_num=req.num,
         requirement_title=req.title,
+        requirement_task_count=req_task_counts.get(req.id, 1),
         node_key=task.node_key,
         node_label=node_labels.get(task.node_key, task.node_key),
         role_key=task.role_key,
@@ -154,6 +156,17 @@ async def build_member_schedule(
     )
     task_rows = tasks_result.all()
 
+    # 获取视窗内涉及的需求的总节点任务数（用于前端判断是否显示为 group）
+    req_ids = {task.requirement_id for task, _, _ in task_rows if task.requirement_id}
+    req_task_counts: dict[str, int] = {}
+    if req_ids:
+        count_result = await db.execute(
+            select(RequirementNodeTask.requirement_id, func.count())
+            .where(RequirementNodeTask.requirement_id.in_(req_ids))
+            .group_by(RequirementNodeTask.requirement_id)
+        )
+        req_task_counts = {req_id: count for req_id, count in count_result.all()}
+
     bug_links_result = await db.execute(
         select(BugFollowerLink, Bug)
         .join(Bug, Bug.id == BugFollowerLink.bug_id)
@@ -182,7 +195,7 @@ async def build_member_schedule(
             continue
         if not _is_fully_scheduled(task) and _skip_unscheduled_for_node_state(progress):
             continue
-        item = _build_task_item(task, req, node_labels)
+        item = _build_task_item(task, req, node_labels, req_task_counts)
         _append_item_to_bucket(buckets, assignee_id, item, task, range_start, range_end)
 
     for link, bug in bug_link_rows:
