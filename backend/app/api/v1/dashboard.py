@@ -472,20 +472,26 @@ async def _unfinished_plans(
 
 async def _plan_focus(db: AsyncSession, project_id: str) -> PlanFocus:
     plans, ver_map = await _unfinished_plans(db, project_id)
-    progress_map = await _plan_progress_map(db, [p.id for p in plans])
+    # 只查一次 PlanCase/PlanCaseResult，同时用于 unfinished_plans 和 execution_chart
     results_map = await _plan_case_results_map(db, [p.id for p in plans])
-    unfinished_plans = [
-        _plan_to_brief(
-            p,
-            progress_map.get(p.id, (0, 0, None)),
-            version=ver_map.get(p.version_id) if p.version_id else None,
-        )
-        for p in plans
-    ]
+    unfinished_plans: list[ActivePlanBrief] = []
     points: list[PlanChartPoint] = []
     for plan in plans:
         pc_ids, result_by_pc = results_map.get(plan.id, ([], {}))
         by_result, pass_rate = _execute_result_counts(pc_ids, result_by_pc)
+        # 从 result_by_pc 推导 progress，无需再次查库
+        total = len(pc_ids)
+        not_run = sum(
+            1 for pc in pc_ids
+            if result_by_pc.get(pc, ExecuteResult.not_run) == ExecuteResult.not_run
+        )
+        unfinished_plans.append(
+            _plan_to_brief(
+                plan,
+                (total, not_run, pass_rate),
+                version=ver_map.get(plan.version_id) if plan.version_id else None,
+            )
+        )
         status = plan.status.value if hasattr(plan.status, "value") else str(plan.status)
         points.append(
             PlanChartPoint(

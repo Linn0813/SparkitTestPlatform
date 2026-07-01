@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -37,7 +37,10 @@ class Bug(Base):
 
 class BugFollowerLink(Base):
     __tablename__ = "bug_follower_links"
-    __table_args__ = (UniqueConstraint("bug_id", "user_id", name="uq_bug_follower"),)
+    __table_args__ = (
+        UniqueConstraint("bug_id", "user_id", name="uq_bug_follower"),
+        Index("ix_bfl_user_schedule", "user_id", "scheduled_start", "scheduled_end"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     bug_id: Mapped[str] = mapped_column(String(36), ForeignKey("bugs.id"), nullable=False, index=True)

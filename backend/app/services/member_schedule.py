@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional, Protocol
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bug import Bug, BugFollowerLink
@@ -138,6 +138,13 @@ async def build_member_schedule(
         )
         .where(Requirement.project_id == project_id)
         .where(RequirementNodeTask.assignee_id.isnot(None))
+        .where(
+            or_(
+                RequirementNodeTask.scheduled_start.is_(None),
+                (RequirementNodeTask.scheduled_start <= range_end)
+                & (RequirementNodeTask.scheduled_end >= range_start),
+            )
+        )
         .order_by(
             RequirementNodeTask.assignee_id,
             RequirementNodeTask.scheduled_start,
@@ -151,6 +158,13 @@ async def build_member_schedule(
         select(BugFollowerLink, Bug)
         .join(Bug, Bug.id == BugFollowerLink.bug_id)
         .where(Bug.project_id == project_id)
+        .where(
+            or_(
+                BugFollowerLink.scheduled_start.is_(None),
+                (BugFollowerLink.scheduled_start <= range_end)
+                & (BugFollowerLink.scheduled_end >= range_start),
+            )
+        )
         .order_by(BugFollowerLink.user_id, Bug.num, BugFollowerLink.id)
     )
     bug_link_rows = bug_links_result.all()
@@ -195,10 +209,17 @@ async def build_member_schedule(
             )
         )
 
+    already_added = {m.user_id for m in members_out}
+    extra_uids = [uid for uid in buckets if uid not in already_added]
+    extra_users: dict[str, User] = {}
+    if extra_uids:
+        extra_user_rows = await db.execute(select(User).where(User.id.in_(extra_uids)))
+        extra_users = {u.id: u for u in extra_user_rows.scalars().all()}
+
     for uid, bucket in buckets.items():
-        if any(m.user_id == uid for m in members_out):
+        if uid in already_added:
             continue
-        user = await db.get(User, uid)
+        user = extra_users.get(uid)
         name = (user.name or "").strip() if user else uid
         if user and not name:
             name = user.email or uid

@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -106,6 +106,9 @@ class RequirementNodeProgress(Base):
 
 class RequirementNodeTask(Base):
     __tablename__ = "requirement_node_tasks"
+    __table_args__ = (
+        Index("ix_rnt_assignee_schedule", "assignee_id", "scheduled_start", "scheduled_end"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     requirement_id: Mapped[str] = mapped_column(

@@ -42,7 +42,7 @@
             <button
               type="button"
               class="schedule-bar"
-              :style="barStyle(bar)"
+              :style="barStyle(bar, member)"
               @click="emit('open-item', bar.item)"
             >
               <span
@@ -62,7 +62,7 @@
           </template>
 
           <template v-for="group in rowLayoutFor(member).groups" :key="group.requirement_id">
-            <div class="schedule-bar schedule-bar--group" :style="groupBarStyle(group)">
+            <div class="schedule-bar schedule-bar--group" :style="groupBarStyle(group, member)">
               <span
                 class="schedule-bar__accent"
                 :style="{ background: requirementAccentColor(group.requirement_id) }"
@@ -97,7 +97,7 @@
                 :key="child.item.id"
                 type="button"
                 class="schedule-bar schedule-bar--child"
-                :style="childBarStyle(group, child, childIndex)"
+                :style="childBarStyle(group, child, childIndex, member)"
                 @click="emit('open-item', child.item)"
               >
                 <span
@@ -140,6 +140,7 @@ import {
   layoutScheduleRow,
   requirementAccentColor,
   scheduleGroupKey,
+  computeRenderLanes,
   type ScheduleBarLayout,
   type ScheduleRequirementGroup,
 } from '@/utils/scheduleLayout';
@@ -236,8 +237,32 @@ function rowHeight(member: MemberScheduleRow): number {
   );
 }
 
+// 缓存每个 member 的 layout 和 renderLanes，避免模板里重复计算
+const rowLayoutMap = computed(() => {
+  const map = new Map<string, ReturnType<typeof layoutScheduleRow>>();
+  for (const member of props.members) {
+    map.set(member.user_id, layoutScheduleRow(member.scheduled_items, props.rangeStart, props.rangeEnd));
+  }
+  return map;
+});
+
+const renderLanesMap = computed(() => {
+  const map = new Map<string, ReturnType<typeof computeRenderLanes>>();
+  for (const member of props.members) {
+    const layout = rowLayoutMap.value.get(member.user_id)!;
+    map.set(member.user_id, computeRenderLanes(layout, member.user_id, props.expandedGroupKeys));
+  }
+  return map;
+});
+
 function rowLayoutFor(member: MemberScheduleRow) {
-  return layoutScheduleRow(member.scheduled_items, props.rangeStart, props.rangeEnd);
+  return rowLayoutMap.value.get(member.user_id)
+    ?? layoutScheduleRow(member.scheduled_items, props.rangeStart, props.rangeEnd);
+}
+
+function renderLanesFor(member: MemberScheduleRow) {
+  return renderLanesMap.value.get(member.user_id)
+    ?? computeRenderLanes(rowLayoutFor(member), member.user_id, props.expandedGroupKeys);
 }
 
 function isGroupExpanded(memberId: string, requirementId: string): boolean {
@@ -252,33 +277,37 @@ function laneTop(lane: number): number {
   return SCHEDULE_ROW_PADDING_Y + lane * (SCHEDULE_BAR_LANE_HEIGHT + SCHEDULE_BAR_GAP);
 }
 
-function barStyle(bar: ScheduleBarLayout): Record<string, string> {
+function barStyle(bar: ScheduleBarLayout, member: MemberScheduleRow): Record<string, string> {
   const { left, width } = spanOffsetStyle(bar.startCol, bar.spanCols, 8, 16);
+  const lane = renderLanesFor(member).singleLanes.get(bar.item.id) ?? bar.lane;
   return {
     left,
     width: `max(${width}, 72px)`,
-    top: `${laneTop(bar.lane)}px`,
-    zIndex: String(10 + bar.lane),
+    top: `${laneTop(lane)}px`,
+    zIndex: String(10 + lane),
   };
 }
 
-function groupBarStyle(group: ScheduleRequirementGroup): Record<string, string> {
+function groupBarStyle(group: ScheduleRequirementGroup, member: MemberScheduleRow): Record<string, string> {
   const { left, width } = spanOffsetStyle(group.startCol, group.spanCols, 8, 16);
+  const lane = renderLanesFor(member).groupLanes.get(group.requirement_id) ?? group.lane;
   return {
     left,
     width: `max(${width}, 88px)`,
-    top: `${laneTop(group.lane)}px`,
-    zIndex: String(10 + group.lane),
+    top: `${laneTop(lane)}px`,
+    zIndex: String(10 + lane),
   };
 }
 
 function childBarStyle(
   group: ScheduleRequirementGroup,
   child: ScheduleBarLayout,
-  childIndex: number
+  childIndex: number,
+  member: MemberScheduleRow
 ): Record<string, string> {
   const { left, width } = spanOffsetStyle(child.startCol, child.spanCols, 12, 20);
-  const lane = group.lane + 1 + childIndex;
+  const childLanesForGroup = renderLanesFor(member).childLanes.get(group.requirement_id);
+  const lane = childLanesForGroup?.[childIndex] ?? (group.lane + 1 + childIndex);
   return {
     left,
     width: `max(${width}, 68px)`,

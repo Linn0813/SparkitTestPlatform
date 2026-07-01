@@ -86,37 +86,54 @@ export function layoutScheduleRow(
     .map((item) => clipItem(item, rangeStart, rangeEnd))
     .filter((c): c is ClippedItem => c != null);
 
-  const byReq = new Map<string, ClippedItem[]>();
+  // 按需求 ID 分组所有 items（包括未排期/视窗外的），用于判断是否应显示为 group
+  const allByReq = new Map<string, MemberScheduleItem[]>();
+  for (const item of items) {
+    const reqId = item.requirement_id;
+    if (!reqId) continue;
+    const list = allByReq.get(reqId) ?? [];
+    list.push(item);
+    allByReq.set(reqId, list);
+  }
+
+  // 视窗内可见的 clipped items，按需求 ID 分组
+  const clippedByReq = new Map<string, ClippedItem[]>();
   for (const c of clipped) {
     const reqId = c.item.requirement_id;
     if (!reqId) continue;
-    const list = byReq.get(reqId) ?? [];
+    const list = clippedByReq.get(reqId) ?? [];
     list.push(c);
-    byReq.set(reqId, list);
+    clippedByReq.set(reqId, list);
   }
 
   const segments: LaneSegment[] = [];
 
+  // 无需求 ID 的 items（bug 等）直接作为 single
   for (const c of clipped) {
     if (c.item.requirement_id) continue;
     segments.push({ kind: 'single', clipped: c, startCol: c.startCol, endCol: c.endCol });
   }
 
-  for (const [, list] of byReq) {
-    if (list.length === 1) {
-      const c = list[0];
-      segments.push({ kind: 'single', clipped: c, startCol: c.startCol, endCol: c.endCol });
-    } else {
-      const startCol = Math.min(...list.map((c) => c.startCol));
-      const endCol = Math.max(...list.map((c) => c.endCol));
-      segments.push({
-        kind: 'group',
-        clipped: list,
-        startCol,
-        endCol,
-        spanCols: endCol - startCol + 1,
-      });
-    }
+  // 有需求 ID 的：全部作为 group（包括只有 1 个任务的），统一可展开查看
+  const processedReqs = new Set<string>();
+  for (const c of clipped) {
+    const reqId = c.item.requirement_id;
+    if (!reqId || processedReqs.has(reqId)) continue;
+    processedReqs.add(reqId);
+
+    const allItems = allByReq.get(reqId) ?? [];
+    const visibleClipped = clippedByReq.get(reqId) ?? [];
+
+    if (visibleClipped.length === 0) continue;
+    const startCol = Math.min(...visibleClipped.map((c) => c.startCol));
+    const endCol = Math.max(...visibleClipped.map((c) => c.endCol));
+    segments.push({
+      kind: 'group',
+      clipped: visibleClipped,
+      startCol,
+      endCol,
+      spanCols: endCol - startCol + 1,
+    });
   }
 
   const laneMap = assignLanes(segments);
@@ -135,16 +152,20 @@ export function layoutScheduleRow(
         lane,
       });
     } else {
-      const sorted = [...seg.clipped].sort(
+      const reqId = seg.clipped[0].item.requirement_id!;
+      const allItems = allByReq.get(reqId) ?? [];
+      const sortedVisible = [...seg.clipped].sort(
         (a, b) => a.startCol - b.startCol || a.endCol - b.endCol
       );
-      const first = sorted[0].item;
+      const first = allItems[0];
       groups.push({
-        requirement_id: first.requirement_id!,
+        requirement_id: reqId,
         requirement_num: first.requirement_num ?? 0,
         requirement_title: first.requirement_title ?? '',
-        items: sorted.map((c) => c.item),
-        children: sorted.map((c) => ({
+        // items 包含所有任务（用于显示 "N项"）
+        items: allItems,
+        // children 只包含视窗内可见的任务（用于展开渲染）
+        children: sortedVisible.map((c) => ({
           item: c.item,
           startCol: c.startCol,
           spanCols: c.spanCols,
@@ -153,7 +174,7 @@ export function layoutScheduleRow(
         startCol: seg.startCol,
         spanCols: seg.spanCols,
         lane,
-        total_estimate_points: sorted.reduce((sum, c) => sum + estimateValue(c.item.estimate_points), 0),
+        total_estimate_points: allItems.reduce((sum, item) => sum + estimateValue(item.estimate_points), 0),
       });
     }
   }
@@ -170,19 +191,110 @@ export function countRowLanes(
   memberId: string,
   expandedKeys: Set<string>
 ): number {
+  // 展开的 groups 按 lane 升序，用来计算偏移
+  const expandedGroups = layout.groups
+    .filter(g => expandedKeys.has(scheduleGroupKey(memberId, g.requirement_id)))
+    .sort((a, b) => a.lane - b.lane);
+
+  function resolvedLane(originalLane: number): number {
+    let offset = 0;
+    for (const g of expandedGroups) {
+      if (originalLane > g.lane) offset += childLaneCount(g.children);
+    }
+    return originalLane + offset;
+  }
+
   let maxLane = 0;
 
   for (const s of layout.singles) {
-    maxLane = Math.max(maxLane, s.lane + 1);
+    maxLane = Math.max(maxLane, resolvedLane(s.lane) + 1);
   }
 
   for (const g of layout.groups) {
-    const expanded = expandedKeys.has(scheduleGroupKey(memberId, g.requirement_id));
-    const used = expanded ? g.lane + 1 + g.children.length : g.lane + 1;
+    const isExpanded = expandedKeys.has(scheduleGroupKey(memberId, g.requirement_id));
+    const resolvedGroupLane = resolvedLane(g.lane);
+    const used = isExpanded ? resolvedGroupLane + 1 + childLaneCount(g.children) : resolvedGroupLane + 1;
     maxLane = Math.max(maxLane, used);
   }
 
   return maxLane;
+}
+
+/**
+ * 对子任务列表分配 lane，时间不重叠的子任务共享同一 lane。
+ * 返回每个 childIndex 对应的 lane offset（相对于 group lane + 1）。
+ */
+function assignChildLaneOffsets(children: ScheduleBarLayout[]): number[] {
+  const laneEnds: number[] = [];
+  const offsets: number[] = new Array(children.length).fill(0);
+  for (let i = 0; i < children.length; i++) {
+    const c = children[i];
+    const endCol = c.startCol + c.spanCols - 1;
+    let lane = 0;
+    while (lane < laneEnds.length && c.startCol <= laneEnds[lane]) {
+      lane += 1;
+    }
+    if (lane === laneEnds.length) laneEnds.push(endCol);
+    else laneEnds[lane] = endCol;
+    offsets[i] = lane;
+  }
+  return offsets;
+}
+
+/** 展开一个 group 时，子任务实际占用的 lane 数（考虑时间重叠压缩） */
+function childLaneCount(children: ScheduleBarLayout[]): number {
+  if (children.length === 0) return 0;
+  const offsets = assignChildLaneOffsets(children);
+  return Math.max(...offsets) + 1;
+}
+
+
+export function computeRenderLanes(
+  layout: ScheduleRowLayout,
+  memberId: string,
+  expandedKeys: Set<string>
+): {
+  singleLanes: Map<string, number>;   // item.id -> render lane
+  groupLanes: Map<string, number>;    // requirement_id -> render lane
+  childLanes: Map<string, number[]>;  // requirement_id -> [child0 lane, child1 lane, ...]
+} {
+  // 收集展开的 groups，按 lane 升序处理
+  const expandedGroups = layout.groups
+    .filter(g => expandedKeys.has(scheduleGroupKey(memberId, g.requirement_id)))
+    .sort((a, b) => a.lane - b.lane);
+
+  // 对每个原始 lane 计算累积偏移
+  // 展开 lane=X 的 group（子任务实际占 M 个 lane），则所有原始 lane > X 的 bar 偏移 +M
+  function resolvedLane(originalLane: number): number {
+    let offset = 0;
+    for (const g of expandedGroups) {
+      if (originalLane > g.lane) {
+        offset += childLaneCount(g.children);
+      }
+    }
+    return originalLane + offset;
+  }
+
+  const singleLanes = new Map<string, number>();
+  const groupLanes = new Map<string, number>();
+  const childLanes = new Map<string, number[]>();
+
+  for (const s of layout.singles) {
+    singleLanes.set(s.item.id, resolvedLane(s.lane));
+  }
+
+  for (const g of layout.groups) {
+    const resolvedGroupLane = resolvedLane(g.lane);
+    groupLanes.set(g.requirement_id, resolvedGroupLane);
+    const isExpanded = expandedKeys.has(scheduleGroupKey(memberId, g.requirement_id));
+    if (isExpanded) {
+      // 用 assignChildLaneOffsets 让时间不重叠的子任务共享同一 lane
+      const offsets = assignChildLaneOffsets(g.children);
+      childLanes.set(g.requirement_id, offsets.map(offset => resolvedGroupLane + 1 + offset));
+    }
+  }
+
+  return { singleLanes, groupLanes, childLanes };
 }
 
 /** @deprecated Use layoutScheduleRow; kept for flat lane helpers */
