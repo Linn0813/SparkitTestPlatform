@@ -200,6 +200,7 @@ class RequirementOut(ORMBase):
     nodes: list[RequirementNodeProgressOut] = Field(default_factory=list)
     node_tasks: list[RequirementNodeTaskOut] = Field(default_factory=list)
     dev_handoff_date: Optional[date] = None
+    estimated_completion_date: Optional[date] = None  # 预计完成：测试节点最晚结束日期，无则降级到开发节点
     developers: list[UserOut] = Field(default_factory=list)
     created_by: str
     created_at: datetime

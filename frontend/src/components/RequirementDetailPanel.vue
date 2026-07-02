@@ -125,6 +125,16 @@
               <n-text v-else depth="3" class="empty-roles-hint">
                 未选择角色
               </n-text>
+              <div class="field-pair field-block">
+                <div class="field-cell">
+                  <div class="field-label">转测时间</div>
+                  <div class="field-value">{{ formatDevHandoffDate(req) }}</div>
+                </div>
+                <div class="field-cell">
+                  <div class="field-label">预计完成</div>
+                  <div class="field-value">{{ formatEstimatedCompletion(req) }}</div>
+                </div>
+              </div>
             </n-tab-pane>
             <n-tab-pane name="comments" tab="评论">
               <n-space vertical style="width: 100%">
@@ -231,6 +241,7 @@ import RequirementNodeDetailPanel from '@/components/RequirementNodeDetailPanel.
 import RequirementWorkflowCanvas from '@/components/RequirementWorkflowCanvas.vue';
 import { LEGACY_ROLE_ID_FIELDS } from '@/constants/requirementNodes';
 import { requirementPriorityTagType } from '@/constants/requirementPriority';
+import { formatDevHandoffDate, formatEstimatedCompletion } from '@/utils/requirementListDerived';
 import { requirementStatusLabel, requirementStatusTagType } from '@/constants/requirementStatus';
 import {
   mergeCustomFields,

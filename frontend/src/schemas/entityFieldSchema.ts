@@ -1,3 +1,5 @@
+import { h } from 'vue';
+import { NTag } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import type { BugListFilterState } from '@/composables/useBugListFilters';
 import type { CaseListFilterState } from '@/composables/useCaseListFilters';
@@ -15,6 +17,7 @@ import { buildFieldConfigRows, type FieldConfigRow } from '@/constants/systemFie
 import type { Requirement, TemplateField } from '@/types/business';
 import { formatDateOnly } from '@/utils/formatDateOnly';
 import { parseUrlsFromText, urlsToLinkItems } from '@/utils/parseUrls';
+import { bugSeverityTagType } from '@/constants/bugStatus';
 
 export type EntityScene = 'bug' | 'functional_case' | 'requirement';
 
@@ -404,7 +407,14 @@ export function buildTemplateTableColumns<T extends { custom_fields?: Record<str
     ellipsis: { tooltip: true },
     render: (row: T) => {
       const val = row.custom_fields?.[field.id];
-      return formatTemplateFieldValue(field, val, ctx);
+      const text = formatTemplateFieldValue(field, val, ctx);
+      // 严重程度字段：只对严重/致命加颜色标记，其他显示纯文字
+      if (isBugSeverityField(field)) {
+        const type = bugSeverityTagType(text === '—' ? null : text);
+        if (type === 'default') return text;
+        return h(NTag, { type, size: 'small', bordered: false }, () => text);
+      }
+      return text;
     },
   }));
 }

@@ -74,7 +74,6 @@
               >
                 <span class="schedule-bar__body">
                   <span class="schedule-bar__title">{{ groupDisplayTitle(group) }}</span>
-                  <span class="schedule-bar__phase">{{ group.total_task_count }} 项</span>
                   <span class="schedule-bar__points-inline">
                     {{ formatPoints(group.total_estimate_points) }}
                   </span>

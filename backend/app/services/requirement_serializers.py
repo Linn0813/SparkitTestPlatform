@@ -216,6 +216,29 @@ def _version_brief_from_row(row: ProjectVersion) -> VersionBrief:
     return VersionBrief(id=row.id, num=row.num, name=row.name, released_at=row.released_at)
 
 
+def _estimated_completion_for_list(
+    req_id: str,
+    progress_by_req: dict[str, dict[str, RequirementNodeProgress]],
+    tasks_by_req_node: dict[tuple[str, str], list[RequirementNodeTask]],
+    dev_handoff_date: date | None,
+) -> date | None:
+    """预计完成：取 qa 角色任务的最晚排期结束日期，无则降级到开发节点（转测时间）。"""
+    # 找所有 role_key = 'qa' 的任务排期结束日期（测试节点）
+    testing_ends: list[date] = []
+    for (rid, _node_key), tasks in tasks_by_req_node.items():
+        if rid != req_id:
+            continue
+        for task in tasks:
+            if task.role_key == 'qa' and task.scheduled_end is not None:
+                testing_ends.append(task.scheduled_end)
+
+    if testing_ends:
+        return max(testing_ends)
+
+    # 降级到开发节点（同转测时间逻辑）
+    return dev_handoff_date
+
+
 def _dev_handoff_date_for_list(
     req_id: str,
     progress_by_req: dict[str, dict[str, RequirementNodeProgress]],
@@ -297,8 +320,11 @@ async def requirement_out_list_batch(
                 role_assignee_ids=normalize_role_assignee_ids(row),
                 selected_role_keys=list(row.selected_role_keys or []),
                 custom_fields={},
-                dev_handoff_date=_dev_handoff_date_for_list(
+                dev_handoff_date=(dev_handoff := _dev_handoff_date_for_list(
                     row.id, progress_by_req, tasks_by_req_node
+                )),
+                estimated_completion_date=_estimated_completion_for_list(
+                    row.id, progress_by_req, tasks_by_req_node, dev_handoff
                 ),
                 developers=build_developers_out(developer_ids, users_map),
                 created_by=row.created_by,

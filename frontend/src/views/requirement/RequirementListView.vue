@@ -131,7 +131,7 @@ import type { Requirement, ProjectVersion } from '@/types/business';
 import { decodeFilterQuery, encodeFilterValues, hasFilterValues } from '@/utils/filterQueryCodec';
 import { pickAdjacentItemId } from '@/utils/listNavigation';
 import { NUM_TABLE_COLUMN } from '@/utils/entityNum';
-import { formatDevHandoffDate, formatRequirementDevelopers } from '@/utils/requirementListDerived';
+import { formatDevHandoffDate, formatEstimatedCompletion, formatRequirementDevelopers } from '@/utils/requirementListDerived';
 
 const ctx = useContextStore();
 const { canManageCatalog } = usePermissions();
@@ -422,6 +422,12 @@ const columns = computed<DataTableColumns<Requirement>>(() => [
     key: 'dev_handoff_date',
     width: 110,
     render: (row) => formatDevHandoffDate(row),
+  },
+  {
+    title: '预计完成',
+    key: 'estimated_completion',
+    width: 110,
+    render: (row) => formatEstimatedCompletion(row),
   },
   ...(canCatalog.value
     ? [

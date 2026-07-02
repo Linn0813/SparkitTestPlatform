@@ -20,7 +20,6 @@ export function bugSeverityTagType(severity: string | null | undefined): TagProp
   if (!severity || severity === '—') return 'default';
   if (severity === '致命') return 'error';
   if (severity === '严重') return 'warning';
-  if (severity === '一般') return 'info';
   return 'default';
 }
 

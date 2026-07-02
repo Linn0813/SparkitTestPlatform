@@ -291,6 +291,7 @@ export interface Requirement {
   selected_role_keys?: string[];
   custom_fields?: Record<string, unknown>;
   dev_handoff_date?: string | null;
+  estimated_completion_date?: string | null;
   developers?: UserBrief[];
   nodes: RequirementNodeProgress[];
   node_tasks?: RequirementNodeTask[];

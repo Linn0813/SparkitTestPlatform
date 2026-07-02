@@ -127,6 +127,8 @@ import {
 import { useBugListFilterVisibility } from '@/composables/useBugListFilterVisibility';
 import { useProjectFieldSchema } from '@/composables/useProjectFieldSchema';
 import { emptyCustomFields, validateCustomFields } from '@/constants/fieldTypes';
+import { bugStatusTagType } from '@/constants/bugStatus';
+import { NTag } from 'naive-ui';
 import { FILTER_EMPTY_VALUE } from '@/schemas/entityFieldSchema';
 import { useProjectMemberOptions } from '@/composables/useProjectMemberOptions';
 import { usePermissions } from '@/composables/usePermissions';
@@ -282,7 +284,12 @@ const columns = computed<DataTableColumns<BugItem>>(() => {
     title: '状态',
     key: 'status_key',
     width: 96,
-    render: (row) => statusLabelMap.value.get(row.status_key) ?? row.status_key,
+    render: (row) => {
+      const label = statusLabelMap.value.get(row.status_key) ?? row.status_key;
+      const type = bugStatusTagType(row.status_key, statuses.value);
+      if (type === 'default') return label;
+      return h(NTag, { type, size: 'small', bordered: true }, () => label);
+    },
   },
   ...customCols,
   {
