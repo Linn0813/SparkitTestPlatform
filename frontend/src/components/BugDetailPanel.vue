@@ -139,6 +139,9 @@
       />
       <n-text v-else depth="3">—</n-text>
       <n-text depth="3" class="section-label">附件</n-text>
+      <n-upload v-if="canEdit" :custom-request="onUpload" :show-file-list="false" style="margin-bottom: 8px">
+        <n-button size="small">上传附件</n-button>
+      </n-upload>
       <div v-if="attachments.length" class="attachment-list">
         <div v-for="att in attachments" :key="att.id" class="attachment-item">
           <n-space align="center" :size="8" wrap>
@@ -175,7 +178,7 @@
           />
         </div>
       </div>
-      <n-text v-else depth="3">—</n-text>
+      <n-text v-else-if="!canEdit" depth="3">—</n-text>
 
       <n-text depth="3" class="section-label">跟进排期</n-text>
       <BugFollowerScheduleTable
