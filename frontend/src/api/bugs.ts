@@ -118,11 +118,17 @@ export function importBugs(file: File) {
   });
 }
 
-export function uploadAttachment(bugId: string, file: File) {
+export function uploadAttachment(bugId: string, file: File, onProgress?: (percent: number) => void) {
   const form = new FormData();
   form.append('file', file);
   return http.post<BugAttachment>(`/bugs/${bugId}/attachments`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 300000, // 5 分钟，支持较大文件
+    onUploadProgress: onProgress
+      ? (e) => {
+          if (e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      : undefined,
   });
 }
 

@@ -48,6 +48,8 @@ export function useSidebarMenu() {
       case 'plans':
       case 'bugs':
       case 'setting-project-config':
+      case 'setting-projects-manage':
+      case 'setting-users':
         return isSystemAdmin.value || isProjectMember(projectId);
       default:
         return true;

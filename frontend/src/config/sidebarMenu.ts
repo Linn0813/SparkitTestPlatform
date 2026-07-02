@@ -39,7 +39,16 @@ export const SIDEBAR_MENU: SidebarMenuEntry[] = [
       { label: 'UI 自动化', key: 'ui-automation', activeAliases: ['ui-run-detail'] },
     ],
   },
-  { label: '项目配置', key: 'setting-project-config' },
+  {
+    type: 'group',
+    label: '系统设置',
+    key: 'group-admin',
+    children: [
+      { label: '项目配置', key: 'setting-project-config' },
+      { label: '项目管理', key: 'setting-projects-manage' },
+      { label: '系统用户', key: 'setting-users' },
+    ],
+  },
 ];
 
 /** 兼容旧逻辑：展开所有叶子节点 */

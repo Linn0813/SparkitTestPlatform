@@ -125,14 +125,16 @@
               <n-text v-else depth="3" class="empty-roles-hint">
                 未选择角色
               </n-text>
-              <div class="field-pair field-block">
-                <div class="field-cell">
-                  <div class="field-label">转测时间</div>
-                  <div class="field-value">{{ formatDevHandoffDate(req) }}</div>
-                </div>
-                <div class="field-cell">
-                  <div class="field-label">预计完成</div>
-                  <div class="field-value">{{ formatEstimatedCompletion(req) }}</div>
+              <div class="people-fields field-block">
+                <div class="field-pair">
+                  <div class="field-cell">
+                    <div class="field-label">转测时间</div>
+                    <div class="field-value">{{ formatDevHandoffDate(req) }}</div>
+                  </div>
+                  <div class="field-cell">
+                    <div class="field-label">预计完成</div>
+                    <div class="field-value">{{ formatEstimatedCompletion(req) }}</div>
+                  </div>
                 </div>
               </div>
             </n-tab-pane>

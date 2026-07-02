@@ -90,3 +90,13 @@ def presigned_get_url(storage_key: str, expires_seconds: int = 7 * 24 * 3600) ->
         storage_key,
         expires=timedelta(seconds=expires_seconds),
     )
+
+
+def presigned_put_url(storage_key: str, expires_seconds: int = 3600) -> str:
+    """生成前端直传 MinIO 的预签名 PUT URL，绕过后端传输，适合大文件。"""
+    ensure_bucket_sync()
+    return _client().presigned_put_object(
+        settings.minio_bucket,
+        storage_key,
+        expires=timedelta(seconds=expires_seconds),
+    )
